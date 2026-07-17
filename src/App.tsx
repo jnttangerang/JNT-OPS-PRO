@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star
+  Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2
 } from "lucide-react";
 import useAppsScript from "./hooks/useAppsScript";
 import LoginPage from "./components/LoginPage";
@@ -21,6 +21,9 @@ export default function App() {
   
   // Navigation State
   const [currentView, setCurrentView] = useState<string>("login");
+
+  // Mobile Sidebar Drawer Toggle State
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Outlet State
   const [outlets, setOutlets] = useState<Outlet[]>([]);
@@ -93,208 +96,253 @@ export default function App() {
     setActiveOutletId(newId);
   };
 
+  const handleClearCache = () => {
+    if (confirm("Apakah Anda yakin ingin menghapus seluruh cache dan data lokal aplikasi? Anda akan dialihkan ke halaman login.")) {
+      localStorage.clear();
+      sessionStorage.clear();
+      setSession(null);
+      setCurrentView("login");
+      toast.success("Cache dan data lokal berhasil dibersihkan!");
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+    }
+  };
+
+  const navItems: Array<{ id: string; label: string; icon: React.ComponentType<any>; iconColor?: string }> = [];
+  if (session) {
+    if (session.role !== "OWNER") {
+      navItems.push(
+        { id: "pre-input", label: "Pre-Input", icon: Clipboard },
+        { id: "transaksi", label: "Resi & Bayar", icon: FileText }
+      );
+    }
+    if (session.role !== "ADMIN") {
+      navItems.push(
+        { id: "dashboard", label: "Dashboard", icon: Landmark },
+        { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
+        { id: "ulasan-maps", label: "Ulasan Maps", icon: Star, iconColor: "text-yellow-500 fill-yellow-500" },
+        { id: "guide", label: "Deployment Guide", icon: BookOpen, iconColor: "text-emerald-600" }
+      );
+    }
+  }
+
+  const renderNavLinks = (onItemClick?: () => void) => {
+    return navItems.map((item) => {
+      const Icon = item.icon;
+      const isActive = currentView === item.id;
+      return (
+        <button
+          key={item.id}
+          onClick={() => {
+            setCurrentView(item.id);
+            if (onItemClick) onItemClick();
+          }}
+          className={`w-full text-left py-3 px-4 rounded-xl flex items-center gap-3 transition-all text-xs font-bold cursor-pointer ${
+            isActive 
+              ? "bg-red-50 text-[#E4002B] border-l-4 border-[#E4002B] pl-3" 
+              : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+          }`}
+        >
+          <Icon className={`h-4.5 w-4.5 ${item.iconColor || ""}`} />
+          <span>{item.label}</span>
+        </button>
+      );
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gray-50/50 flex flex-col font-sans">
       <ToastContainer />
       
-      {/* HEADER BAR (Only visible when logged in) */}
+      {/* DESKTOP SIDEBAR (md:flex) */}
       {session && (
-        <header className="bg-white border-b border-gray-150 sticky top-0 z-50 shadow-sm">
-          <div className="max-w-6xl mx-auto px-4">
-            <div className="flex justify-between items-center h-16">
-              
-              {/* Logo Identity */}
-              <div className="flex items-center gap-2.5">
-                <div className="bg-[#E4002B] p-2 rounded-xl text-white shadow-md shadow-red-500/10">
-                  <Truck className="h-5 w-5 stroke-[2.5]" />
-                </div>
-                <div>
-                  <span className="text-sm font-extrabold text-gray-800 tracking-tight font-sans">
-                    J&T OPS PRO
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <span className="bg-gray-150 text-gray-600 text-[8px] font-bold font-mono px-1 py-0.5 rounded uppercase tracking-wider">
-                      {session.role}
-                    </span>
-                    <span className="text-[9px] text-gray-400">
-                      • {session.username}
-                    </span>
-                  </div>
-                </div>
+        <aside className="hidden md:flex fixed top-0 left-0 bottom-0 w-64 bg-white border-r border-gray-150 z-30 flex-col justify-between shadow-sm">
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+            {/* Header branding */}
+            <div className="p-6 border-b border-gray-100 flex items-center gap-3">
+              <div className="bg-[#E4002B] p-2 rounded-xl text-white shadow-md shadow-red-500/10">
+                <Truck className="h-5 w-5 stroke-[2.5]" />
               </div>
-
-              {/* Navigation Menu Links */}
-              <nav className="hidden md:flex items-center gap-1 text-xs font-semibold text-gray-600">
-                {session.role !== "OWNER" && (
-                  <>
-                    <button
-                      onClick={() => setCurrentView("pre-input")}
-                      className={`py-2 px-3 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer ${
-                        currentView === "pre-input" ? "bg-red-50 text-[#E4002B]" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <Clipboard className="h-4 w-4" />
-                      <span>Pre-Input</span>
-                    </button>
-
-                    <button
-                      onClick={() => setCurrentView("transaksi")}
-                      className={`py-2 px-3 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer ${
-                        currentView === "transaksi" ? "bg-red-50 text-[#E4002B]" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <FileText className="h-4 w-4" />
-                      <span>Input Resi & Finansial</span>
-                    </button>
-                  </>
-                )}
-
-                {session.role !== "ADMIN" && (
-                  <>
-                    <button
-                      onClick={() => setCurrentView("dashboard")}
-                      className={`py-2 px-3 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer ${
-                        currentView === "dashboard" ? "bg-red-50 text-[#E4002B]" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <Landmark className="h-4 w-4" />
-                      <span>Dashboard</span>
-                    </button>
-
-                    <button
-                      onClick={() => setCurrentView("riwayat-transaksi")}
-                      className={`py-2 px-3 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer ${
-                        currentView === "riwayat-transaksi" ? "bg-red-50 text-[#E4002B]" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <List className="h-4 w-4" />
-                      <span>Riwayat Transaksi</span>
-                    </button>
-
-                    <button
-                      onClick={() => setCurrentView("ulasan-maps")}
-                      className={`py-2 px-3 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer ${
-                        currentView === "ulasan-maps" ? "bg-red-50 text-[#E4002B]" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                      <span>Ulasan Maps</span>
-                    </button>
-
-                    <button
-                      onClick={() => setCurrentView("guide")}
-                      className={`py-2 px-3 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer ${
-                        currentView === "guide" ? "bg-red-50 text-[#E4002B]" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      <BookOpen className="h-4 w-4 text-emerald-600" />
-                      <span>Deployment Guide</span>
-                    </button>
-                  </>
-                )}
-              </nav>
-
-              {/* Session Control / Log Out */}
-              <div className="flex items-center gap-3">
-                
-                {/* Active Task Info Indicator */}
-                <div className="hidden sm:flex items-center gap-1.5 text-xs bg-gray-50 py-1.5 px-3 rounded-xl border border-gray-100">
-                  <MapPin className="h-4 w-4 text-gray-400" />
-                  <span className="text-gray-400">Tugas:</span>
-                  <span className="font-bold text-gray-700 font-mono">
-                    {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
-                  </span>
-                </div>
-
-                <button
-                  onClick={handleLogout}
-                  className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
-                  title="Keluar dari Akun"
-                >
-                  <LogOut className="h-5 w-5" />
-                </button>
+              <div>
+                <span className="text-sm font-extrabold text-gray-800 tracking-tight font-sans">
+                  J&T OPS PRO
+                </span>
+                <p className="text-[10px] text-gray-400 font-medium">Sistem Manajemen Outlet</p>
               </div>
-
             </div>
+
+            {/* Profile Info Card inside Sidebar */}
+            <div className="p-4 border-b border-gray-50 bg-slate-50/50 m-4 rounded-2xl border border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="bg-[#E4002B]/10 p-2.5 rounded-xl text-[#E4002B]">
+                  <User className="h-4 w-4" />
+                </div>
+                <div className="overflow-hidden">
+                  <p className="text-xs font-bold text-gray-800 truncate">{session.username}</p>
+                  <span className="inline-block mt-0.5 bg-[#E4002B]/10 text-[#E4002B] text-[8px] font-extrabold font-mono px-1.5 py-0.5 rounded uppercase tracking-wider">
+                    {session.role}
+                  </span>
+                </div>
+              </div>
+
+              {/* Active Task Info */}
+              <div className="mt-4 pt-3 border-t border-slate-200/40 space-y-1">
+                <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                  <MapPin className="h-3.5 w-3.5 text-gray-400" />
+                  <span>Lokasi Tugas:</span>
+                </div>
+                <p className="text-[11px] font-bold text-gray-700 font-mono pl-5 truncate">
+                  {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
+                </p>
+              </div>
+            </div>
+
+            {/* Nav Menu Links */}
+            <nav className="px-4 py-2 space-y-1">
+              {renderNavLinks()}
+            </nav>
+          </div>
+
+          {/* Bottom logout and cache clear section */}
+          <div className="p-4 border-t border-gray-100 bg-gray-50/50 space-y-1">
+            <button
+              onClick={handleClearCache}
+              className="w-full py-2.5 px-4 text-left text-xs font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
+            >
+              <Trash2 className="h-4.5 w-4.5 text-red-500" />
+              <span>Hapus Cache</span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="w-full py-2.5 px-4 text-left text-xs font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
+            >
+              <LogOut className="h-4.5 w-4.5" />
+              <span>Keluar Akun</span>
+            </button>
+          </div>
+        </aside>
+      )}
+
+      {/* MOBILE STICKY HEADER (md:hidden) */}
+      {session && (
+        <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-150 z-30 px-4 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMobileSidebarOpen(true)}
+              className="p-2 -ml-2 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-all cursor-pointer"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+
+            {/* Tiny Logo */}
+            <div className="flex items-center gap-2">
+              <div className="bg-[#E4002B] p-1.5 rounded-lg text-white">
+                <Truck className="h-4 w-4" />
+              </div>
+              <span className="text-xs font-black text-gray-800 tracking-tight">
+                J&T OPS PRO
+              </span>
+              <span className="bg-red-50 text-[#E4002B] text-[8px] font-black px-1 rounded uppercase tracking-wider">
+                {session.role}
+              </span>
+            </div>
+          </div>
+
+          {/* Active Location Display on mobile right */}
+          <div className="flex items-center gap-1.5 text-[10px] bg-gray-50 py-1.5 px-2.5 rounded-lg border border-gray-100 max-w-[140px] truncate">
+            <MapPin className="h-3 w-3 text-red-500 shrink-0" />
+            <span className="font-bold text-gray-700 truncate">
+              {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
+            </span>
           </div>
         </header>
       )}
 
-      {/* MOBILE HEADER SUB-NAVBAR (Only visible on screens < md) */}
-      {session && (
-        <div className="md:hidden bg-white border-b border-gray-100 flex overflow-x-auto divide-x divide-gray-100 text-center font-semibold text-[11px] text-gray-600">
-          {session.role !== "OWNER" && (
-            <>
-              <button
-                onClick={() => setCurrentView("pre-input")}
-                className={`flex-1 py-3 px-1.5 flex flex-col items-center gap-1 ${
-                  currentView === "pre-input" ? "text-[#E4002B] bg-red-50/50" : ""
-                }`}
-              >
-                <Clipboard className="h-4 w-4" />
-                <span>Pre-Input</span>
-              </button>
-              
-              <button
-                onClick={() => setCurrentView("transaksi")}
-                className={`flex-1 py-3 px-1.5 flex flex-col items-center gap-1 ${
-                  currentView === "transaksi" ? "text-[#E4002B] bg-red-50/50" : ""
-                }`}
-              >
-                <FileText className="h-4 w-4" />
-                <span>Resi & Bayar</span>
-              </button>
-            </>
-          )}
+      {/* MOBILE DRAWER OVERLAY */}
+      {session && mobileSidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div 
+            onClick={() => setMobileSidebarOpen(false)}
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
+          />
 
-          {session.role !== "ADMIN" && (
-            <>
+          {/* Drawer panel */}
+          <div className="relative flex w-64 max-w-xs flex-col bg-white h-full shadow-2xl animate-in slide-in-from-left duration-200">
+            {/* Header / close */}
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="bg-[#E4002B] p-2 rounded-xl text-white">
+                  <Truck className="h-5 w-5" />
+                </div>
+                <span className="text-sm font-extrabold text-gray-800">
+                  J&T OPS PRO
+                </span>
+              </div>
               <button
-                onClick={() => setCurrentView("dashboard")}
-                className={`flex-1 py-3 px-1.5 flex flex-col items-center gap-1 ${
-                  currentView === "dashboard" ? "text-[#E4002B] bg-red-50/50" : ""
-                }`}
+                onClick={() => setMobileSidebarOpen(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-50 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
               >
-                <Landmark className="h-4 w-4" />
-                <span>Dashboard</span>
+                <X className="h-5 w-5" />
               </button>
+            </div>
 
-              <button
-                onClick={() => setCurrentView("riwayat-transaksi")}
-                className={`flex-1 py-3 px-1.5 flex flex-col items-center gap-1 ${
-                  currentView === "riwayat-transaksi" ? "text-[#E4002B] bg-red-50/50" : ""
-                }`}
-              >
-                <List className="h-4 w-4" />
-                <span>Riwayat</span>
-              </button>
+            {/* User Profile */}
+            <div className="p-4 border-b border-gray-50 bg-slate-50/50 m-3 rounded-xl border border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="bg-[#E4002B]/10 p-2 rounded-lg text-[#E4002B]">
+                  <User className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-800">{session.username}</p>
+                  <span className="bg-gray-150 text-gray-600 text-[8px] font-extrabold font-mono px-1 py-0.5 rounded uppercase tracking-wider">
+                    {session.role}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-3 pt-2.5 border-t border-slate-200/40 text-[10px] text-gray-500">
+                <span className="font-semibold text-gray-400">Lokasi Tugas:</span>
+                <p className="font-bold text-gray-700 font-mono mt-0.5">
+                  {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
+                </p>
+              </div>
+            </div>
 
-              <button
-                onClick={() => setCurrentView("ulasan-maps")}
-                className={`flex-1 py-3 px-1.5 flex flex-col items-center gap-1 ${
-                  currentView === "ulasan-maps" ? "text-[#E4002B] bg-red-50/50" : ""
-                }`}
-              >
-                <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                <span>Ulasan</span>
-              </button>
+            {/* Menu Links */}
+            <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
+              {renderNavLinks(() => setMobileSidebarOpen(false))}
+            </nav>
 
+            {/* Footer / logout and cache clear inside drawer */}
+            <div className="p-4 border-t border-gray-100 bg-gray-50/50 space-y-1">
               <button
-                onClick={() => setCurrentView("guide")}
-                className={`flex-1 py-3 px-1.5 flex flex-col items-center gap-1 ${
-                  currentView === "guide" ? "text-emerald-700 bg-emerald-50/30" : ""
-                }`}
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  handleClearCache();
+                }}
+                className="w-full py-2 px-4 text-left text-xs font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-3 transition-colors cursor-pointer"
               >
-                <BookOpen className="h-4 w-4 text-emerald-600" />
-                <span>Guide</span>
+                <Trash2 className="h-4 w-4 text-red-500" />
+                <span>Hapus Cache</span>
               </button>
-            </>
-          )}
+              <button
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  handleLogout();
+                }}
+                className="w-full py-2 px-4 text-left text-xs font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-3 transition-colors cursor-pointer"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Keluar Akun</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
       {/* BODY CONTENT - CONDITIONALLY RENDER VIEW */}
-      <main className="flex-1 pb-12">
+      <main className={`flex-1 pb-24 ${session ? "md:pl-64 pt-16 md:pt-0" : ""}`}>
         {currentView === "login" && !session && (
           <LoginPage onLoginSuccess={handleLoginSuccess} />
         )}
