@@ -194,6 +194,16 @@ export default function TransaksiPage({
     }
   };
 
+  // Auto-load scanned Resi ID from PreInput scanning
+  useEffect(() => {
+    const scanned = localStorage.getItem("scanned_resi_id");
+    if (scanned) {
+      setResiId(scanned.toUpperCase());
+      handleVerifyResi(scanned);
+      localStorage.removeItem("scanned_resi_id");
+    }
+  }, []);
+
   // Auto rules on DOC selected (Express)
   useEffect(() => {
     if (jenisLayanan === "Express") {

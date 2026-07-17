@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -578,7 +578,8 @@ app.post("/api/saveDataPreInput", (req, res) => {
     berat_kg,
     volume,
     nilai_barang,
-    foto_paket_url
+    foto_paket_url,
+    foto_resi_url
   } = req.body;
 
   if (!nama_pengirim || !hp_pengirim || !alamat_pengirim || !nama_penerima || !hp_penerima || !alamat_penerima || !nama_barang) {
@@ -608,6 +609,7 @@ app.post("/api/saveDataPreInput", (req, res) => {
     volume: volume || "0 x 0 x 0",
     nilai_barang: Number(nilai_barang) || 0,
     foto_paket_url: foto_paket_url || "",
+    foto_resi_url: foto_resi_url || "",
     status: "PENDING" as const
   };
   db.PreInput_Backup.unshift(newPreInput);
@@ -827,6 +829,99 @@ app.post("/api/perbaikiAlamatAI", async (req, res) => {
     }
 
     return res.status(200).json({ status: "error", message: userMsg, data: alamat });
+  }
+});
+
+// 10.5 AI RESI PHOTO ANALYSIS & EXTRACT (GEMINI)
+app.post("/api/analyzeResiPhoto", async (req, res) => {
+  const { fileBase64, fileUrl } = req.body;
+  if (!fileBase64 && !fileUrl) {
+    return res.status(400).json({ status: "error", message: "Foto resi (base64 atau fileUrl) wajib disertakan!" });
+  }
+
+  try {
+    let base64Data = "";
+    let mimeType = "image/jpeg";
+
+    if (fileUrl) {
+      const filename = path.basename(fileUrl);
+      const localFilePath = path.join(uploadsDir, filename);
+      if (fs.existsSync(localFilePath)) {
+        const fileBuffer = fs.readFileSync(localFilePath);
+        base64Data = fileBuffer.toString("base64");
+        if (filename.toLowerCase().endsWith(".png")) mimeType = "image/png";
+        else if (filename.toLowerCase().endsWith(".gif")) mimeType = "image/gif";
+      } else {
+        return res.status(404).json({ status: "error", message: "File resi tidak ditemukan di server" });
+      }
+    } else if (fileBase64) {
+      const matches = fileBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        mimeType = matches[1];
+        base64Data = matches[2];
+      } else {
+        base64Data = fileBase64;
+      }
+    }
+
+    const ai = getGeminiClient();
+    const systemInstruction = 
+      "Kamu adalah 'AI Barcode & Data Paket Extractor'. Tugasmu adalah membaca foto resi fisik/resi kertas pengiriman J&T (Express atau Cargo) " +
+      "dan mengekstrak data dari teks di foto tersebut.\n" +
+      "Tugasmu:\n" +
+      "1. Cari nomor resi J&T (biasanya 12 digit angka, atau diawali JT/JTC/JP/etc. diikuti angka, atau barcode ID). Masukkan ke 'resi_id'. Jika tidak yakin atau tidak ada, kosongkan atau biarkan null.\n" +
+      "2. Ekstrak data Pengirim: nama, nomor HP/telepon, dan alamat lengkap. Masukkan ke 'nama_pengirim', 'hp_pengirim', 'alamat_pengirim'.\n" +
+      "3. Ekstrak data Penerima: nama, nomor HP/telepon, dan alamat lengkap. Masukkan ke 'nama_penerima', 'hp_penerima', 'alamat_penerima'.\n" +
+      "4. Ekstrak nama barang/paket bila tertulis di kertas resi. Masukkan ke 'nama_barang'.\n" +
+      "Perhatikan: Jangan mengada-ada informasi. Jika informasi tertentu tidak ditemukan, kembalikan string kosong atau null.";
+
+    const imagePart = {
+      inlineData: {
+        mimeType,
+        data: base64Data
+      }
+    };
+    const textPart = {
+      text: "Silakan analisis foto resi ini dan ekstrak seluruh data paket & resi_id."
+    };
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: { parts: [imagePart, textPart] },
+      config: {
+        systemInstruction,
+        temperature: 0.1,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            resi_id: { type: Type.STRING },
+            nama_pengirim: { type: Type.STRING },
+            hp_pengirim: { type: Type.STRING },
+            alamat_pengirim: { type: Type.STRING },
+            nama_penerima: { type: Type.STRING },
+            hp_penerima: { type: Type.STRING },
+            alamat_penerima: { type: Type.STRING },
+            nama_barang: { type: Type.STRING }
+          }
+        }
+      }
+    });
+
+    const resultText = response.text?.trim() || "{}";
+    const extractedData = JSON.parse(resultText);
+    return res.json({ status: "success", data: extractedData });
+  } catch (error: any) {
+    console.error("Gemini API Analyze Error:", error);
+    let userMsg = "Gagal memproses analisis foto resi via AI.";
+    if (error.status === 429 || error.message?.includes("RESOURCE_EXHAUSTED") || error.message?.includes("Quota")) {
+      userMsg = "Kuota AI gratis harian sudah tercapai, coba lagi beberapa saat lagi atau isi manual.";
+    } else if (error.message?.includes("API key")) {
+      userMsg = "API Key Gemini belum disetting di workspace. Silakan isi manual.";
+    } else {
+      userMsg = `Terjadi kesalahan AI: ${error.message || "Unknown error"}. Silakan isi manual.`;
+    }
+    return res.status(200).json({ status: "error", message: userMsg });
   }
 });
 

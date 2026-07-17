@@ -56,7 +56,7 @@ export function useAppsScript() {
       } else {
         // Fallback for Vercel (using VITE_APPS_SCRIPT_URL) or Local Vite + Express server
         try {
-          const appsScriptUrl = import.meta.env.VITE_APPS_SCRIPT_URL;
+          const appsScriptUrl = (import.meta as any).env.VITE_APPS_SCRIPT_URL;
 
           if (appsScriptUrl) {
             // External call to Google Apps Script Web App deployed on Vercel

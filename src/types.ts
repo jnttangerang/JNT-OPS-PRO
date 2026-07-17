@@ -53,6 +53,7 @@ export interface PreInputBackup {
   volume: string; // format: "P x L x T"
   nilai_barang: number;
   foto_paket_url: string;
+  foto_resi_url?: string;
   status: "PENDING" | "SELESAI";
 }
 
