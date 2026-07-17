@@ -1,0 +1,346 @@
+{
+  "Users": [
+    {
+      "user_id": "USR-001",
+      "username": "admin1",
+      "password_hash": "hash_admin123",
+      "role": "ADMIN",
+      "outlet_id_home": "OUT-001",
+      "nama_lengkap": "Siti Aminah (Karawaci)",
+      "status_aktif": "AKTIF"
+    },
+    {
+      "user_id": "USR-002",
+      "username": "admin2",
+      "password_hash": "hash_admin123",
+      "role": "ADMIN",
+      "outlet_id_home": "OUT-002",
+      "nama_lengkap": "Budi Santoso (Cikokol)",
+      "status_aktif": "AKTIF"
+    },
+    {
+      "user_id": "USR-003",
+      "username": "owner1",
+      "password_hash": "hash_owner123",
+      "role": "OWNER",
+      "outlet_id_home": "OUT-001",
+      "nama_lengkap": "Hendra Wijaya (Owner)",
+      "status_aktif": "AKTIF"
+    }
+  ],
+  "Outlets": [
+    {
+      "outlet_id": "OUT-001",
+      "nama_outlet": "J&T Express - Tangerang Karawaci",
+      "alamat_outlet": "Jl. Karawaci Raya No.12, Karawaci, Tangerang"
+    },
+    {
+      "outlet_id": "OUT-002",
+      "nama_outlet": "J&T Express - Tangerang Cikokol",
+      "alamat_outlet": "Jl. M.H. Thamrin No.8, Cikokol, Tangerang"
+    },
+    {
+      "outlet_id": "OUT-003",
+      "nama_outlet": "J&T Cargo - Tangerang Balaraja",
+      "alamat_outlet": "Jl. Raya Serang Km 24, Balaraja, Tangerang"
+    }
+  ],
+  "Master_Customer": [
+    {
+      "customer_id": "CST-001",
+      "nama_pengirim": "Andi Wijaya",
+      "no_hp": "081234567890",
+      "alamat_pengirim": "Jl. Imam Bonjol No.45, Karawaci, Tangerang",
+      "outlet_id": "OUT-001",
+      "last_updated": "2026-07-04T12:00:00.000Z"
+    },
+    {
+      "customer_id": "CST-002",
+      "nama_pengirim": "Rina Kartika",
+      "no_hp": "087799887766",
+      "alamat_pengirim": "Perumahan Cikokol Indah Blok B5/10, Cikokol, Tangerang",
+      "outlet_id": "OUT-002",
+      "last_updated": "2026-07-04T13:30:00.000Z"
+    },
+    {
+      "customer_id": "CST-003",
+      "nama_pengirim": "CV Sinar Mandiri",
+      "no_hp": "0215551234",
+      "alamat_pengirim": "Kawasan Industri Balaraja Mas Blok C3, Balaraja, Tangerang",
+      "outlet_id": "OUT-003",
+      "last_updated": "2026-07-04T14:15:00.000Z"
+    }
+  ],
+  "Riwayat_Penerima": [
+    {
+      "id": "REC-001",
+      "customer_id": "CST-001",
+      "nama_penerima": "Dewi Lestari",
+      "no_hp_penerima": "085211223344",
+      "alamat_penerima": "Jl. Sudirman No.99, Kebayoran Baru, Jakarta Selatan",
+      "tanggal_terakhir_kirim": "2026-07-04T12:05:00.000Z"
+    },
+    {
+      "id": "REC-002",
+      "customer_id": "CST-001",
+      "nama_penerima": "Eko Prasetyo",
+      "no_hp_penerima": "081944556677",
+      "alamat_penerima": "Jl. Diponegoro No.12, Menteng, Jakarta Pusat",
+      "tanggal_terakhir_kirim": "2026-07-03T10:00:00.000Z"
+    },
+    {
+      "id": "REC-003",
+      "customer_id": "CST-002",
+      "nama_penerima": "Farhan Siregar",
+      "no_hp_penerima": "081399881122",
+      "alamat_penerima": "Ruko Sentra Niaga Blok F-12, Manyar, Surabaya, Jawa Timur",
+      "tanggal_terakhir_kirim": "2026-07-04T13:35:00.000Z"
+    },
+    {
+      "id": "REC-004",
+      "customer_id": "CST-003",
+      "nama_penerima": "Toko Abadi Jaya",
+      "no_hp_penerima": "081122334455",
+      "alamat_penerima": "Jl. Malioboro No.87, Sosromenduran, Gedong Tengen, Yogyakarta",
+      "tanggal_terakhir_kirim": "2026-07-04T14:20:00.000Z"
+    }
+  ],
+  "PreInput_Backup": [
+    {
+      "transaksi_id": "TRX-1719999001",
+      "timestamp": "2026-07-04T14:00:00.000Z",
+      "admin_id": "USR-001",
+      "outlet_id_tugas": "OUT-001",
+      "nama_pengirim": "Andi Wijaya",
+      "hp_pengirim": "081234567890",
+      "alamat_pengirim": "Jl. Imam Bonjol No.45, Karawaci, Tangerang",
+      "nama_penerima": "Dewi Lestari",
+      "hp_penerima": "085211223344",
+      "alamat_penerima": "Jl. Sudirman No.99, Kebayoran Baru, Jakarta Selatan",
+      "nama_barang": "Dokumen Kontrak Kerja",
+      "berat_kg": 0.5,
+      "volume": "30 x 20 x 1",
+      "nilai_barang": 100000,
+      "foto_paket_url": "/uploads/seed_paket_doc.jpg",
+      "status": "SELESAI",
+      "catatan_admin": ""
+    },
+    {
+      "transaksi_id": "TRX-1719999002",
+      "timestamp": "2026-07-04T15:30:00.000Z",
+      "admin_id": "USR-002",
+      "outlet_id_tugas": "OUT-002",
+      "nama_pengirim": "Rina Kartika",
+      "hp_pengirim": "087799887766",
+      "alamat_pengirim": "Perumahan Cikokol Indah Blok B5/10, Cikokol, Tangerang",
+      "nama_penerima": "Farhan Siregar",
+      "hp_penerima": "081399881122",
+      "alamat_penerima": "Ruko Sentra Niaga Blok F-12, Manyar, Surabaya, Jawa Timur",
+      "nama_barang": "Kosmetik & Skincare",
+      "berat_kg": 2,
+      "volume": "20 x 15 x 10",
+      "nilai_barang": 350000,
+      "foto_paket_url": "/uploads/seed_paket_cosmetic.jpg",
+      "status": "SELESAI",
+      "catatan_admin": ""
+    },
+    {
+      "transaksi_id": "TRX-1719999003",
+      "timestamp": "2026-07-04T16:15:00.000Z",
+      "admin_id": "USR-002",
+      "outlet_id_tugas": "OUT-003",
+      "nama_pengirim": "CV Sinar Mandiri",
+      "hp_pengirim": "0215551234",
+      "alamat_pengirim": "Kawasan Industri Balaraja Mas Blok C3, Balaraja, Tangerang",
+      "nama_penerima": "Toko Abadi Jaya",
+      "hp_penerima": "081122334455",
+      "alamat_penerima": "Jl. Malioboro No.87, Sosromenduran, Gedong Tengen, Yogyakarta",
+      "nama_barang": "Sparepart Mesin Bubut",
+      "berat_kg": 45,
+      "volume": "60 x 50 x 40",
+      "nilai_barang": 2500000,
+      "foto_paket_url": "/uploads/seed_paket_cargo.jpg",
+      "status": "SELESAI",
+      "catatan_admin": ""
+    },
+    {
+      "transaksi_id": "TRX-1719999004",
+      "timestamp": "2026-07-04T18:00:00.000Z",
+      "admin_id": "USR-001",
+      "outlet_id_tugas": "OUT-001",
+      "nama_pengirim": "Andi Wijaya",
+      "hp_pengirim": "081234567890",
+      "alamat_pengirim": "Jl. Imam Bonjol No.45, Karawaci, Tangerang",
+      "nama_penerima": "Eko Prasetyo",
+      "hp_penerima": "081944556677",
+      "alamat_penerima": "Jl. Diponegoro No.12, Menteng, Jakarta Pusat",
+      "nama_barang": "Pakaian Anak-anak",
+      "berat_kg": 1.5,
+      "volume": "25 x 18 x 5",
+      "nilai_barang": 200000,
+      "foto_paket_url": "",
+      "status": "PENDING",
+      "catatan_admin": ""
+    }
+  ],
+  "EXP_Resi": [
+    {
+      "resi_id": "JT12345678901",
+      "transaksi_id": "TRX-1719999001",
+      "timestamp": "2026-07-04T14:10:00.000Z",
+      "admin_id_pencatat": "USR-001",
+      "outlet_id_input": "OUT-001",
+      "tipe_produk": "DOC",
+      "biaya_lain": 1000,
+      "biaya_asuransi": 200,
+      "ongkir_dasar": 11000,
+      "biaya_yoyi": 12200,
+      "total_dibayar_customer": 13000,
+      "pembulatan": 800,
+      "metode_bayar": "Tunai",
+      "bukti_bayar_url": "",
+      "biaya_amplop": 2000,
+      "biaya_packing": 3000,
+      "metode_bayar_tambahan": "Tunai",
+      "bukti_tambahan_url": "",
+      "grand_total": 18000,
+      "setoran_ke_owner": 13000,
+      "kas_operasional": 5000
+    },
+    {
+      "resi_id": "JT12345678902",
+      "transaksi_id": "TRX-1719999002",
+      "timestamp": "2026-07-04T15:45:00.000Z",
+      "admin_id_pencatat": "USR-002",
+      "outlet_id_input": "OUT-002",
+      "tipe_produk": "EZ",
+      "biaya_lain": 0,
+      "biaya_asuransi": 700,
+      "ongkir_dasar": 22000,
+      "biaya_yoyi": 22700,
+      "total_dibayar_customer": 23000,
+      "pembulatan": 300,
+      "metode_bayar": "QRIS",
+      "bukti_bayar_url": "/uploads/bukti_bayar_seed1.jpg",
+      "biaya_amplop": 0,
+      "biaya_packing": 0,
+      "metode_bayar_tambahan": "",
+      "bukti_tambahan_url": "",
+      "grand_total": 23000,
+      "setoran_ke_owner": 23000,
+      "kas_operasional": 0
+    }
+  ],
+  "CRG_Resi": [
+    {
+      "resi_id": "JTC98765432101",
+      "transaksi_id": "TRX-1719999003",
+      "timestamp": "2026-07-04T16:30:00.000Z",
+      "admin_id_pencatat": "USR-002",
+      "outlet_id_input": "OUT-003",
+      "tipe_produk": "FastTrack",
+      "biaya_asuransi": 5000,
+      "ongkir_dasar": 180000,
+      "biaya_jtc": 185000,
+      "total_dibayar_customer": 185000,
+      "pembulatan": 0,
+      "metode_bayar": "Transfer",
+      "bukti_bayar_url": "/uploads/bukti_bayar_seed2.jpg",
+      "biaya_amplop": 0,
+      "biaya_packing": 15000,
+      "metode_bayar_tambahan": "Tunai",
+      "bukti_tambahan_url": "",
+      "grand_total": 200000,
+      "setoran_ke_owner": 185000,
+      "kas_operasional": 15000
+    }
+  ],
+  "AuditLogs": [
+    {
+      "log_id": "LOG-001",
+      "timestamp": "2026-07-04T12:00:00.000Z",
+      "user_id": "USR-001",
+      "aksi": "LOGIN",
+      "detail": "Admin 'Siti Aminah' berhasil login.",
+      "outlet_id": "OUT-001"
+    },
+    {
+      "log_id": "LOG-002",
+      "timestamp": "2026-07-04T14:02:00.000Z",
+      "user_id": "USR-001",
+      "aksi": "PREINPUT_SIMPAN",
+      "detail": "Menyimpan data awal pre-input untuk pengirim 'Andi Wijaya' ke penerima 'Dewi Lestari' (TRX-1719999001)",
+      "outlet_id": "OUT-001"
+    },
+    {
+      "log_id": "LOG-003",
+      "timestamp": "2026-07-04T14:12:00.000Z",
+      "user_id": "USR-001",
+      "aksi": "TRANSAKSI_SIMPAN",
+      "detail": "Menyimpan resi Express 'JT12345678901' (DOC) untuk TRX-1719999001. Grand Total: Rp 18.000",
+      "outlet_id": "OUT-001"
+    },
+    {
+      "log_id": "LOG-004",
+      "timestamp": "2026-07-04T15:47:00.000Z",
+      "user_id": "USR-002",
+      "aksi": "TRANSAKSI_SIMPAN",
+      "detail": "Menyimpan resi Express 'JT12345678902' (EZ) untuk TRX-1719999002. Grand Total: Rp 23.000",
+      "outlet_id": "OUT-002"
+    },
+    {
+      "log_id": "LOG-005",
+      "timestamp": "2026-07-04T16:32:00.000Z",
+      "user_id": "USR-002",
+      "aksi": "TRANSAKSI_SIMPAN",
+      "detail": "Menyimpan resi Cargo 'JTC98765432101' (FastTrack) untuk TRX-1719999003. Grand Total: Rp 200.000",
+      "outlet_id": "OUT-003"
+    }
+  ],
+  "MapsReviews": [
+    {
+      "id": "REV-101",
+      "outlet_id": "TGR044B",
+      "nama_outlet": "J&T Cargo Balaraja (TGR044B)",
+      "reviewer": "Ahmad Subarjo",
+      "stars": 5,
+      "text": "Pelayanan sangat baik dan cepat. Kirim motor pake J&T Cargo Balaraja aman tanpa lecet, harganya juga terjangkau. Recommended!",
+      "timestamp": "2026-07-05T09:12:00.000Z",
+      "status_analisis": "BELUM_DIANALISIS",
+      "analisis": null
+    },
+    {
+      "id": "REV-102",
+      "outlet_id": "JYT-CRG",
+      "nama_outlet": "J&T Cargo Jayanti Cikande",
+      "reviewer": "Indah Permata",
+      "stars": 1,
+      "text": "Paket kargo saya kenapa belum sampai rumah ya? Padahal di tracking sudah 3 hari di wilayah Cikande. Kurirnya malas antar kah?",
+      "timestamp": "2026-07-05T14:20:00.000Z",
+      "status_analisis": "BELUM_DIANALISIS",
+      "analisis": null
+    },
+    {
+      "id": "REV-103",
+      "outlet_id": "BLR-EXP",
+      "nama_outlet": "J&T Express Balaraja (MDP Pasir Jaha)",
+      "reviewer": "Yogi Pratama",
+      "stars": 1,
+      "text": "",
+      "timestamp": "2026-07-06T02:05:00.000Z",
+      "status_analisis": "BELUM_DIANALISIS",
+      "analisis": null
+    },
+    {
+      "id": "REV-104",
+      "outlet_id": "JYT-EXP",
+      "nama_outlet": "J&T Express Jayanti Cikande (MDP)",
+      "reviewer": "Supriadi",
+      "stars": 5,
+      "text": "Admin ramah dan cepat proses paketnya. Sangat terbantu kirim dokumen ke luar kota.",
+      "timestamp": "2026-07-06T05:30:00.000Z",
+      "status_analisis": "BELUM_DIANALISIS",
+      "analisis": null
+    }
+  ]
+}
