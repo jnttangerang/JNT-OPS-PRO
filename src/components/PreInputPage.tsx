@@ -310,7 +310,7 @@ export default function PreInputPage({
             const responseAnalyze = await fetch("/api/analyzeResiPhoto", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ fileUrl: uploadedUrl })
+              body: JSON.stringify({ fileUrl: uploadedUrl, fileBase64: base64Str })
             });
 
             const jsonAnalyze = await responseAnalyze.json();

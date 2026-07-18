@@ -13,15 +13,17 @@ const PORT = 3000;
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+const isVercel = !!process.env.VERCEL;
+
 // Directory for uploads
-const uploadsDir = path.join(process.cwd(), "uploads");
+const uploadsDir = isVercel ? path.join("/tmp", "uploads") : path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 app.use("/uploads", express.static(uploadsDir));
 
 // Database file path
-const dbPath = path.join(process.cwd(), "db.json");
+const dbPath = isVercel ? path.join("/tmp", "db.json") : path.join(process.cwd(), "db.json");
 
 // System instruction for Gemini Pakar Alamat J&T
 const GEM_ALAMAT_SYSTEM_INSTRUCTION = 
@@ -843,7 +845,15 @@ app.post("/api/analyzeResiPhoto", async (req, res) => {
     let base64Data = "";
     let mimeType = "image/jpeg";
 
-    if (fileUrl) {
+    if (fileBase64) {
+      const matches = fileBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        mimeType = matches[1];
+        base64Data = matches[2];
+      } else {
+        base64Data = fileBase64;
+      }
+    } else if (fileUrl) {
       const filename = path.basename(fileUrl);
       const localFilePath = path.join(uploadsDir, filename);
       if (fs.existsSync(localFilePath)) {
@@ -853,14 +863,6 @@ app.post("/api/analyzeResiPhoto", async (req, res) => {
         else if (filename.toLowerCase().endsWith(".gif")) mimeType = "image/gif";
       } else {
         return res.status(404).json({ status: "error", message: "File resi tidak ditemukan di server" });
-      }
-    } else if (fileBase64) {
-      const matches = fileBase64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        mimeType = matches[1];
-        base64Data = matches[2];
-      } else {
-        base64Data = fileBase64;
       }
     }
 
@@ -1580,9 +1582,13 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server J&T OPS PRO running on http://localhost:${PORT}`);
-  });
+  if (!isVercel) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server J&T OPS PRO running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
+
+export default app;
