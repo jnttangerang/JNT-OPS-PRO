@@ -527,8 +527,8 @@ function apiPerbaikiAlamatAI(params) {
   }
   
   // Endpoint Gemini API 2.5/3.5
-  // Kita gunakan model gratis gemini-2.5-flash atau gemini-1.5-flash
-  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + apiKey;
+  // Kita gunakan model gratis gemini-3.5-flash
+  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + apiKey;
   
   var payload = {
     contents: [{

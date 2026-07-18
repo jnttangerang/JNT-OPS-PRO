@@ -943,130 +943,68 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
                 />
               </div>
 
-              {/* TWO-STEP CAMERA PHOTO CAPTURE */}
+              {/* CAMERA PHOTO CAPTURE */}
               <div className="space-y-3">
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Pengambilan Foto Bukti Paket & Resi (Hanya Kamera Langsung)
+                  Pengambilan Foto Bukti Paket (Hanya Kamera Langsung)
                 </label>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* 1. Foto Paket */}
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/60 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        1. Foto Fisik Paket
-                      </span>
-                      {fotoPaketUrl && (
-                        <span className="px-2 py-0.5 bg-green-100 text-green-800 text-[10px] font-bold rounded-full">
-                          Selesai
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-gray-500 leading-normal">
-                      Ambil foto seluruh permukaan fisik paket sebagai bukti pendukung.
-                    </p>
-                    
-                    <button
-                      type="button"
-                      onClick={() => cameraPaketInputRef.current?.click()}
-                      disabled={uploadingFotoPaket || analyzingResi}
-                      className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 disabled:bg-gray-100 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-2 transition duration-150 cursor-pointer shadow-sm"
-                    >
-                      <Camera className="h-4 w-4 text-[#E4002B]" />
-                      <span>{uploadingFotoPaket ? "Mengunggah..." : "Ambil Foto Paket"}</span>
-                    </button>
-
-                    <input
-                      type="file"
-                      ref={cameraPaketInputRef}
-                      onChange={handlePaketFileChange}
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                    />
-
-                    {uploadingFotoPaket && (
-                      <div className="flex items-center gap-2 justify-center text-[11px] text-gray-500 py-1">
-                        <RefreshCw className="h-3 w-3 animate-spin text-[#E4002B]" />
-                        <span>Mengunggah foto paket...</span>
-                      </div>
-                    )}
-
+                {/* Foto Paket */}
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/60 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Foto Fisik Paket
+                    </span>
                     {fotoPaketUrl && (
-                      <div className="p-1.5 bg-white border border-slate-200 rounded-lg flex items-center gap-2.5">
-                        <img
-                          src={fotoPaketUrl}
-                          alt="Preview paket"
-                          className="h-10 w-10 object-cover rounded border border-gray-200 shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="overflow-hidden">
-                          <p className="text-[11px] font-bold text-slate-800">Foto Tersimpan</p>
-                          <p className="text-[9px] text-gray-500 truncate">{fotoPaketUrl}</p>
-                        </div>
-                      </div>
+                      <span className="px-2 py-0.5 bg-green-100 text-green-800 text-[10px] font-bold rounded-full">
+                        Selesai
+                      </span>
                     )}
                   </div>
+                  <p className="text-[11px] text-gray-500 leading-normal">
+                    Ambil foto seluruh permukaan fisik paket sebagai bukti pendukung.
+                  </p>
+                  
+                  <button
+                    type="button"
+                    onClick={() => cameraPaketInputRef.current?.click()}
+                    disabled={uploadingFotoPaket}
+                    className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 disabled:bg-gray-100 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-2 transition duration-150 cursor-pointer shadow-sm"
+                  >
+                    <Camera className="h-4 w-4 text-[#E4002B]" />
+                    <span>{uploadingFotoPaket ? "Mengunggah..." : "Ambil Foto Paket"}</span>
+                  </button>
 
-                  {/* 2. Foto Resi */}
-                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200/60 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        2. Foto Kertas Resi
-                      </span>
-                      {fotoResiUrl && (
-                        <span className="px-2 py-0.5 bg-green-100 text-green-800 text-[10px] font-bold rounded-full">
-                          Selesai
-                        </span>
-                      )}
+                  <input
+                    type="file"
+                    ref={cameraPaketInputRef}
+                    onChange={handlePaketFileChange}
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                  />
+
+                  {uploadingFotoPaket && (
+                    <div className="flex items-center gap-2 justify-center text-[11px] text-gray-500 py-1">
+                      <RefreshCw className="h-3 w-3 animate-spin text-[#E4002B]" />
+                      <span>Mengunggah foto paket...</span>
                     </div>
-                    <p className="text-[11px] text-gray-500 leading-normal">
-                      Gunakan kamera untuk mendeteksi resi J&T dan auto-fill data paket (Pengirim & Penerima).
-                    </p>
-                    
-                    <button
-                      type="button"
-                      onClick={() => cameraResiInputRef.current?.click()}
-                      disabled={uploadingFotoResi || analyzingResi}
-                      className="w-full py-2.5 px-3 bg-white hover:bg-slate-50 disabled:bg-gray-100 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-2 transition duration-150 cursor-pointer shadow-sm"
-                    >
-                      <Camera className="h-4 w-4 text-orange-600" />
-                      <span>
-                        {analyzingResi ? "AI Mendeteksi & Ekstrak..." : uploadingFotoResi ? "Mengunggah..." : "Ambil Foto Resi (Scan AI)"}
-                      </span>
-                    </button>
+                  )}
 
-                    <input
-                      type="file"
-                      ref={cameraResiInputRef}
-                      onChange={handleResiFileChange}
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                    />
-
-                    {(uploadingFotoResi || analyzingResi) && (
-                      <div className="flex items-center gap-2 justify-center text-[11px] text-gray-500 py-1">
-                        <RefreshCw className="h-3 w-3 animate-spin text-orange-500" />
-                        <span>{analyzingResi ? "Menghubungkan ke Gemini AI..." : "Mengunggah foto resi..."}</span>
+                  {fotoPaketUrl && (
+                    <div className="p-1.5 bg-white border border-slate-200 rounded-lg flex items-center gap-2.5">
+                      <img
+                        src={fotoPaketUrl}
+                        alt="Preview paket"
+                        className="h-10 w-10 object-cover rounded border border-gray-200 shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="overflow-hidden">
+                        <p className="text-[11px] font-bold text-slate-800">Foto Tersimpan</p>
+                        <p className="text-[9px] text-gray-500 truncate">{fotoPaketUrl}</p>
                       </div>
-                    )}
-
-                    {fotoResiUrl && (
-                      <div className="p-1.5 bg-white border border-slate-200 rounded-lg flex items-center gap-2.5">
-                        <img
-                          src={fotoResiUrl}
-                          alt="Preview resi"
-                          className="h-10 w-10 object-cover rounded border border-gray-200 shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="overflow-hidden">
-                          <p className="text-[11px] font-bold text-orange-800">Resi Tersimpan & Diekstrak</p>
-                          <p className="text-[9px] text-gray-500 truncate">{fotoResiUrl}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1074,7 +1012,7 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
             {/* BUTTON SAVE */}
             <button
               onClick={handleSavePreInput}
-              disabled={loading || uploadingFotoPaket || uploadingFotoResi || analyzingResi}
+              disabled={loading || uploadingFotoPaket}
               className="w-full py-4 bg-[#E4002B] hover:bg-[#c20023] disabled:bg-gray-400 text-white font-bold rounded-xl shadow-lg shadow-red-500/10 flex items-center justify-center gap-2 transition duration-150 cursor-pointer text-sm"
             >
               {loading ? (

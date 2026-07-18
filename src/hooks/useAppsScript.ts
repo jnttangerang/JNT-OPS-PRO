@@ -24,12 +24,16 @@ export function useAppsScript() {
     async <T = any>(action: string, params: any = {}): Promise<T> => {
       setLoading(true);
 
+      // Certain actions should always run locally to utilize the updated node/Express server (e.g. Gemini 3.5 AI endpoints)
+      const isLocalAction = action === "perbaikiAlamatAI" || action === "analyzeResiPhoto";
+
       // Check if we are running in the Google Sheets Apps Script environment
       const isGoogleScript =
         typeof window !== "undefined" &&
         window.google &&
         window.google.script &&
-        window.google.script.run;
+        window.google.script.run &&
+        !isLocalAction;
 
       if (isGoogleScript) {
         return new Promise<T>((resolve, reject) => {
@@ -56,7 +60,7 @@ export function useAppsScript() {
       } else {
         // Fallback for Vercel (using VITE_APPS_SCRIPT_URL) or Local Vite + Express server
         try {
-          const appsScriptUrl = (import.meta as any).env.VITE_APPS_SCRIPT_URL;
+          const appsScriptUrl = !isLocalAction ? (import.meta as any).env.VITE_APPS_SCRIPT_URL : null;
 
           if (appsScriptUrl) {
             // External call to Google Apps Script Web App deployed on Vercel
