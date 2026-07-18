@@ -126,7 +126,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
         </div>
         <h2 className="text-xl font-bold text-gray-800">Akses Terbatas (OWNER Only)</h2>
         <p className="text-xs text-gray-500 mt-2 leading-relaxed">
-          Maaf, halaman ini berisi laporan finansial rahasia, audit log, dan analisis omset harian. Halaman ini hanya dapat diakses oleh akun dengan role <code className="bg-gray-100 px-1 font-mono text-amber-700">OWNER</code>.
+          Maaf, halaman ini berisi laporan finansial rahasia, audit log, dan analisis omset harian. Halaman ini hanya dapat diakses oleh akun <code className="bg-gray-100 px-1 font-mono text-amber-700">OWNER</code>.
         </p>
         <button
           onClick={() => onNavigate && onNavigate("pre-input")}
@@ -165,7 +165,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
               Dashboard Analisis Finansial
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
-              Pantau total omset outlet, verifikasi setoran loket, audit log aktivitas admin, dan seed database.
+              Pantau total omset outlet, verifikasi setoran outlet, audit log aktivitas admin, dan seed database.
             </p>
           </div>
 
@@ -177,7 +177,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
               className="py-2 px-3 bg-gray-900 hover:bg-gray-800 disabled:bg-gray-400 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1.5 cursor-pointer transition duration-150"
             >
               <Database className={`h-4 w-4 ${seeding ? "animate-spin text-amber-400" : ""}`} />
-              <span>{seeding ? "Menyemai..." : "🌱 Seed Database"}</span>
+              <span>{seeding ? "Menyemai..." : "Synced Database"}</span>
             </button>
             
             <button

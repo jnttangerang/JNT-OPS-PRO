@@ -758,7 +758,7 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
                     ) : (
                       <>
                         <Sparkles className="h-3 w-3 text-amber-500 fill-amber-500" />
-                        <span>✨ Perbaiki Alamat via AI</span>
+                        <span>AI Pakar Alamat</span>
                       </>
                     )}
                   </button>
@@ -795,7 +795,7 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
                             Rekomendasi Alamat Rapih J&T AI
                           </p>
                           <p className="text-[10px] text-gray-500">
-                            Struktur alamat telah dianalisis dan dirapikan otomatis oleh asisten kecerdasan buatan.
+                            Struktur alamat telah dianalisis dan dirapikan otomatis oleh AI Asisten.
                           </p>
                         </div>
                       </div>
@@ -910,7 +910,7 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
               {/* Nilai Barang (Asuransi) */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                  Nilai Barang (Harga Rp) - Opsional
+                  Nilai Barang (Harga Rp)
                 </label>
                 <div className="relative">
                   <div className="absolute left-3 inset-y-0 flex items-center text-gray-400 text-xs font-bold">
@@ -1023,7 +1023,7 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
               ) : (
                 <>
                   <Save className="h-5 w-5" />
-                  <span>Simpan Data & Buat Layar Kliring</span>
+                  <span>Simpan Data</span>
                 </>
               )}
             </button>
