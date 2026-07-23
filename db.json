@@ -32,17 +32,23 @@
     {
       "outlet_id": "OUT-001",
       "nama_outlet": "J&T Express - Tangerang Karawaci",
-      "alamat_outlet": "Jl. Karawaci Raya No.12, Karawaci, Tangerang"
+      "alamat_outlet": "Jl. Karawaci Raya No.12, Karawaci, Tangerang",
+      "target_resi_harian": 50,
+      "target_resi_bulanan": 1500
     },
     {
       "outlet_id": "OUT-002",
       "nama_outlet": "J&T Express - Tangerang Cikokol",
-      "alamat_outlet": "Jl. M.H. Thamrin No.8, Cikokol, Tangerang"
+      "alamat_outlet": "Jl. M.H. Thamrin No.8, Cikokol, Tangerang",
+      "target_resi_harian": 50,
+      "target_resi_bulanan": 1500
     },
     {
       "outlet_id": "OUT-003",
       "nama_outlet": "J&T Cargo - Tangerang Balaraja",
-      "alamat_outlet": "Jl. Raya Serang Km 24, Balaraja, Tangerang"
+      "alamat_outlet": "Jl. Raya Serang Km 24, Balaraja, Tangerang",
+      "target_resi_harian": 50,
+      "target_resi_bulanan": 1500
     }
   ],
   "Master_Customer": [
@@ -342,5 +348,6 @@
       "status_analisis": "BELUM_DIANALISIS",
       "analisis": null
     }
-  ]
+  ],
+  "SetoranData": []
 }

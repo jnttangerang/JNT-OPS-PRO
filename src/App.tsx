@@ -7,8 +7,11 @@ import LoginPage from "./components/LoginPage";
 import PreInputPage from "./components/PreInputPage";
 import TransaksiPage from "./components/TransaksiPage";
 import DashboardPage from "./components/DashboardPage";
+import AdminDashboardPage from "./components/admin/AdminDashboardPage";
+import { LayoutDashboard, Settings } from "lucide-react";
 import RiwayatTransaksiPage from "./components/RiwayatTransaksiPage";
 import UlasanMapsPage from "./components/UlasanMapsPage";
+import SettingOutletPage from "./components/owner/SettingOutletPage";
 import ToastContainer from "./components/ToastContainer";
 import { SessionData, Outlet } from "./types";
 import { toast } from "./utils/toast";
@@ -40,7 +43,7 @@ export default function App() {
         const parsed = JSON.parse(savedSession) as SessionData;
         setSession(parsed);
         setActiveOutletId(parsed.outlet_id_home);
-        setCurrentView(parsed.role === "OWNER" ? "dashboard" : "pre-input");
+        setCurrentView(parsed.role.toUpperCase() === "OWNER" ? "dashboard" : parsed.role.toUpperCase() === "ADMIN" ? "admin-dashboard" : "pre-input");
       } catch (e) {
         localStorage.removeItem("jnt_session");
       }
@@ -76,7 +79,7 @@ export default function App() {
     setSession(userSession);
     setActiveOutletId(userSession.outlet_id_home);
     localStorage.setItem("jnt_session", JSON.stringify(userSession));
-    setCurrentView(userSession.role === "OWNER" ? "dashboard" : "pre-input");
+    setCurrentView(userSession.role.toUpperCase() === "OWNER" ? "dashboard" : userSession.role.toUpperCase() === "ADMIN" ? "admin-dashboard" : "pre-input");
   };
 
   const handleLogout = () => {
@@ -111,13 +114,14 @@ export default function App() {
 
   const navItems: Array<{ id: string; label: string; icon: React.ComponentType<any>; iconColor?: string }> = [];
   if (session) {
-    if (session.role !== "OWNER") {
+    if (session.role === "ADMIN") {
       navItems.push(
+        { id: "admin-dashboard", label: "Dashboard", icon: Landmark },
         { id: "pre-input", label: "Pre-Input", icon: Clipboard },
-        { id: "transaksi", label: "Resi & Bayar", icon: FileText }
+        { id: "transaksi", label: "Resi & Bayar", icon: FileText },
+        { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List }
       );
-    }
-    if (session.role !== "ADMIN") {
+    } else if (session.role === "OWNER") {
       navItems.push(
         { id: "dashboard", label: "Dashboard", icon: Landmark },
         { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
@@ -373,11 +377,22 @@ export default function App() {
             outlets={outlets}
           />
         )}
+        
+        {session && currentView === "admin-dashboard" && (
+          <AdminDashboardPage
+            session={session}
+            activeOutletId={activeOutletId}
+            outlets={outlets}
+            onNavigate={setCurrentView}
+            onChangeActiveOutlet={handleActiveOutletChange}
+          />
+        )}
 
         {session && currentView === "riwayat-transaksi" && (
           <RiwayatTransaksiPage
             session={session}
             outlets={outlets}
+            activeOutletId={activeOutletId}
           />
         )}
 
@@ -445,7 +460,7 @@ export default function App() {
           J&T OPS PRO © 2026. Dikembangkan untuk efisiensi operasional J&T Express & J&T Cargo.
         </div>
         <div className="mt-1 font-bold">
-          Sistem Deteksi Duplikasi & Pakar Alamat AI Aktif.
+          Sistem Operasional & Pakar Alamat AI Aktif.
         </div>
 
       </footer>

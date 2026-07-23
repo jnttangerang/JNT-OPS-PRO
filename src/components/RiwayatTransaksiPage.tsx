@@ -7,6 +7,7 @@ import { toast } from "../utils/toast";
 interface RiwayatTransaksiPageProps {
   session: SessionData;
   outlets: Outlet[];
+  activeOutletId?: string;
 }
 
 interface TransaksiItem {
@@ -22,12 +23,18 @@ interface TransaksiItem {
   status_resi: string;
 }
 
-export default function RiwayatTransaksiPage({ session, outlets }: RiwayatTransaksiPageProps) {
+export default function RiwayatTransaksiPage({ session, outlets, activeOutletId }: RiwayatTransaksiPageProps) {
   const { callBackend } = useAppsScript();
   const [data, setData] = useState<TransaksiItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterOutlet, setFilterOutlet] = useState<string>("ALL");
+  const [filterOutlet, setFilterOutlet] = useState<string>(session.role === "OWNER" ? "ALL" : (activeOutletId || session.outlet_id_home));
   const [searchTerm, setSearchTerm] = useState("");
+  useEffect(() => {
+    if (session.role !== "OWNER" && activeOutletId) {
+      setFilterOutlet(activeOutletId);
+    }
+  }, [activeOutletId, session.role]);
+
 
   const fetchData = async () => {
     setLoading(true);

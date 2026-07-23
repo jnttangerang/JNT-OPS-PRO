@@ -14,6 +14,8 @@ export interface Outlet {
   outlet_id: string;
   nama_outlet: string;
   alamat_outlet: string;
+  target_resi_harian?: number;
+  target_resi_bulanan?: number;
 }
 
 export interface MasterCustomer {
@@ -146,6 +148,10 @@ export interface DashboardData {
       transaksi: number;
     }>;
   }>;
+  target_harian?: {
+    target: number;
+    current: number;
+  };
 }
 
 export interface SessionData {

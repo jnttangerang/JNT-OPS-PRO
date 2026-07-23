@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   Lock, TrendingUp, DollarSign, Wallet, RefreshCw, Calendar, 
-  MapPin, Database, ListCollapse, Search, Eye, ExternalLink, HelpCircle, Download
+  MapPin, Database, ListCollapse, Search, Eye, ExternalLink, HelpCircle, Download, Target
 } from "lucide-react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -23,7 +23,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
   const isOwner = session.role === "OWNER";
 
   // Filter States
-  const [selectedOutletFilter, setSelectedOutletFilter] = useState("ALL");
+  const [selectedOutletFilter, setSelectedOutletFilter] = useState(outlets.length > 0 ? outlets[0].outlet_id : "");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 15); // Default 15 days back
@@ -165,7 +165,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
               Dashboard Analisis Finansial
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
-              Pantau total omset outlet, verifikasi setoran outlet, audit log aktivitas admin, dan seed database.
+              Pantau total omset outlet, verifikasi setoran outlet, audit log aktivitas admin, dan Synced database.
             </p>
           </div>
 
@@ -177,7 +177,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
               className="py-2 px-3 bg-gray-900 hover:bg-gray-800 disabled:bg-gray-400 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1.5 cursor-pointer transition duration-150"
             >
               <Database className={`h-4 w-4 ${seeding ? "animate-spin text-amber-400" : ""}`} />
-              <span>{seeding ? "Menyemai..." : "Synced Database"}</span>
+              <span>{seeding ? "Loading..." : "Synced Database"}</span>
             </button>
             
             <button
@@ -215,7 +215,6 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
               onChange={(e) => setSelectedOutletFilter(e.target.value)}
               className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
             >
-              <option value="ALL">Semua Outlet (Gabungan)</option>
               {outlets.map((o) => (
                 <option key={o.outlet_id} value={o.outlet_id}>
                   {o.nama_outlet}
@@ -273,7 +272,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
           </div>
           <div>
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
-              Total Omset Penjualan
+              Total Transaksi
             </span>
             <p className="text-xl font-extrabold text-gray-800 font-mono mt-0.5">
               Rp {dashboardData?.summary?.total_omset?.toLocaleString("id-ID") || "0"}
@@ -294,7 +293,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
           </div>
           <div>
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
-              Setoran Loket Wajib (Owner)
+              Setoran Outlet Wajib (Owner)
             </span>
             <p className="text-xl font-extrabold text-blue-800 font-mono mt-0.5">
               Rp {dashboardData?.summary?.total_setoran_owner?.toLocaleString("id-ID") || "0"}
@@ -315,7 +314,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
           </div>
           <div>
             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
-              Kas Operasional (Loket)
+              Kas Operasional (Outlet)
             </span>
             <p className="text-xl font-extrabold text-green-800 font-mono mt-0.5">
               Rp {dashboardData?.summary?.total_kas_operasional?.toLocaleString("id-ID") || "0"}
@@ -330,6 +329,43 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
         </div>
 
       </div>
+
+      {/* DAILY TARGET PROGRESS */}
+      {dashboardData?.target_harian && (
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                <Target className="h-4 w-4" />
+              </div>
+              <h3 className="text-sm font-bold text-gray-800">Target Harian (Hari Ini)</h3>
+            </div>
+            <span className="text-xs font-semibold text-gray-500">
+              {dashboardData.target_harian.current} / {dashboardData.target_harian.target} Transaksi
+            </span>
+          </div>
+          
+          <div className="w-full bg-gray-100 rounded-full h-3.5 mb-1.5 overflow-hidden border border-gray-200">
+            <div 
+              className={`h-3.5 rounded-full transition-all duration-700 ease-out ${
+                (dashboardData.target_harian.current / dashboardData.target_harian.target) >= 1 
+                  ? "bg-emerald-500" 
+                  : "bg-indigo-500"
+              }`}
+              style={{ 
+                width: `${Math.min(100, Math.max(0, (dashboardData.target_harian.current / dashboardData.target_harian.target) * 100))}%` 
+              }}
+            ></div>
+          </div>
+          <div className="flex justify-between text-[10px] font-mono text-gray-400">
+            <span>0%</span>
+            <span>
+              {Math.round((dashboardData.target_harian.current / dashboardData.target_harian.target) * 100)}% Tercapai
+            </span>
+            <span>100%</span>
+          </div>
+        </div>
+      )}
 
       {/* 4. ANALYTICAL CHARTS SECTION (GRID) */}
       {dashboardData && dashboardData.chart_data && (

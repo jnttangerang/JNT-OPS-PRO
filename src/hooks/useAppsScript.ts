@@ -25,7 +25,7 @@ export function useAppsScript() {
       setLoading(true);
 
       // Certain actions should always run locally to utilize the updated node/Express server (e.g. Gemini 3.5 AI endpoints)
-      const isLocalAction = action === "perbaikiAlamatAI" || action === "analyzeResiPhoto";
+      const isLocalAction = action === "perbaikiAlamatAI" || action === "analyzeResiPhoto" || action === "getAdminDashboardData";
 
       // Check if we are running in the Google Sheets Apps Script environment
       const isGoogleScript =

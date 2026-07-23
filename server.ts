@@ -418,8 +418,16 @@ function readDb() {
   try {
     const data = fs.readFileSync(dbPath, "utf-8");
     const parsed = JSON.parse(data);
+    let updated = false;
     if (!parsed.MapsReviews) {
       parsed.MapsReviews = defaultReviews;
+      updated = true;
+    }
+    if (!parsed.SetoranData) {
+      parsed.SetoranData = [];
+      updated = true;
+    }
+    if (updated) {
       fs.writeFileSync(dbPath, JSON.stringify(parsed, null, 2));
     }
     return parsed;
@@ -489,6 +497,31 @@ app.post("/api/login", (req, res) => {
 });
 
 // 2. GET OUTLETS API
+
+app.post("/api/updateSettingsOutlet", (req, res) => {
+  const { user_id, outlets } = req.body;
+  const db = readDb();
+  
+  const user = db.Users.find((u: any) => u.user_id === user_id);
+  if (!user || user.role !== "OWNER") {
+    return res.status(403).json({ status: "error", message: "Akses ditolak" });
+  }
+
+  if (Array.isArray(outlets)) {
+    outlets.forEach(newOutlet => {
+      const idx = db.Outlets.findIndex((o: any) => o.outlet_id === newOutlet.outlet_id);
+      if (idx !== -1) {
+        db.Outlets[idx].target_resi_harian = newOutlet.target_resi_harian;
+        db.Outlets[idx].target_resi_bulanan = newOutlet.target_resi_bulanan;
+      }
+    });
+    writeDb(db);
+    return res.json({ status: "success", message: "Pengaturan berhasil disimpan" });
+  }
+
+  return res.status(400).json({ status: "error", message: "Data tidak valid" });
+});
+
 app.get("/api/getOutlets", (req, res) => {
   const db = readDb();
   res.json({ status: "success", data: db.Outlets });
@@ -977,6 +1010,247 @@ app.post("/api/initDatabaseSheets", (req, res) => {
   }
 });
 
+
+// 12.5 GET ADMIN DASHBOARD DATA
+
+// --- DASHBOARD HELPERS ---
+function getCombinedTransactions(db: any) {
+  const combined: any[] = [];
+  db.EXP_Resi.forEach((r: any) => {
+    if (r.status !== "BATAL") {
+      combined.push({
+        ...r,
+        tipe_layanan: "Express",
+        pengirim: db.PreInput_Backup?.find((p: any) => p.transaksi_id === r.transaksi_id)?.nama_pengirim || "Umum",
+        penerima: db.PreInput_Backup?.find((p: any) => p.transaksi_id === r.transaksi_id)?.nama_penerima || "Umum",
+      });
+    }
+  });
+  db.CRG_Resi.forEach((r: any) => {
+    if (r.status !== "BATAL") {
+      combined.push({
+        ...r,
+        tipe_layanan: "Cargo",
+        pengirim: db.PreInput_Backup?.find((p: any) => p.transaksi_id === r.transaksi_id)?.nama_pengirim || "Umum",
+        penerima: db.PreInput_Backup?.find((p: any) => p.transaksi_id === r.transaksi_id)?.nama_penerima || "Umum",
+      });
+    }
+  });
+  return combined;
+}
+
+function filterTransactions(combined: any[], filterOutlet: string, dateStart?: string, dateEnd?: string, filterTipeLayanan?: string) {
+  let filtered = combined;
+  if (filterOutlet && filterOutlet !== "ALL") {
+    filtered = filtered.filter((r: any) => r.outlet_id_input === filterOutlet);
+  }
+  if (filterTipeLayanan && filterTipeLayanan !== "ALL") {
+    filtered = filtered.filter((r: any) => r.tipe_layanan === filterTipeLayanan);
+  }
+  if (dateStart) {
+    const start = new Date(dateStart).getTime();
+    filtered = filtered.filter((r: any) => new Date(r.timestamp).getTime() >= start);
+  }
+  if (dateEnd) {
+    const end = new Date(dateEnd).getTime() + 86400000;
+    filtered = filtered.filter((r: any) => new Date(r.timestamp).getTime() <= end);
+  }
+  return filtered;
+}
+
+function calculateDashboardSummary(filtered: any[]) {
+  const totalTransaksi = filtered.length;
+  const totalResiExpress = filtered.filter((r: any) => r.tipe_layanan === "Express").length;
+  const totalResiCargo = filtered.filter((r: any) => r.tipe_layanan === "Cargo").length;
+  const totalOmsetGlobal = filtered.reduce((sum: number, r: any) => sum + (r.grand_total || 0), 0);
+  const totalSetoranOwner = filtered.reduce((sum: number, r: any) => sum + (r.setoran_ke_owner || 0), 0);
+  const totalKasOperasional = filtered.reduce((sum: number, r: any) => sum + (r.kas_operasional || 0), 0);
+  
+  return {
+    totalTransaksi,
+    totalResiExpress,
+    totalResiCargo,
+    grandTotalCustomer: totalOmsetGlobal,
+    total_omset: totalOmsetGlobal,
+    totalWajibSetorOwner: totalSetoranOwner,
+    total_setoran_owner: totalSetoranOwner,
+    totalKasOutlet: totalKasOperasional,
+    total_kas_operasional: totalKasOperasional
+  };
+}
+
+function calculateByAdmin(filtered: any[], users: any[]) {
+  const adminMap: Record<string, any> = {};
+  filtered.forEach((r: any) => {
+    const admin = r.admin_id_pencatat;
+    if (!adminMap[admin]) {
+      const user = users.find((u: any) => u.user_id === admin);
+      adminMap[admin] = {
+        admin_id: admin,
+        nama: user ? user.nama_lengkap : admin,
+        express: 0,
+        cargo: 0,
+        totalResi: 0,
+        totalSetoranOwner: 0,
+        kasOutlet: 0
+      };
+    }
+    if (r.tipe_layanan === "Express") adminMap[admin].express++;
+    if (r.tipe_layanan === "Cargo") adminMap[admin].cargo++;
+    adminMap[admin].totalResi++;
+    adminMap[admin].totalSetoranOwner += r.setoran_ke_owner || 0;
+    adminMap[admin].kasOutlet += r.kas_operasional || 0;
+  });
+  return Object.values(adminMap).sort((a: any, b: any) => b.totalResi - a.totalResi);
+}
+
+function calculateByEkspedisi(filtered: any[]) {
+  const totalResiExpress = filtered.filter((r: any) => r.tipe_layanan === "Express").length;
+  const totalResiCargo = filtered.filter((r: any) => r.tipe_layanan === "Cargo").length;
+  return {
+    Express: {
+      resi: totalResiExpress,
+      omset: filtered.filter((r: any) => r.tipe_layanan === "Express").reduce((sum: number, r: any) => sum + (r.grand_total || 0), 0),
+      setoran: filtered.filter((r: any) => r.tipe_layanan === "Express").reduce((sum: number, r: any) => sum + (r.setoran_ke_owner || 0), 0),
+    },
+    Cargo: {
+      resi: totalResiCargo,
+      omset: filtered.filter((r: any) => r.tipe_layanan === "Cargo").reduce((sum: number, r: any) => sum + (r.grand_total || 0), 0),
+      setoran: filtered.filter((r: any) => r.tipe_layanan === "Cargo").reduce((sum: number, r: any) => sum + (r.setoran_ke_owner || 0), 0),
+    }
+  };
+}
+
+function calculateGrafik(combined: any[], filterOutlet: string) {
+  const last7Days: any[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0];
+    let dayTotalResi = 0;
+    let daySetoran = 0;
+    combined.forEach((r: any) => {
+      if (r.timestamp.startsWith(dateStr) && (!filterOutlet || filterOutlet === "ALL" || r.outlet_id_input === filterOutlet)) {
+        dayTotalResi++;
+        daySetoran += r.setoran_ke_owner || 0;
+      }
+    });
+    last7Days.push({
+      date: dateStr,
+      resi: dayTotalResi,
+      setoran: daySetoran
+    });
+  }
+  return last7Days;
+}
+
+function calculateStatusSetoran(filtered: any[], dbSetoranData: any[], filterOutlet: string) {
+  const setoranMap: Record<string, any> = {};
+  filtered.forEach((r: any) => {
+    const dateStr = r.timestamp.split("T")[0];
+    if (!setoranMap[dateStr]) {
+      const existing = (dbSetoranData || []).find((s:any) => s.date === dateStr && (!filterOutlet || filterOutlet === "ALL" || s.outlet_id === r.outlet_id_input || s.outlet_id === filterOutlet));
+      setoranMap[dateStr] = {
+        date: dateStr,
+        total_setoran: 0,
+        status: existing ? existing.status : "Belum Disetor",
+        transaksi: []
+      };
+    }
+    setoranMap[dateStr].total_setoran += r.setoran_ke_owner || 0;
+    setoranMap[dateStr].transaksi.push(r.resi_id);
+  });
+  return Object.values(setoranMap).sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+function calculateTargetHarian(combined: any[], filterOutlet: string, outlets: any[]) {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const currentResiToday = combined.filter((r:any) => r.timestamp.startsWith(todayStr) && (!filterOutlet || filterOutlet === "ALL" || r.outlet_id_input === filterOutlet)).length;
+  
+  let targetTotal = 0;
+  if (filterOutlet && filterOutlet !== "ALL") {
+    const outlet = outlets.find((o: any) => o.outlet_id === filterOutlet);
+    targetTotal = outlet?.target_resi_harian || 50;
+  } else {
+    targetTotal = outlets.reduce((sum: number, o: any) => sum + (o.target_resi_harian || 50), 0);
+  }
+
+  return {
+    target: targetTotal,
+    current: currentResiToday
+  };
+}
+// --- END DASHBOARD HELPERS ---
+
+app.post("/api/getAdminDashboardData", (req, res) => {
+  const { user_id, role, filterOutlet, dateStart, dateEnd } = req.body;
+
+  if (role !== "ADMIN" && role !== "OWNER") {
+    return res.status(403).json({ status: "error", message: "Akses ditolak." });
+  }
+
+  const db = readDb();
+  const combined = getCombinedTransactions(db);
+  const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd);
+
+  const summary = calculateDashboardSummary(filtered);
+  const byAdmin = calculateByAdmin(filtered, db.Users);
+  const byEkspedisi = calculateByEkspedisi(filtered);
+  const grafik = calculateGrafik(combined, filterOutlet);
+  const statusSetoranList = calculateStatusSetoran(filtered, db.SetoranData || [], filterOutlet);
+  const targetHarian = calculateTargetHarian(combined, filterOutlet, db.Outlets);
+
+  // Aktivitas Terakhir (Audit Logs)
+  let logs = db.AuditLogs;
+  if (filterOutlet && filterOutlet !== "ALL") {
+    logs = logs.filter((log: any) => log.outlet_id === filterOutlet);
+  }
+  if (dateStart) {
+    const start = new Date(dateStart).getTime();
+    logs = logs.filter((log: any) => new Date(log.timestamp).getTime() >= start);
+  }
+  if (dateEnd) {
+    const end = new Date(dateEnd).getTime() + 86400000;
+    logs = logs.filter((log: any) => new Date(log.timestamp).getTime() <= end);
+  }
+  
+  const userMap: Record<string, string> = {};
+  db.Users.forEach((u: any) => userMap[u.user_id] = u.nama_lengkap);
+  const aktivitasLogs = logs.slice(0, 50).map((log: any) => ({
+    ...log,
+    nama_lengkap: userMap[log.user_id] || "Sistem"
+  }));
+
+  // Riwayat Pembatalan
+  const cancelLogs = db.AuditLogs.filter((l: any) => l.aksi === "BATAL_TRANSAKSI" && l.outlet_id === filterOutlet);
+  const pembatalanLogs = cancelLogs.map((l:any) => ({
+    ...l,
+    nama_lengkap: userMap[l.user_id] || "Sistem"
+  }));
+
+  // Alert Operasional
+  const alerts: string[] = [];
+  if (statusSetoranList.some((s:any) => s.status === "Belum Disetor" && s.total_setoran > 0)) {
+    alerts.push("Belum setor owner");
+  }
+
+  return res.json({
+    status: "success",
+    data: {
+      summary,
+      byAdmin,
+      byEkspedisi,
+      statusSetoranList,
+      aktivitasLogs,
+      grafik,
+      pembatalanLogs,
+      alerts,
+      targetHarian,
+      recentTransactions: filtered.sort((a:any, b:any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 10)
+    }
+  });
+});
+
 // 12. GET DASHBOARD DATA (OWNER EXCLUSIVE)
 app.post("/api/getDashboardData", (req, res) => {
   const { user_id, role, filterOutlet, filterTipeLayanan, dateStart, dateEnd } = req.body;
@@ -986,57 +1260,11 @@ app.post("/api/getDashboardData", (req, res) => {
   }
 
   const db = readDb();
-
-  // Combine Express & Cargo
-  let combined: any[] = [];
-
-  db.EXP_Resi.forEach((r: any) => {
-    if (r.status !== "BATAL") {
-      combined.push({
-        ...r,
-        tipe_layanan: "Express",
-        pengirim: db.PreInput_Backup.find((p: any) => p.transaksi_id === r.transaksi_id)?.nama_pengirim || "Umum",
-        penerima: db.PreInput_Backup.find((p: any) => p.transaksi_id === r.transaksi_id)?.nama_penerima || "Umum",
-      });
-    }
-  });
-
-  db.CRG_Resi.forEach((r: any) => {
-    if (r.status !== "BATAL") {
-      combined.push({
-        ...r,
-        tipe_layanan: "Cargo",
-        pengirim: db.PreInput_Backup.find((p: any) => p.transaksi_id === r.transaksi_id)?.nama_pengirim || "Umum",
-        penerima: db.PreInput_Backup.find((p: any) => p.transaksi_id === r.transaksi_id)?.nama_penerima || "Umum",
-      });
-    }
-  });
-
-  // Apply filters
-  let filtered = combined;
-
-  if (filterOutlet && filterOutlet !== "ALL") {
-    filtered = filtered.filter((r: any) => r.outlet_id_input === filterOutlet);
-  }
-
-  if (filterTipeLayanan && filterTipeLayanan !== "ALL") {
-    filtered = filtered.filter((r: any) => r.tipe_layanan === filterTipeLayanan);
-  }
-
-  if (dateStart) {
-    const start = new Date(dateStart).getTime();
-    filtered = filtered.filter((r: any) => new Date(r.timestamp).getTime() >= start);
-  }
-
-  if (dateEnd) {
-    const end = new Date(dateEnd).getTime() + 86400000; // end of that day
-    filtered = filtered.filter((r: any) => new Date(r.timestamp).getTime() <= end);
-  }
-
-  // Summary statistics
-  const totalOmsetGlobal = filtered.reduce((sum: number, r: any) => sum + (r.grand_total || 0), 0);
-  const totalSetoranOwner = filtered.reduce((sum: number, r: any) => sum + (r.setoran_ke_owner || 0), 0);
-  const totalKasOperasional = filtered.reduce((sum: number, r: any) => sum + (r.kas_operasional || 0), 0);
+  const combined = getCombinedTransactions(db);
+  const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd, filterTipeLayanan);
+  
+  const summary = calculateDashboardSummary(filtered);
+  const target_harian = calculateTargetHarian(combined, filterOutlet, db.Outlets);
 
   // Per-outlet stats (for charts)
   const outletOmsetMap: { [key: string]: { nama: string; omset: number; setoran: number; kas: number; count: number } } = {};
@@ -1070,11 +1298,6 @@ app.post("/api/getDashboardData", (req, res) => {
     }
   });
 
-  const outletPerformance = Object.keys(outletOmsetMap).map((key) => ({
-    outlet_id: key,
-    ...outletOmsetMap[key]
-  }));
-
   // Daily transaction trends (past 7 days or matching date range)
   const dailyMap: { [key: string]: { date: string; Express: number; Cargo: number; total: number } } = {};
   filtered.forEach((r: any) => {
@@ -1087,7 +1310,7 @@ app.post("/api/getDashboardData", (req, res) => {
     dailyMap[dateStr].total += r.grand_total || 0;
   });
 
-  const dailyTrend = Object.keys(dailyMap)
+  const daily_trends = Object.keys(dailyMap)
     .sort()
     .map((key) => dailyMap[key]);
 
@@ -1111,7 +1334,7 @@ app.post("/api/getDashboardData", (req, res) => {
     userMap[u.user_id] = u.nama_lengkap;
   });
 
-  const auditLogsWithNames = filteredLogs.slice(0, 50).map((log: any) => ({
+  const audit_logs = filteredLogs.slice(0, 50).map((log: any) => ({
     ...log,
     nama_lengkap: userMap[log.user_id] || "Sistem"
   }));
@@ -1139,26 +1362,30 @@ app.post("/api/getDashboardData", (req, res) => {
     monthlyMap[monthStr].outletsMap[outId].transaksi += 1;
   });
   
-  const monthlyReports = Object.values(monthlyMap).map(m => ({
+  const monthly_reports = Object.values(monthlyMap).map(m => ({
     month: m.month,
     total_omset: m.total_omset,
-    outlets: Object.values(m.outletsMap).sort((a, b) => b.omset - a.omset)
-  })).sort((a, b) => b.month.localeCompare(a.month)); // Sort descending by month
+    outlets: Object.values(m.outletsMap).sort((a:any, b:any) => b.omset - a.omset)
+  })).sort((a, b) => b.month.localeCompare(a.month));
+
+  const paymentMap: Record<string, number> = {};
+  filtered.forEach((r: any) => {
+    const metode = r.metode_bayar || "Lainnya";
+    paymentMap[metode] = (paymentMap[metode] || 0) + (r.grand_total || 0);
+  });
+  const payment_shares = Object.keys(paymentMap).map(k => ({ name: k, value: paymentMap[k] }));
 
   return res.json({
     status: "success",
     data: {
-      stats: {
-        totalOmsetGlobal,
-        totalSetoranOwner,
-        totalKasOperasional,
-        totalTransaksi: filtered.length
+      summary,
+      chart_data: {
+        daily_trends,
+        payment_shares
       },
-      outletPerformance,
-      dailyTrend,
-      auditLogs: auditLogsWithNames,
-      recentTransactions: filtered.slice(0, 10),
-      monthly_reports: monthlyReports
+      audit_logs,
+      monthly_reports,
+      target_harian
     }
   });
 });
