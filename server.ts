@@ -1183,72 +1183,87 @@ function calculateTargetHarian(combined: any[], filterOutlet: string, outlets: a
 // --- END DASHBOARD HELPERS ---
 
 app.post("/api/getAdminDashboardData", (req, res) => {
-  const { user_id, role, filterOutlet, dateStart, dateEnd } = req.body;
+  try {
+    const { user_id, role, filterOutlet, dateStart, dateEnd } = req.body;
 
-  if (role !== "ADMIN" && role !== "OWNER") {
-    return res.status(403).json({ status: "error", message: "Akses ditolak." });
-  }
-
-  const db = readDb();
-  const combined = getCombinedTransactions(db);
-  const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd);
-
-  const summary = calculateDashboardSummary(filtered);
-  const byAdmin = calculateByAdmin(filtered, db.Users);
-  const byEkspedisi = calculateByEkspedisi(filtered);
-  const grafik = calculateGrafik(combined, filterOutlet);
-  const statusSetoranList = calculateStatusSetoran(filtered, db.SetoranData || [], filterOutlet);
-  const targetHarian = calculateTargetHarian(combined, filterOutlet, db.Outlets);
-
-  // Aktivitas Terakhir (Audit Logs)
-  let logs = db.AuditLogs;
-  if (filterOutlet && filterOutlet !== "ALL") {
-    logs = logs.filter((log: any) => log.outlet_id === filterOutlet);
-  }
-  if (dateStart) {
-    const start = new Date(dateStart).getTime();
-    logs = logs.filter((log: any) => new Date(log.timestamp).getTime() >= start);
-  }
-  if (dateEnd) {
-    const end = new Date(dateEnd).getTime() + 86400000;
-    logs = logs.filter((log: any) => new Date(log.timestamp).getTime() <= end);
-  }
-  
-  const userMap: Record<string, string> = {};
-  db.Users.forEach((u: any) => userMap[u.user_id] = u.nama_lengkap);
-  const aktivitasLogs = logs.slice(0, 50).map((log: any) => ({
-    ...log,
-    nama_lengkap: userMap[log.user_id] || "Sistem"
-  }));
-
-  // Riwayat Pembatalan
-  const cancelLogs = db.AuditLogs.filter((l: any) => l.aksi === "BATAL_TRANSAKSI" && l.outlet_id === filterOutlet);
-  const pembatalanLogs = cancelLogs.map((l:any) => ({
-    ...l,
-    nama_lengkap: userMap[l.user_id] || "Sistem"
-  }));
-
-  // Alert Operasional
-  const alerts: string[] = [];
-  if (statusSetoranList.some((s:any) => s.status === "Belum Disetor" && s.total_setoran > 0)) {
-    alerts.push("Belum setor owner");
-  }
-
-  return res.json({
-    status: "success",
-    data: {
-      summary,
-      byAdmin,
-      byEkspedisi,
-      statusSetoranList,
-      aktivitasLogs,
-      grafik,
-      pembatalanLogs,
-      alerts,
-      targetHarian,
-      recentTransactions: filtered.sort((a:any, b:any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 10)
+    if (role !== "ADMIN" && role !== "OWNER") {
+      return res.status(403).json({ status: "error", message: "Akses ditolak." });
     }
-  });
+
+    const db = readDb();
+    
+    // Safely fallback undefined arrays to empty arrays to prevent crashes on Vercel old db.json cache
+    db.EXP_Resi = db.EXP_Resi || [];
+    db.CRG_Resi = db.CRG_Resi || [];
+    db.PreInput_Backup = db.PreInput_Backup || [];
+    db.Users = db.Users || [];
+    db.Outlets = db.Outlets || [];
+    db.AuditLogs = db.AuditLogs || [];
+    db.SetoranData = db.SetoranData || [];
+
+    const combined = getCombinedTransactions(db);
+    const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd);
+
+    const summary = calculateDashboardSummary(filtered);
+    const byAdmin = calculateByAdmin(filtered, db.Users);
+    const byEkspedisi = calculateByEkspedisi(filtered);
+    const grafik = calculateGrafik(combined, filterOutlet);
+    const statusSetoranList = calculateStatusSetoran(filtered, db.SetoranData, filterOutlet);
+    const targetHarian = calculateTargetHarian(combined, filterOutlet, db.Outlets);
+
+    // Aktivitas Terakhir (Audit Logs)
+    let logs = db.AuditLogs;
+    if (filterOutlet && filterOutlet !== "ALL") {
+      logs = logs.filter((log: any) => log.outlet_id === filterOutlet);
+    }
+    if (dateStart) {
+      const start = new Date(dateStart).getTime();
+      logs = logs.filter((log: any) => log.timestamp && new Date(log.timestamp).getTime() >= start);
+    }
+    if (dateEnd) {
+      const end = new Date(dateEnd).getTime() + 86400000;
+      logs = logs.filter((log: any) => log.timestamp && new Date(log.timestamp).getTime() <= end);
+    }
+    
+    const userMap: Record<string, string> = {};
+    db.Users.forEach((u: any) => userMap[u.user_id] = u.nama_lengkap);
+    const aktivitasLogs = logs.slice(0, 50).map((log: any) => ({
+      ...log,
+      nama_lengkap: userMap[log.user_id] || "Sistem"
+    }));
+
+    // Riwayat Pembatalan
+    const cancelLogs = db.AuditLogs.filter((l: any) => l.aksi === "BATAL_TRANSAKSI" && (filterOutlet === "ALL" || !filterOutlet || l.outlet_id === filterOutlet));
+    const pembatalanLogs = cancelLogs.map((l:any) => ({
+      ...l,
+      nama_lengkap: userMap[l.user_id] || "Sistem"
+    }));
+
+    // Alert Operasional
+    const alerts: string[] = [];
+    if (statusSetoranList.some((s:any) => s.status === "Belum Disetor" && s.total_setoran > 0)) {
+      alerts.push("Belum setor owner");
+    }
+
+    return res.json({
+      status: "success",
+      data: {
+        summary,
+        byAdmin,
+        byEkspedisi,
+        statusSetoranList,
+        aktivitasLogs,
+        grafik,
+        pembatalanLogs,
+        alerts,
+        targetHarian,
+        recentTransactions: filtered.sort((a:any, b:any) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()).slice(0, 10)
+      }
+    });
+  } catch (error: any) {
+    console.error("CRASH in getAdminDashboardData:", error);
+    return res.status(500).json({ status: "error", message: "Runtime crash: " + error.message, stack: error.stack });
+  }
 });
 
 // 12. GET DASHBOARD DATA (OWNER EXCLUSIVE)
