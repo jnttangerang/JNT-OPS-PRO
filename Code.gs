@@ -87,6 +87,18 @@ function handleRouting(action, params) {
       return apiGetRiwayatTransaksi(params);
     case "deleteTransaksi":
       return apiDeleteTransaksi(params);
+    case "updateOutletTarget":
+      return apiUpdateOutletTarget(params);
+    case "getMapsReviews":
+      return apiGetMapsReviews(params);
+    case "saveMapsReview":
+      return apiSaveMapsReview(params);
+    case "getStatusSetoran":
+      return apiGetStatusSetoran(params);
+    case "saveSetoran":
+      return apiSaveSetoran(params);
+    case "testSchemaIntegrity":
+      return testSchemaIntegrity();
     default:
       return { status: "error", message: "Aksi tidak dikenali: " + action };
   }
@@ -100,6 +112,22 @@ function execAction(action, params) {
 }
 
 // ==========================================
+
+// ==========================================
+// HELPER DYNAMIC SCHEMA
+// ==========================================
+
+function getColIndex_(sheet, headerName) {
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  return headers.indexOf(headerName); // 0-based
+}
+
+function rowToObject_(headers, row) {
+  var obj = {};
+  headers.forEach(function (h, i) { obj[h] = row[i]; });
+  return obj;
+}
+
 // API HANDLERS & BUSINESS LOGIC
 // ==========================================
 
@@ -116,25 +144,25 @@ function apiLogin(params) {
   
   var sheet = getSheetByName("Users");
   var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
   
   // Hash password pencocokan
   var passwordHash = simulateSha256(password);
   
   for (var i = 1; i < rows.length; i++) {
-    var row = rows[i];
-    // user_id | username | password_hash | role | outlet_id_home | nama_lengkap | status_aktif
-    if (row[1].toString().toLowerCase() === username.toLowerCase()) {
-      if (row[2].toString() === passwordHash) {
-        if (row[6].toString() !== "AKTIF") {
+    var userObj = rowToObject_(headers, rows[i]);
+    if (userObj.username.toString().toLowerCase() === username.toLowerCase()) {
+      if (userObj.password_hash.toString() === passwordHash) {
+        if (userObj.status_aktif.toString() !== "AKTIF") {
           return { status: "error", message: "Akun Anda berstatus NON-AKTIF!" };
         }
         
         var userData = {
-          user_id: row[0].toString(),
-          username: row[1].toString(),
-          role: row[3].toString(),
-          outlet_id_home: row[4].toString(),
-          nama_lengkap: row[5].toString()
+          user_id: userObj.user_id.toString(),
+          username: userObj.username.toString(),
+          role: userObj.role.toString(),
+          outlet_id_home: userObj.outlet_id_home.toString(),
+          nama_lengkap: userObj.nama_lengkap.toString()
         };
         
         // Log audit
@@ -154,13 +182,17 @@ function apiLogin(params) {
 function apiGetOutlets() {
   var sheet = getSheetByName("Outlets");
   var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
   var outlets = [];
   
   for (var i = 1; i < rows.length; i++) {
+    var obj = rowToObject_(headers, rows[i]);
     outlets.push({
-      outlet_id: rows[i][0].toString(),
-      nama_outlet: rows[i][1].toString(),
-      alamat_outlet: rows[i][2].toString()
+      outlet_id: obj.outlet_id.toString(),
+      nama_outlet: obj.nama_outlet.toString(),
+      alamat_outlet: obj.alamat_outlet.toString(),
+      target_resi_harian: Number(obj.target_resi_harian) || 0,
+      target_resi_bulanan: Number(obj.target_resi_bulanan) || 0
     });
   }
   return { status: "success", data: outlets };
@@ -177,21 +209,21 @@ function apiSearchCustomer(params) {
   
   var sheet = getSheetByName("Master_Customer");
   var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
   var results = [];
   
   for (var i = 1; i < rows.length; i++) {
-    var row = rows[i];
-    // customer_id | nama_pengirim | no_hp | alamat_pengirim | outlet_id | last_updated
-    var name = row[1].toString();
-    var phone = row[2].toString();
+    var obj = rowToObject_(headers, rows[i]);
+    var name = obj.nama_pengirim.toString();
+    var phone = obj.no_hp.toString();
     
     if (name.toLowerCase().indexOf(query) !== -1 || phone.indexOf(query) !== -1) {
       results.push({
-        customer_id: row[0].toString(),
+        customer_id: obj.customer_id.toString(),
         nama_pengirim: name,
         no_hp: phone,
-        alamat_pengirim: row[3].toString(),
-        outlet_id: row[4].toString()
+        alamat_pengirim: obj.alamat_pengirim.toString(),
+        outlet_id: obj.outlet_id.toString()
       });
     }
   }
@@ -209,19 +241,19 @@ function apiGetRiwayatPenerima(params) {
   
   var sheet = getSheetByName("Riwayat_Penerima");
   var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
   var results = [];
   
   for (var i = 1; i < rows.length; i++) {
-    var row = rows[i];
-    // id | customer_id | nama_penerima | no_hp_penerima | alamat_penerima | tanggal_terakhir_kirim
-    if (row[1].toString() === customerId) {
+    var obj = rowToObject_(headers, rows[i]);
+    if (obj.customer_id.toString() === customerId) {
       results.push({
-        id: row[0].toString(),
-        customer_id: row[1].toString(),
-        nama_penerima: row[2].toString(),
-        no_hp_penerima: row[3].toString(),
-        alamat_penerima: row[4].toString(),
-        tanggal_terakhir_kirim: row[5].toString()
+        id: obj.id.toString(),
+        customer_id: obj.customer_id.toString(),
+        nama_penerima: obj.nama_penerima.toString(),
+        no_hp_penerima: obj.no_hp_penerima.toString(),
+        alamat_penerima: obj.alamat_penerima.toString(),
+        tanggal_terakhir_kirim: obj.tanggal_terakhir_kirim.toString()
       });
     }
   }
@@ -245,30 +277,31 @@ function apiGetPreInput(params) {
   
   var sheet = getSheetByName("PreInput_Backup");
   var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
   
   for (var i = 1; i < rows.length; i++) {
-    var row = rows[i];
-    if (row[0].toString() === txId) {
+    var obj = rowToObject_(headers, rows[i]);
+    if (obj.transaksi_id.toString() === txId) {
       return {
         status: "success",
         data: {
-          transaksi_id: row[0].toString(),
-          timestamp: row[1].toString(),
-          admin_id: row[2].toString(),
-          outlet_id_tugas: row[3].toString(),
-          nama_pengirim: row[4].toString(),
-          hp_pengirim: row[5].toString(),
-          alamat_pengirim: row[6].toString(),
-          nama_penerima: row[7].toString(),
-          hp_penerima: row[8].toString(),
-          alamat_penerima: row[9].toString(),
-          nama_barang: row[10].toString(),
-          berat_kg: Number(row[11]) || 0,
-          volume: row[12].toString(),
-          nilai_barang: Number(row[13]) || 0,
-          foto_paket_url: row[14].toString(),
-          status: row[15].toString(),
-          catatan_admin: row[16] ? row[16].toString() : ""
+          transaksi_id: obj.transaksi_id.toString(),
+          timestamp: obj.timestamp.toString(),
+          admin_id: obj.admin_id.toString(),
+          outlet_id_tugas: obj.outlet_id_tugas.toString(),
+          nama_pengirim: obj.nama_pengirim.toString(),
+          hp_pengirim: obj.hp_pengirim.toString(),
+          alamat_pengirim: obj.alamat_pengirim.toString(),
+          nama_penerima: obj.nama_penerima.toString(),
+          hp_penerima: obj.hp_penerima.toString(),
+          alamat_penerima: obj.alamat_penerima.toString(),
+          nama_barang: obj.nama_barang.toString(),
+          berat_kg: Number(obj.berat_kg) || 0,
+          volume: obj.volume.toString(),
+          nilai_barang: Number(obj.nilai_barang) || 0,
+          foto_paket_url: obj.foto_paket_url.toString(),
+          status: obj.status.toString(),
+          catatan_admin: obj.catatan_admin ? obj.catatan_admin.toString() : ""
         }
       };
     }
@@ -288,16 +321,20 @@ function apiCheckDuplicateResi(params) {
   
   var sheetExp = getSheetByName("EXP_Resi");
   var rowsExp = sheetExp.getDataRange().getValues();
+  var headersExp = rowsExp[0];
   for (var i = 1; i < rowsExp.length; i++) {
-    if (rowsExp[i][0].toString().toUpperCase() === resiId) {
+    var objE = rowToObject_(headersExp, rowsExp[i]);
+    if (objE.resi_id.toString().toUpperCase() === resiId) {
       return { status: "success", isDuplicate: true };
     }
   }
   
   var sheetCrg = getSheetByName("CRG_Resi");
   var rowsCrg = sheetCrg.getDataRange().getValues();
+  var headersCrg = rowsCrg[0];
   for (var j = 1; j < rowsCrg.length; j++) {
-    if (rowsCrg[j][0].toString().toUpperCase() === resiId) {
+    var objC = rowToObject_(headersCrg, rowsCrg[j]);
+    if (objC.resi_id.toString().toUpperCase() === resiId) {
       return { status: "success", isDuplicate: true };
     }
   }
@@ -314,97 +351,84 @@ function apiSaveDataPreInput(params) {
   var nowStr = now.toISOString();
   
   var sheetBackup = getSheetByName("PreInput_Backup");
-  // transaksi_id | timestamp | admin_id | outlet_id_tugas | nama_pengirim | hp_pengirim | alamat_pengirim | nama_penerima | hp_penerima | alamat_penerima | nama_barang | berat_kg | volume | nilai_barang | foto_paket_url | status | catatan_admin
-  sheetBackup.appendRow([
-    txId,
-    nowStr,
-    params.admin_id,
-    params.outlet_id_tugas,
-    params.nama_pengirim,
-    params.hp_pengirim,
-    params.alamat_pengirim,
-    params.nama_penerima,
-    params.hp_penerima,
-    params.alamat_penerima,
-    params.nama_barang,
-    params.berat_kg,
-    params.volume,
-    params.nilai_barang,
-    params.foto_paket_url || "",
-    "PENDING",
-    params.catatan_admin || ""
-  ]);
+  var inputObj = {
+    transaksi_id: txId,
+    timestamp: nowStr,
+    admin_id: params.admin_id,
+    outlet_id_tugas: params.outlet_id_tugas,
+    nama_pengirim: params.nama_pengirim,
+    hp_pengirim: params.hp_pengirim,
+    alamat_pengirim: params.alamat_pengirim,
+    nama_penerima: params.nama_penerima,
+    hp_penerima: params.hp_penerima,
+    alamat_penerima: params.alamat_penerima,
+    nama_barang: params.nama_barang,
+    berat_kg: params.berat_kg,
+    volume: params.volume,
+    nilai_barang: params.nilai_barang,
+    foto_paket_url: params.foto_paket_url || "",
+    status: "PENDING",
+    catatan_admin: params.catatan_admin || ""
+  };
+  
+  var rowData = DB_SCHEMA.PreInput_Backup.map(function(col) { return inputObj[col] !== undefined ? inputObj[col] : ""; });
+  sheetBackup.appendRow(rowData);
   
   // Cari / Update Master_Customer
   var sheetCst = getSheetByName("Master_Customer");
   var rowsCst = sheetCst.getDataRange().getValues();
-  var cstId = "CST-" + new Date().getTime().toString().slice(-5);
-  var foundCstRow = -1;
+  var headersCst = rowsCst[0];
+  var foundCst = false;
+  var customerId = "";
   
-  for (var i = 1; i < rowsCst.length; i++) {
-    if (rowsCst[i][2].toString() === params.hp_pengirim) {
-      foundCstRow = i + 1; // 1-based index including header
-      cstId = rowsCst[i][0].toString();
+  for (var c = 1; c < rowsCst.length; c++) {
+    var cObj = rowToObject_(headersCst, rowsCst[c]);
+    if (cObj.no_hp.toString() === params.hp_pengirim) {
+      customerId = cObj.customer_id.toString();
+      foundCst = true;
+      sheetCst.getRange(c + 1, getColIndex_(sheetCst, "nama_pengirim") + 1).setValue(params.nama_pengirim);
+      sheetCst.getRange(c + 1, getColIndex_(sheetCst, "alamat_pengirim") + 1).setValue(params.alamat_pengirim);
+      sheetCst.getRange(c + 1, getColIndex_(sheetCst, "last_updated") + 1).setValue(nowStr);
       break;
     }
   }
   
-  if (foundCstRow !== -1) {
-    sheetCst.getRange(foundCstRow, 2).setValue(params.nama_pengirim);
-    sheetCst.getRange(foundCstRow, 4).setValue(params.alamat_pengirim);
-    sheetCst.getRange(foundCstRow, 5).setValue(params.outlet_id_tugas);
-    sheetCst.getRange(foundCstRow, 6).setValue(nowStr);
-  } else {
-    sheetCst.appendRow([
-      cstId,
-      params.nama_pengirim,
-      params.hp_pengirim,
-      params.alamat_pengirim,
-      params.outlet_id_tugas,
-      nowStr
-    ]);
+  if (!foundCst) {
+    customerId = "CST-" + new Date().getTime();
+    var cstObj = {
+      customer_id: customerId,
+      nama_pengirim: params.nama_pengirim,
+      no_hp: params.hp_pengirim,
+      alamat_pengirim: params.alamat_pengirim,
+      outlet_id: params.outlet_id_tugas,
+      last_updated: nowStr
+    };
+    var cstRow = DB_SCHEMA.Master_Customer.map(function(col) { return cstObj[col] !== undefined ? cstObj[col] : ""; });
+    sheetCst.appendRow(cstRow);
   }
   
-  // Cari / Update Riwayat_Penerima
-  var sheetRec = getSheetByName("Riwayat_Penerima");
-  var rowsRec = sheetRec.getDataRange().getValues();
-  var recId = "REC-" + new Date().getTime().toString().slice(-5) + Math.floor(Math.random() * 10);
-  var foundRecRow = -1;
+  // Simpan Riwayat Penerima
+  var sheetRcv = getSheetByName("Riwayat_Penerima");
+  var rcvObj = {
+    id: "RCV-" + new Date().getTime(),
+    customer_id: customerId,
+    nama_penerima: params.nama_penerima,
+    no_hp_penerima: params.hp_penerima,
+    alamat_penerima: params.alamat_penerima,
+    tanggal_terakhir_kirim: nowStr
+  };
+  var rcvRow = DB_SCHEMA.Riwayat_Penerima.map(function(col) { return rcvObj[col] !== undefined ? rcvObj[col] : ""; });
+  sheetRcv.appendRow(rcvRow);
   
-  for (var j = 1; j < rowsRec.length; j++) {
-    if (rowsRec[j][1].toString() === cstId && rowsRec[j][3].toString() === params.hp_penerima) {
-      foundRecRow = j + 1;
-      break;
-    }
-  }
-  
-  if (foundRecRow !== -1) {
-    sheetRec.getRange(foundRecRow, 3).setValue(params.nama_penerima);
-    sheetRec.getRange(foundRecRow, 5).setValue(params.alamat_penerima);
-    sheetRec.getRange(foundRecRow, 6).setValue(nowStr);
-  } else {
-    sheetRec.appendRow([
-      recId,
-      cstId,
-      params.nama_penerima,
-      params.hp_penerima,
-      params.alamat_penerima,
-      nowStr
-    ]);
-  }
-  
-  // Tulis Log Audit
-  writeAuditLog(
-    params.admin_id, 
-    "PREINPUT_SIMPAN", 
-    "Mencatat pre-input '" + params.nama_pengirim + "' ke '" + params.nama_penerima + "' (" + txId + ")", 
-    params.outlet_id_tugas
-  );
+  writeAuditLog(params.admin_id, "PREINPUT_SIMPAN", "Menyimpan data awal pre-input untuk pengirim '" + params.nama_pengirim + "' ke penerima '" + params.nama_penerima + "' (" + txId + ")", params.outlet_id_tugas);
   
   return {
     status: "success",
-    message: "Data pre-input berhasil disimpan!",
-    data: { transaksi_id: txId }
+    message: "Data pre-input berhasil disimpan.",
+    data: {
+      transaksi_id: txId,
+      customer_id: customerId
+    }
   };
 }
 
@@ -426,80 +450,82 @@ function apiSaveTransaksi(params) {
   
   if (jenis === "Express") {
     var sheetExp = getSheetByName("EXP_Resi");
-    sheetExp.appendRow([
-      resiId,
-      data.transaksi_id,
-      nowStr,
-      data.admin_id_pencatat,
-      data.outlet_id_input,
-      data.tipe_produk,
-      data.biaya_lain,
-      data.biaya_asuransi,
-      data.ongkir_dasar,
-      data.biaya_yoyi,
-      data.total_dibayar_customer,
-      data.pembulatan,
-      data.metode_bayar,
-      data.bukti_bayar_url || "",
-      data.biaya_amplop,
-      data.biaya_packing,
-      data.metode_bayar_tambahan || "",
-      data.bukti_tambahan_url || "",
-      data.grand_total,
-      data.setoran_ke_owner,
-      data.kas_operasional
-    ]);
+    var expObj = {
+      resi_id: resiId,
+      transaksi_id: data.transaksi_id,
+      timestamp: nowStr,
+      admin_id_pencatat: data.admin_id_pencatat,
+      outlet_id_input: data.outlet_id_input,
+      tipe_produk: data.tipe_produk,
+      biaya_lain: data.biaya_lain,
+      biaya_asuransi: data.biaya_asuransi,
+      ongkir_dasar: data.ongkir_dasar,
+      biaya_yoyi: data.biaya_yoyi,
+      total_dibayar_customer: data.total_dibayar_customer,
+      pembulatan: data.pembulatan,
+      metode_bayar: data.metode_bayar,
+      bukti_bayar_url: data.bukti_bayar_url || "",
+      biaya_amplop: data.biaya_amplop,
+      biaya_packing: data.biaya_packing,
+      metode_bayar_tambahan: data.metode_bayar_tambahan || "",
+      bukti_tambahan_url: data.bukti_tambahan_url || "",
+      grand_total: data.grand_total,
+      setoran_ke_owner: data.setoran_ke_owner,
+      kas_operasional: data.kas_operasional,
+      status_resi: "AKTIF"
+    };
+    var expRow = DB_SCHEMA.EXP_Resi.map(function(col) { return expObj[col] !== undefined ? expObj[col] : ""; });
+    sheetExp.appendRow(expRow);
   } else if (jenis === "Cargo") {
     var sheetCrg = getSheetByName("CRG_Resi");
-    sheetCrg.appendRow([
-      resiId,
-      data.transaksi_id,
-      nowStr,
-      data.admin_id_pencatat,
-      data.outlet_id_input,
-      data.tipe_produk,
-      data.merk_motor || "",
-      data.cc_motor || 0,
-      data.tahun_motor || 0,
-      data.kelengkapan_motor || "",
-      data.biaya_asuransi,
-      data.ongkir_dasar,
-      data.biaya_jtc,
-      data.total_dibayar_customer,
-      data.pembulatan,
-      data.metode_bayar,
-      data.bukti_bayar_url || "",
-      data.biaya_amplop,
-      data.biaya_packing,
-      data.metode_bayar_tambahan || "",
-      data.bukti_tambahan_url || "",
-      data.grand_total,
-      data.setoran_ke_owner,
-      data.kas_operasional
-    ]);
+    var crgObj = {
+      resi_id: resiId,
+      transaksi_id: data.transaksi_id,
+      timestamp: nowStr,
+      admin_id_pencatat: data.admin_id_pencatat,
+      outlet_id_input: data.outlet_id_input,
+      tipe_produk: data.tipe_produk,
+      merk_motor: data.merk_motor || "",
+      cc_motor: data.cc_motor || 0,
+      tahun_motor: data.tahun_motor || 0,
+      kelengkapan_motor: data.kelengkapan_motor || "",
+      biaya_asuransi: data.biaya_asuransi,
+      ongkir_dasar: data.ongkir_dasar,
+      biaya_jtc: data.biaya_jtc,
+      total_dibayar_customer: data.total_dibayar_customer,
+      pembulatan: data.pembulatan,
+      metode_bayar: data.metode_bayar,
+      bukti_bayar_url: data.bukti_bayar_url || "",
+      biaya_amplop: data.biaya_amplop,
+      biaya_packing: data.biaya_packing,
+      metode_bayar_tambahan: data.metode_bayar_tambahan || "",
+      bukti_tambahan_url: data.bukti_tambahan_url || "",
+      grand_total: data.grand_total,
+      setoran_ke_owner: data.setoran_ke_owner,
+      kas_operasional: data.kas_operasional,
+      status_resi: "AKTIF"
+    };
+    var crgRow = DB_SCHEMA.CRG_Resi.map(function(col) { return crgObj[col] !== undefined ? crgObj[col] : ""; });
+    sheetCrg.appendRow(crgRow);
   } else {
-    return { status: "error", message: "Jenis layanan '" + jenis + "' tidak didukung!" };
+    return { status: "error", message: "Jenis layanan tidak valid (harus Express atau Cargo)" };
   }
   
-  // Update status di PreInput_Backup menjadi SELESAI
+  // Update status PreInput jika dari PreInput
   if (data.transaksi_id) {
     var sheetBackup = getSheetByName("PreInput_Backup");
-    var rowsBackup = sheetBackup.getDataRange().getValues();
-    for (var i = 1; i < rowsBackup.length; i++) {
-      if (rowsBackup[i][0].toString() === data.transaksi_id) {
-        sheetBackup.getRange(i + 1, 16).setValue("SELESAI"); // Kolom status (16)
+    var rowsB = sheetBackup.getDataRange().getValues();
+    var headersB = rowsB[0];
+    for (var b = 1; b < rowsB.length; b++) {
+      var objB = rowToObject_(headersB, rowsB[b]);
+      if (objB.transaksi_id.toString() === data.transaksi_id) {
+        sheetBackup.getRange(b + 1, getColIndex_(sheetBackup, "status") + 1).setValue("SELESAI");
         break;
       }
     }
   }
   
-  // Tulis Log Audit
-  writeAuditLog(
-    data.admin_id_pencatat, 
-    "TRANSAKSI_SIMPAN", 
-    "Simpan transaksi resi " + jenis + " '" + resiId + "' (" + data.tipe_produk + "). Grand Total: Rp " + data.grand_total, 
-    data.outlet_id_input
-  );
+  writeAuditLog(data.admin_id_pencatat, "TRANSAKSI_SIMPAN", "Menyimpan resi " + jenis + " '" + resiId + "' (" + data.tipe_produk + ") untuk " + data.transaksi_id + ". Grand Total: Rp " + data.grand_total, data.outlet_id_input);
   
   return {
     status: "success",
@@ -647,46 +673,61 @@ function apiGetDashboardData(params) {
     return { status: "error", message: "Akses Ditolak! Hanya role OWNER yang dapat membuka Dashboard." };
   }
   
-  var dbExp = getSheetByName("EXP_Resi").getDataRange().getValues();
-  var dbCrg = getSheetByName("CRG_Resi").getDataRange().getValues();
-  var dbBackup = getSheetByName("PreInput_Backup").getDataRange().getValues();
-  var dbOutlets = getSheetByName("Outlets").getDataRange().getValues();
-  var dbLogs = getSheetByName("AuditLogs").getDataRange().getValues();
-  var dbUsers = getSheetByName("Users").getDataRange().getValues();
+  var sheetExp = getSheetByName("EXP_Resi");
+  var sheetCrg = getSheetByName("CRG_Resi");
+  var sheetBackup = getSheetByName("PreInput_Backup");
+  var sheetOutlets = getSheetByName("Outlets");
+  var sheetLogs = getSheetByName("AuditLogs");
+  var sheetUsers = getSheetByName("Users");
+  
+  var dbExp = sheetExp.getDataRange().getValues();
+  var dbCrg = sheetCrg.getDataRange().getValues();
+  var dbBackup = sheetBackup.getDataRange().getValues();
+  var dbOutlets = sheetOutlets.getDataRange().getValues();
+  var dbLogs = sheetLogs.getDataRange().getValues();
+  var dbUsers = sheetUsers.getDataRange().getValues();
+  
+  var headersExp = dbExp[0];
+  var headersCrg = dbCrg[0];
+  var headersBackup = dbBackup[0];
+  var headersOutlets = dbOutlets[0];
+  var headersLogs = dbLogs[0];
+  var headersUsers = dbUsers[0];
   
   // Buat map preinput untuk lookup nama pengirim/penerima
   var backupMap = {};
   for (var k = 1; k < dbBackup.length; k++) {
-    backupMap[dbBackup[k][0].toString()] = {
-      pengirim: dbBackup[k][4].toString(),
-      penerima: dbBackup[k][7].toString()
+    var objB = rowToObject_(headersBackup, dbBackup[k]);
+    backupMap[objB.transaksi_id.toString()] = {
+      pengirim: objB.nama_pengirim.toString(),
+      penerima: objB.nama_penerima.toString()
     };
   }
   
   // Buat map user id ke nama lengkap
   var userMap = {};
   for (var u = 1; u < dbUsers.length; u++) {
-    userMap[dbUsers[u][0].toString()] = dbUsers[u][5].toString();
+    var objU = rowToObject_(headersUsers, dbUsers[u]);
+    userMap[objU.user_id.toString()] = objU.nama_lengkap.toString();
   }
   
   var combined = [];
   
   // Proses Express Resi
-  // resi_id | transaksi_id | timestamp | admin_id_pencatat | outlet_id_input | tipe_produk | biaya_lain | biaya_asuransi | ongkir_dasar | biaya_yoyi | total_dibayar_customer | pembulatan | metode_bayar | bukti_bayar_url | biaya_amplop | biaya_packing | metode_bayar_tambahan | bukti_tambahan_url | grand_total | setoran_ke_owner | kas_operasional
   for (var i = 1; i < dbExp.length; i++) {
-    var rExp = dbExp[i];
-    var txId = rExp[1].toString();
+    var objE = rowToObject_(headersExp, dbExp[i]);
+    var txId = objE.transaksi_id.toString();
     var lookup = backupMap[txId] || { pengirim: "Umum", penerima: "Umum" };
     combined.push({
-      resi_id: rExp[0].toString(),
+      resi_id: objE.resi_id.toString(),
       transaksi_id: txId,
-      timestamp: rExp[2].toString(),
-      admin_id_pencatat: rExp[3].toString(),
-      outlet_id_input: rExp[4].toString(),
-      tipe_produk: rExp[5].toString(),
-      grand_total: Number(rExp[18]) || 0,
-      setoran_ke_owner: Number(rExp[19]) || 0,
-      kas_operasional: Number(rExp[20]) || 0,
+      timestamp: objE.timestamp.toString(),
+      admin_id_pencatat: objE.admin_id_pencatat.toString(),
+      outlet_id_input: objE.outlet_id_input.toString(),
+      tipe_produk: objE.tipe_produk.toString(),
+      grand_total: Number(objE.grand_total) || 0,
+      setoran_ke_owner: Number(objE.setoran_ke_owner) || 0,
+      kas_operasional: Number(objE.kas_operasional) || 0,
       tipe_layanan: "Express",
       pengirim: lookup.pengirim,
       penerima: lookup.penerima
@@ -694,21 +735,20 @@ function apiGetDashboardData(params) {
   }
   
   // Proses Cargo Resi
-  // resi_id | transaksi_id | timestamp | admin_id_pencatat | outlet_id_input | tipe_produk | ... | grand_total (kolom ke-22 index 21) | setoran_ke_owner (index 22) | kas_operasional (index 23)
   for (var j = 1; j < dbCrg.length; j++) {
-    var rCrg = dbCrg[j];
-    var txIdC = rCrg[1].toString();
+    var objC = rowToObject_(headersCrg, dbCrg[j]);
+    var txIdC = objC.transaksi_id.toString();
     var lookupC = backupMap[txIdC] || { pengirim: "Umum", penerima: "Umum" };
     combined.push({
-      resi_id: rCrg[0].toString(),
+      resi_id: objC.resi_id.toString(),
       transaksi_id: txIdC,
-      timestamp: rCrg[2].toString(),
-      admin_id_pencatat: rCrg[3].toString(),
-      outlet_id_input: rCrg[4].toString(),
-      tipe_produk: rCrg[5].toString(),
-      grand_total: Number(rCrg[21]) || 0,
-      setoran_ke_owner: Number(rCrg[22]) || 0,
-      kas_operasional: Number(rCrg[23]) || 0,
+      timestamp: objC.timestamp.toString(),
+      admin_id_pencatat: objC.admin_id_pencatat.toString(),
+      outlet_id_input: objC.outlet_id_input.toString(),
+      tipe_produk: objC.tipe_produk.toString(),
+      grand_total: Number(objC.grand_total) || 0,
+      setoran_ke_owner: Number(objC.setoran_ke_owner) || 0,
+      kas_operasional: Number(objC.kas_operasional) || 0,
       tipe_layanan: "Cargo",
       pengirim: lookupC.pengirim,
       penerima: lookupC.penerima
@@ -746,8 +786,9 @@ function apiGetDashboardData(params) {
   // Akumulasi per-outlet
   var outletOmsetMap = {};
   for (var o = 1; o < dbOutlets.length; o++) {
-    var oid = dbOutlets[o][0].toString();
-    var name = dbOutlets[o][1].toString().replace("J&T Express - ", "").replace("J&T Cargo - ", "");
+    var objO = rowToObject_(headersOutlets, dbOutlets[o]);
+    var oid = objO.outlet_id.toString();
+    var name = objO.nama_outlet.toString().replace("J&T Express - ", "").replace("J&T Cargo - ", "");
     outletOmsetMap[oid] = { nama: name, omset: 0, setoran: 0, kas: 0, count: 0 };
   }
   
@@ -790,93 +831,57 @@ function apiGetDashboardData(params) {
   var filteredLogs = [];
   
   for (var logI = 1; logI < dbLogs.length; logI++) {
-    var logRow = dbLogs[logI];
-    var logOutlet = logRow[5].toString();
-    var logTime = logRow[1].toString();
+    var objL = rowToObject_(headersLogs, dbLogs[logI]);
+    var logOutlet = objL.outlet_id.toString();
+    var logTime = objL.timestamp.toString();
     
     if (filterOutlet !== "ALL" && logOutlet !== filterOutlet) continue;
     
     if (dateStart) {
-      var startMs = new Date(dateStart).getTime();
-      if (new Date(logTime).getTime() < startMs) continue;
+      var startMsLog = new Date(dateStart).getTime();
+      if (new Date(logTime).getTime() < startMsLog) continue;
     }
     
     if (dateEnd) {
-      var endMs = new Date(dateEnd).getTime() + 86400000;
-      if (new Date(logTime).getTime() > endMs) continue;
+      var endMsLog = new Date(dateEnd).getTime() + 86400000;
+      if (new Date(logTime).getTime() > endMsLog) continue;
     }
     
-    filteredLogs.push(logRow);
+    filteredLogs.push(objL);
   }
+  
+  // Balik agar terbaru di atas
+  filteredLogs.reverse();
   
   var limit = Math.min(filteredLogs.length, 50);
   for (var logIdx = 0; logIdx < limit; logIdx++) {
-    var logRow = filteredLogs[logIdx];
-    // log_id | timestamp | user_id | aksi | detail | outlet_id
-    var logUid = logRow[2].toString();
+    var objLFiltered = filteredLogs[logIdx];
+    var logUid = objLFiltered.user_id.toString();
     auditLogs.push({
-      log_id: logRow[0].toString(),
-      timestamp: logRow[1].toString(),
+      log_id: objLFiltered.log_id.toString(),
+      timestamp: objLFiltered.timestamp.toString(),
       user_id: logUid,
       nama_lengkap: userMap[logUid] || "Sistem",
-      aksi: logRow[3].toString(),
-      detail: logRow[4].toString(),
-      outlet_id: logRow[5].toString()
+      aksi: objLFiltered.aksi.toString(),
+      detail: objLFiltered.detail.toString(),
+      outlet_id: objLFiltered.outlet_id.toString()
     });
   }
-  
-  // Format monthly reports
-  var monthlyMap = {};
-  filtered.forEach(function(r) {
-    var monthStr = r.timestamp.substring(0, 7); // YYYY-MM
-    if (!monthlyMap[monthStr]) {
-      monthlyMap[monthStr] = { month: monthStr, total_omset: 0, outletsMap: {} };
-    }
-    monthlyMap[monthStr].total_omset += r.grand_total;
-    
-    var outId = r.outlet_id_input;
-    if (!monthlyMap[monthStr].outletsMap[outId]) {
-      // Find outlet name from outletOmsetMap if exists, else outId
-      var outName = outletOmsetMap[outId] ? outletOmsetMap[outId].nama : outId;
-      monthlyMap[monthStr].outletsMap[outId] = {
-        outlet_id: outId,
-        nama_outlet: outName,
-        omset: 0,
-        transaksi: 0
-      };
-    }
-    monthlyMap[monthStr].outletsMap[outId].omset += r.grand_total;
-    monthlyMap[monthStr].outletsMap[outId].transaksi += 1;
-  });
-  
-  var monthlyReports = Object.keys(monthlyMap).map(function(mKey) {
-    var m = monthlyMap[mKey];
-    var outletsList = Object.keys(m.outletsMap).map(function(oKey) {
-      return m.outletsMap[oKey];
-    }).sort(function(a, b) { return b.omset - a.omset; });
-    return {
-      month: m.month,
-      total_omset: m.total_omset,
-      outlets: outletsList
-    };
-  }).sort(function(a, b) {
-    return b.month > a.month ? 1 : -1;
-  });
   
   return {
     status: "success",
     data: {
-      stats: {
-        totalOmsetGlobal: totalOmsetGlobal,
-        totalSetoranOwner: totalSetoranOwner,
-        totalKasOperasional: totalKasOperasional,
-        totalTransaksi: filtered.length
+      summary: {
+        totalTransaksi: filtered.length,
+        totalResiExpress: filtered.filter(function(r) { return r.tipe_layanan === "Express"; }).length,
+        totalResiCargo: filtered.filter(function(r) { return r.tipe_layanan === "Cargo"; }).length,
+        grandTotalCustomer: totalOmsetGlobal,
+        totalWajibSetorOwner: totalSetoranOwner,
+        totalKasOutlet: totalKasOperasional
       },
       outletPerformance: outletPerformance,
       dailyTrend: dailyTrend,
-      auditLogs: auditLogs,
-      recentTransactions: filtered.slice(0, 10),
-      monthly_reports: monthlyReports
+      auditLogs: auditLogs
     }
   };
 }
@@ -888,73 +893,87 @@ function apiGetDashboardData(params) {
 function apiGetRiwayatTransaksi(params) {
   var filterOutlet = params.filterOutlet || "ALL";
   
-  var dbExp = getSheetByName("EXP_Resi").getDataRange().getValues();
-  var dbCrg = getSheetByName("CRG_Resi").getDataRange().getValues();
-  var dbBackup = getSheetByName("PreInput_Backup").getDataRange().getValues();
-  var dbOutlets = getSheetByName("Outlets").getDataRange().getValues();
-  var dbUsers = getSheetByName("Users").getDataRange().getValues();
+  var sheetExp = getSheetByName("EXP_Resi");
+  var sheetCrg = getSheetByName("CRG_Resi");
+  var sheetBackup = getSheetByName("PreInput_Backup");
+  var sheetOutlets = getSheetByName("Outlets");
+  var sheetUsers = getSheetByName("Users");
+  
+  var dbExp = sheetExp.getDataRange().getValues();
+  var dbCrg = sheetCrg.getDataRange().getValues();
+  var dbBackup = sheetBackup.getDataRange().getValues();
+  var dbOutlets = sheetOutlets.getDataRange().getValues();
+  var dbUsers = sheetUsers.getDataRange().getValues();
   
   var backupMap = {};
+  var headersBackup = dbBackup[0];
   for (var k = 1; k < dbBackup.length; k++) {
-    backupMap[dbBackup[k][0].toString()] = {
-      pengirim: dbBackup[k][4].toString(),
-      penerima: dbBackup[k][7].toString()
+    var obj = rowToObject_(headersBackup, dbBackup[k]);
+    backupMap[obj.transaksi_id.toString()] = {
+      pengirim: obj.nama_pengirim.toString(),
+      penerima: obj.nama_penerima.toString()
     };
   }
   
   var outletMap = {};
+  var headersOutlets = dbOutlets[0];
   for (var o = 1; o < dbOutlets.length; o++) {
-    outletMap[dbOutlets[o][0].toString()] = dbOutlets[o][1].toString();
+    var objO = rowToObject_(headersOutlets, dbOutlets[o]);
+    outletMap[objO.outlet_id.toString()] = objO.nama_outlet.toString();
   }
   
   var userMap = {};
+  var headersUsers = dbUsers[0];
   for (var u = 1; u < dbUsers.length; u++) {
-    userMap[dbUsers[u][0].toString()] = dbUsers[u][1].toString(); // username
+    var objU = rowToObject_(headersUsers, dbUsers[u]);
+    userMap[objU.user_id.toString()] = objU.username.toString();
   }
   
   var transaksiList = [];
   
-  // EXP_Resi (status at col 21, 0-indexed)
+  // EXP_Resi
+  var headersExp = dbExp[0];
   for (var i = 1; i < dbExp.length; i++) {
-    var r = dbExp[i];
-    var outId = r[4].toString();
+    var r = rowToObject_(headersExp, dbExp[i]);
+    var outId = r.outlet_id_input.toString();
     if (filterOutlet !== "ALL" && outId !== filterOutlet) continue;
     
-    var txId = r[1].toString();
+    var txId = r.transaksi_id.toString();
     var p = backupMap[txId] || { pengirim: "", penerima: "" };
     transaksiList.push({
-      resi_id: r[0].toString(),
+      resi_id: r.resi_id.toString(),
       transaksi_id: txId,
-      timestamp: r[2].toString(),
-      admin: userMap[r[3].toString()] || r[3].toString(),
+      timestamp: r.timestamp.toString(),
+      admin: userMap[r.admin_id_pencatat.toString()] || r.admin_id_pencatat.toString(),
       outlet: outletMap[outId] || outId,
       tipe: "Express",
-      grand_total: parseFloat(r[18]) || 0,
+      grand_total: parseFloat(r.grand_total) || 0,
       pengirim: p.pengirim,
       penerima: p.penerima,
-      status_resi: r[21] ? r[21].toString() : "AKTIF" // col 22
+      status_resi: r.status_resi ? r.status_resi.toString() : "AKTIF"
     });
   }
   
-  // CRG_Resi (status at col 24, 0-indexed)
+  // CRG_Resi
+  var headersCrg = dbCrg[0];
   for (var j = 1; j < dbCrg.length; j++) {
-    var c = dbCrg[j];
-    var outIdC = c[4].toString();
+    var c = rowToObject_(headersCrg, dbCrg[j]);
+    var outIdC = c.outlet_id_input.toString();
     if (filterOutlet !== "ALL" && outIdC !== filterOutlet) continue;
     
-    var txIdC = c[1].toString();
+    var txIdC = c.transaksi_id.toString();
     var pC = backupMap[txIdC] || { pengirim: "", penerima: "" };
     transaksiList.push({
-      resi_id: c[0].toString(),
+      resi_id: c.resi_id.toString(),
       transaksi_id: txIdC,
-      timestamp: c[2].toString(),
-      admin: userMap[c[3].toString()] || c[3].toString(),
+      timestamp: c.timestamp.toString(),
+      admin: userMap[c.admin_id_pencatat.toString()] || c.admin_id_pencatat.toString(),
       outlet: outletMap[outIdC] || outIdC,
       tipe: "Cargo",
-      grand_total: parseFloat(c[21]) || 0,
+      grand_total: parseFloat(c.grand_total) || 0,
       pengirim: pC.pengirim,
       penerima: pC.penerima,
-      status_resi: c[24] ? c[24].toString() : "AKTIF" // col 25
+      status_resi: c.status_resi ? c.status_resi.toString() : "AKTIF"
     });
   }
   
@@ -980,10 +999,13 @@ function apiDeleteTransaksi(params) {
   if (tipe === "Express" || !tipe) {
     var sheetExp = getSheetByName("EXP_Resi");
     var dataExp = sheetExp.getDataRange().getValues();
+    var colIdx = getColIndex_(sheetExp, "status_resi");
+    
     for (var i = 1; i < dataExp.length; i++) {
       if (dataExp[i][0].toString() === resi_id) {
-        // Set status to BATAL in col 22
-        sheetExp.getRange(i + 1, 22).setValue("BATAL");
+        if (colIdx !== -1) {
+          sheetExp.getRange(i + 1, colIdx + 1).setValue("BATAL");
+        }
         found = true;
         break;
       }
@@ -993,10 +1015,13 @@ function apiDeleteTransaksi(params) {
   if (!found && (tipe === "Cargo" || !tipe)) {
     var sheetCrg = getSheetByName("CRG_Resi");
     var dataCrg = sheetCrg.getDataRange().getValues();
+    var colIdxCrg = getColIndex_(sheetCrg, "status_resi");
+    
     for (var j = 1; j < dataCrg.length; j++) {
       if (dataCrg[j][0].toString() === resi_id) {
-        // Set status to BATAL in col 25
-        sheetCrg.getRange(j + 1, 25).setValue("BATAL");
+        if (colIdxCrg !== -1) {
+          sheetCrg.getRange(j + 1, colIdxCrg + 1).setValue("BATAL");
+        }
         found = true;
         break;
       }
@@ -1042,20 +1067,22 @@ function writeAuditLog(userId, action, detail, outletId) {
     if (!sheet) {
       // Jaga-jaga jika terhapus
       sheet = ss.insertSheet("AuditLogs");
-      sheet.appendRow(["log_id", "timestamp", "user_id", "aksi", "detail", "outlet_id"]);
+      sheet.appendRow(DB_SCHEMA.AuditLogs);
     }
     
-    var logId = "LOG-" + new Date().getTime().toString().slice(-6);
-    sheet.appendRow([
-      logId,
-      new Date().toISOString(),
-      userId || "SYSTEM",
-      action,
-      detail,
-      outletId || "OUT-001"
-    ]);
+    var logObj = {
+      log_id: "LOG-" + new Date().getTime().toString().slice(-6),
+      timestamp: new Date().toISOString(),
+      user_id: userId || "SYSTEM",
+      aksi: action,
+      detail: detail,
+      outlet_id: outletId || ""
+    };
+    
+    var row = DB_SCHEMA.AuditLogs.map(function(col) { return logObj[col] !== undefined ? logObj[col] : ""; });
+    sheet.appendRow(row);
   } catch (e) {
-    Logger.log("Audit log failed: " + e.toString());
+    Logger.log("Gagal writeAuditLog: " + e.toString());
   }
 }
 
@@ -1076,80 +1103,283 @@ function simulateSha256(input) {
   return "hash_" + input; // Kami samakan format hash simulasinya agar konsisten dengan server pre-seed
 }
 
+// ==========================================
+// DATABASE SCHEMA — satu-satunya sumber kebenaran struktur sheet.
+// Tambah kolom baru = tambah string ke array di bawah + naikkan DB_SCHEMA_VERSION.
+// Jangan hapus/reorder kolom existing di sini — itu mengubah posisi index yang
+// sudah dipakai kode lain (mis. getRange(row, N)).
+// ==========================================
+var DB_SCHEMA_VERSION = 2; // v2: tambah status_resi (EXP_Resi/CRG_Resi), catatan_admin,
+                            // target_resi_harian/bulanan, MapsReviews, SetoranData
+
+var DB_SCHEMA = {
+  Users: ["user_id", "username", "password_hash", "role", "outlet_id_home", "nama_lengkap", "status_aktif"],
+  Outlets: ["outlet_id", "nama_outlet", "alamat_outlet", "target_resi_harian", "target_resi_bulanan"],
+  Master_Customer: ["customer_id", "nama_pengirim", "no_hp", "alamat_pengirim", "outlet_id", "last_updated"],
+  Riwayat_Penerima: ["id", "customer_id", "nama_penerima", "no_hp_penerima", "alamat_penerima", "tanggal_terakhir_kirim"],
+  PreInput_Backup: ["transaksi_id", "timestamp", "admin_id", "outlet_id_tugas", "nama_pengirim", "hp_pengirim",
+    "alamat_pengirim", "nama_penerima", "hp_penerima", "alamat_penerima", "nama_barang", "berat_kg", "volume",
+    "nilai_barang", "foto_paket_url", "status", "catatan_admin"],
+  EXP_Resi: ["resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
+    "biaya_lain", "biaya_asuransi", "ongkir_dasar", "biaya_yoyi", "total_dibayar_customer", "pembulatan",
+    "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing", "metode_bayar_tambahan",
+    "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi"],
+  CRG_Resi: ["resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
+    "merk_motor", "cc_motor", "tahun_motor", "kelengkapan_motor", "biaya_asuransi", "ongkir_dasar", "biaya_jtc",
+    "total_dibayar_customer", "pembulatan", "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing",
+    "metode_bayar_tambahan", "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi"],
+  AuditLogs: ["log_id", "timestamp", "user_id", "aksi", "detail", "outlet_id"],
+  MapsReviews: ["id", "outlet_id", "nama_outlet", "reviewer", "stars", "text", "timestamp", "status_analisis", "analisis"],
+  SetoranData: ["date", "outlet_id", "status", "total_setoran"]
+};
+
 /**
- * FUNGSI INTI SEED DATABASE (JALANKAN SEKALI SAJA)
- * Berfungsi untuk membuat seluruh tab sheet dengan header yang tepat jika belum ada,
- * lalu mengisi data awal agar aplikasi siap digunakan.
+ * Satu-satunya fungsi yang boleh dipakai untuk membuat/memperbaiki struktur database.
+ * Aman dijalankan berulang kali (idempotent):
+ * - Sheet belum ada  -> dibuat + header ditulis.
+ * - Sheet sudah ada  -> kolom di DB_SCHEMA yang belum ada di header ditambahkan di
+ *                       ujung kanan. Kolom & data existing TIDAK PERNAH disentuh/dihapus.
  */
-function initDatabaseSheets() {
+function initializeDatabase() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-  // 1. Sheet Users
-  createSheetIfNotExist(ss, "Users", [
-    "user_id", "username", "password_hash", "role", "outlet_id_home", "nama_lengkap", "status_aktif"
-  ]);
-  var sheetUsers = ss.getSheetByName("Users");
-  if (sheetUsers.getLastRow() === 1) {
-    sheetUsers.appendRow(["USR-001", "admin1", "hash_admin123", "ADMIN", "OUT-001", "Siti Aminah (Karawaci)", "AKTIF"]);
-    sheetUsers.appendRow(["USR-002", "admin2", "hash_admin123", "ADMIN", "OUT-002", "Budi Santoso (Cikokol)", "AKTIF"]);
-    sheetUsers.appendRow(["USR-003", "owner1", "hash_owner123", "OWNER", "OUT-001", "Hendra Wijaya (Owner)", "AKTIF"]);
-  }
-  
-  // 2. Sheet Outlets
-  createSheetIfNotExist(ss, "Outlets", ["outlet_id", "nama_outlet", "alamat_outlet"]);
-  var sheetOutlets = ss.getSheetByName("Outlets");
-  if (sheetOutlets.getLastRow() === 1) {
-    sheetOutlets.appendRow(["OUT-001", "J&T Express - Tangerang Karawaci", "Jl. Karawaci Raya No.12, Karawaci, Tangerang"]);
-    sheetOutlets.appendRow(["OUT-002", "J&T Express - Tangerang Cikokol", "Jl. M.H. Thamrin No.8, Cikokol, Tangerang"]);
-    sheetOutlets.appendRow(["OUT-003", "J&T Cargo - Tangerang Balaraja", "Jl. Raya Serang Km 24, Balaraja, Tangerang"]);
-  }
-  
-  // 3. Sheet Master_Customer
-  createSheetIfNotExist(ss, "Master_Customer", ["customer_id", "nama_pengirim", "no_hp", "alamat_pengirim", "outlet_id", "last_updated"]);
-  
-  // 4. Sheet Riwayat_Penerima
-  createSheetIfNotExist(ss, "Riwayat_Penerima", ["id", "customer_id", "nama_penerima", "no_hp_penerima", "alamat_penerima", "tanggal_terakhir_kirim"]);
-  
-  // 5. Sheet PreInput_Backup
-  createSheetIfNotExist(ss, "PreInput_Backup", [
-    "transaksi_id", "timestamp", "admin_id", "outlet_id_tugas", "nama_pengirim", "hp_pengirim", 
-    "alamat_pengirim", "nama_penerima", "hp_penerima", "alamat_penerima", "nama_barang", 
-    "berat_kg", "volume", "nilai_barang", "foto_paket_url", "status", "catatan_admin"
-  ]);
-  
-  // 6. Sheet EXP_Resi
-  createSheetIfNotExist(ss, "EXP_Resi", [
-    "resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk", 
-    "biaya_lain", "biaya_asuransi", "ongkir_dasar", "biaya_yoyi", "total_dibayar_customer", 
-    "pembulatan", "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing", 
-    "metode_bayar_tambahan", "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional"
-  ]);
-  
-  // 7. Sheet CRG_Resi
-  createSheetIfNotExist(ss, "CRG_Resi", [
-    "resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk", 
-    "merk_motor", "cc_motor", "tahun_motor", "kelengkapan_motor", "biaya_asuransi", "ongkir_dasar", 
-    "biaya_jtc", "total_dibayar_customer", "pembulatan", "metode_bayar", "bukti_bayar_url", 
-    "biaya_amplop", "biaya_packing", "metode_bayar_tambahan", "bukti_tambahan_url", "grand_total", 
-    "setoran_ke_owner", "kas_operasional"
-  ]);
-  
-  // 8. Sheet AuditLogs
-  createSheetIfNotExist(ss, "AuditLogs", ["log_id", "timestamp", "user_id", "aksi", "detail", "outlet_id"]);
-  
-  Logger.log("Seluruh Database Sheets J&T OPS PRO Berhasil Diinisialisasi!");
+  var versionSheet = getOrCreateVersionSheet_(ss);
+
+  Object.keys(DB_SCHEMA).forEach(function (name) {
+    syncSheetSchema_(ss, name, DB_SCHEMA[name]);
+  });
+
+  versionSheet.getRange(2, 1, 1, 2).setValues([[DB_SCHEMA_VERSION, new Date().toISOString()]]);
+  Logger.log("initializeDatabase selesai. Schema version: " + DB_SCHEMA_VERSION);
 }
 
-function createSheetIfNotExist(ss, name, headers) {
+// Alias supaya kode lama (getSheetByName -> initDatabaseSheets()) tetap jalan tanpa diubah.
+function initDatabaseSheets() {
+  initializeDatabase();
+}
+
+function getOrCreateVersionSheet_(ss) {
+  var sheet = ss.getSheetByName("_SchemaVersion");
+  if (!sheet) {
+    sheet = ss.insertSheet("_SchemaVersion");
+    sheet.appendRow(["schema_version", "last_migrated_at"]);
+    sheet.appendRow([0, ""]);
+    formatHeader_(sheet, 2);
+  }
+  return sheet;
+}
+
+function syncSheetSchema_(ss, name, headers) {
   var sheet = ss.getSheetByName(name);
   if (!sheet) {
     sheet = ss.insertSheet(name);
     sheet.appendRow(headers);
-    
-    // Format header bold dengan background abu-abu terang
-    var range = sheet.getRange(1, 1, 1, headers.length);
-    range.setFontWeight("bold");
-    range.setBackground("#f3f3f3");
-    sheet.setFrozenRows(1);
+    formatHeader_(sheet, headers.length);
+    return;
   }
+
+  var lastCol = sheet.getLastColumn();
+  var existing = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0] : [];
+  var missing = headers.filter(function (h) { return existing.indexOf(h) === -1; });
+  if (missing.length > 0) {
+    sheet.getRange(1, existing.length + 1, 1, missing.length).setValues([missing]);
+    formatHeader_(sheet, existing.length + missing.length);
+  }
+}
+
+function formatHeader_(sheet, colCount) {
+  var range = sheet.getRange(1, 1, 1, colCount);
+  range.setFontWeight("bold");
+  range.setBackground("#f3f3f3");
+  sheet.setFrozenRows(1);
+}
+// ==========================================
+// NEW API HANDLERS
+// ==========================================
+
+function apiUpdateOutletTarget(params) {
+  var outletId = params.outlet_id;
+  var targetHarian = params.target_resi_harian;
+  var targetBulanan = params.target_resi_bulanan;
+  
+  if (!outletId) {
+    return { status: "error", message: "outlet_id diperlukan" };
+  }
+  
+  var sheet = getSheetByName("Outlets");
+  var rows = sheet.getDataRange().getValues();
+  
+  var colHarian = getColIndex_(sheet, "target_resi_harian");
+  var colBulanan = getColIndex_(sheet, "target_resi_bulanan");
+  
+  if (colHarian === -1 || colBulanan === -1) {
+    return { status: "error", message: "Kolom target_resi belum ada di schema Outlets." };
+  }
+  
+  var found = false;
+  for (var i = 1; i < rows.length; i++) {
+    if (rows[i][0].toString() === outletId) {
+      if (targetHarian !== undefined) sheet.getRange(i + 1, colHarian + 1).setValue(targetHarian);
+      if (targetBulanan !== undefined) sheet.getRange(i + 1, colBulanan + 1).setValue(targetBulanan);
+      found = true;
+      break;
+    }
+  }
+  
+  if (found) {
+    return { status: "success", message: "Target outlet berhasil diupdate." };
+  } else {
+    return { status: "error", message: "Outlet tidak ditemukan." };
+  }
+}
+
+function apiGetMapsReviews(params) {
+  var filterOutlet = params.outlet_id || "ALL";
+  var sheet = getSheetByName("MapsReviews");
+  var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
+  var results = [];
+  
+  for (var i = 1; i < rows.length; i++) {
+    var obj = rowToObject_(headers, rows[i]);
+    if (filterOutlet !== "ALL" && obj.outlet_id.toString() !== filterOutlet) {
+      continue;
+    }
+    results.push({
+      id: obj.id.toString(),
+      outlet_id: obj.outlet_id.toString(),
+      nama_outlet: obj.nama_outlet.toString(),
+      reviewer: obj.reviewer.toString(),
+      stars: Number(obj.stars) || 0,
+      text: obj.text.toString(),
+      timestamp: obj.timestamp.toString(),
+      status_analisis: obj.status_analisis.toString(),
+      analisis: obj.analisis.toString()
+    });
+  }
+  
+  results.sort(function(a, b) {
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
+  
+  return { status: "success", data: results };
+}
+
+function apiSaveMapsReview(params) {
+  var sheet = getSheetByName("MapsReviews");
+  
+  var reviewObj = {
+    id: "REV-" + new Date().getTime(),
+    outlet_id: params.outlet_id,
+    nama_outlet: params.nama_outlet || "",
+    reviewer: params.reviewer || "Anonim",
+    stars: params.stars || 5,
+    text: params.text || "",
+    timestamp: params.timestamp || new Date().toISOString(),
+    status_analisis: params.status_analisis || "Pending",
+    analisis: params.analisis || ""
+  };
+  
+  var row = DB_SCHEMA.MapsReviews.map(function(col) { return reviewObj[col] !== undefined ? reviewObj[col] : ""; });
+  sheet.appendRow(row);
+  
+  return { status: "success", message: "Review berhasil disimpan.", data: reviewObj };
+}
+
+function apiGetStatusSetoran(params) {
+  var filterOutlet = params.outlet_id || "ALL";
+  var filterDate = params.date;
+  
+  var sheet = getSheetByName("SetoranData");
+  var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
+  var results = [];
+  
+  for (var i = 1; i < rows.length; i++) {
+    var obj = rowToObject_(headers, rows[i]);
+    if (filterOutlet !== "ALL" && obj.outlet_id.toString() !== filterOutlet) {
+      continue;
+    }
+    if (filterDate && obj.date.toString() !== filterDate) {
+      continue;
+    }
+    results.push({
+      date: obj.date.toString(),
+      outlet_id: obj.outlet_id.toString(),
+      status: obj.status.toString(),
+      total_setoran: Number(obj.total_setoran) || 0
+    });
+  }
+  
+  return { status: "success", data: results };
+}
+
+function apiSaveSetoran(params) {
+  var sheet = getSheetByName("SetoranData");
+  var rows = sheet.getDataRange().getValues();
+  var headers = rows[0];
+  var found = false;
+  
+  for (var i = 1; i < rows.length; i++) {
+    var obj = rowToObject_(headers, rows[i]);
+    if (obj.date.toString() === params.date && obj.outlet_id.toString() === params.outlet_id) {
+      // Update existing
+      sheet.getRange(i + 1, getColIndex_(sheet, "status") + 1).setValue(params.status);
+      sheet.getRange(i + 1, getColIndex_(sheet, "total_setoran") + 1).setValue(params.total_setoran);
+      found = true;
+      break;
+    }
+  }
+  
+  if (!found) {
+    // Insert new
+    var setoranObj = {
+      date: params.date,
+      outlet_id: params.outlet_id,
+      status: params.status || "Belum Disetor",
+      total_setoran: params.total_setoran || 0
+    };
+    var row = DB_SCHEMA.SetoranData.map(function(col) { return setoranObj[col] !== undefined ? setoranObj[col] : ""; });
+    sheet.appendRow(row);
+  }
+  
+  return { status: "success", message: "Status setoran berhasil disimpan." };
+}
+
+function testSchemaIntegrity() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var pass = true;
+  
+  for (var key in DB_SCHEMA) {
+    var sheet = ss.getSheetByName(key);
+    if (!sheet) {
+      Logger.log("FAIL: Sheet '" + key + "' tidak ditemukan.");
+      pass = false;
+      continue;
+    }
+    
+    var expectedHeaders = DB_SCHEMA[key];
+    var actualHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
+    if (expectedHeaders.length !== actualHeaders.length) {
+      Logger.log("FAIL: Sheet '" + key + "' jumlah kolom tidak sesuai. Harap: " + expectedHeaders.length + ", Aktual: " + actualHeaders.length);
+      pass = false;
+      continue;
+    }
+    
+    var match = true;
+    for (var i = 0; i < expectedHeaders.length; i++) {
+      if (expectedHeaders[i] !== actualHeaders[i]) {
+        Logger.log("FAIL: Sheet '" + key + "' kolom ke-" + (i+1) + " tidak cocok. Harap: " + expectedHeaders[i] + ", Aktual: " + actualHeaders[i]);
+        match = false;
+        pass = false;
+        break;
+      }
+    }
+    
+    if (match) {
+      Logger.log("PASS: Sheet '" + key + "' OK.");
+    }
+  }
+  
+  return pass ? "ALL PASS" : "SOME FAIL";
 }
