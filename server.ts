@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
@@ -1807,30 +1806,18 @@ app.post("/api/analyzeReview", async (req, res) => {
   }
 });
 
-// === PRODUCTION AND VITE INTEGRATION ===
+// === PRODUCTION STANDALONE INTEGRATION ===
 
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
+if (!isVercel && process.env.NODE_ENV === "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  app.use(express.static(distPath));
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
+  });
 
-  if (!isVercel) {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server J&T OPS PRO running on http://localhost:${PORT}`);
-    });
-  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server J&T OPS PRO running on http://localhost:${PORT}`);
+  });
 }
-
-startServer();
 
 export default app;
