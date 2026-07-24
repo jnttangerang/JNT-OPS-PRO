@@ -1,0 +1,187 @@
+app.post("/api/getAdminDashboardData", (req, res) => {
+  const { user_id, role, filterOutlet, dateStart, dateEnd } = req.body;
+
+  if (role !== "ADMIN" && role !== "OWNER") {
+    return res.status(403).json({ status: "error", message: "Akses ditolak." });
+  }
+
+  const db = readDb();
+
+  // Combine Express & Cargo
+  let combined: any[] = [];
+  
+  db.EXP_Resi.forEach((r: any) => {
+    if (r.status !== "BATAL") {
+      combined.push({
+        ...r,
+        tipe_layanan: "Express",
+      });
+    }
+  });
+
+  db.CRG_Resi.forEach((r: any) => {
+    if (r.status !== "BATAL") {
+      combined.push({
+        ...r,
+        tipe_layanan: "Cargo",
+      });
+    }
+  });
+
+  // Apply filters
+  let filtered = combined;
+
+  if (filterOutlet) {
+    filtered = filtered.filter((r: any) => r.outlet_id_input === filterOutlet);
+  }
+  
+
+  if (dateStart) {
+    const start = new Date(dateStart).getTime();
+    filtered = filtered.filter((r: any) => new Date(r.timestamp).getTime() >= start);
+  }
+
+  if (dateEnd) {
+    const end = new Date(dateEnd).getTime() + 86400000;
+    filtered = filtered.filter((r: any) => new Date(r.timestamp).getTime() <= end);
+  }
+
+  // Summary statistics
+  const totalOmsetGlobal = filtered.reduce((sum: number, r: any) => sum + (r.grand_total || 0), 0);
+  const totalSetoranOwner = filtered.reduce((sum: number, r: any) => sum + (r.setoran_ke_owner || 0), 0);
+  const totalKasOperasional = filtered.reduce((sum: number, r: any) => sum + (r.kas_operasional || 0), 0);
+  
+  const totalResiExpress = filtered.filter((r: any) => r.tipe_layanan === "Express").length;
+  const totalResiCargo = filtered.filter((r: any) => r.tipe_layanan === "Cargo").length;
+
+  // Ringkasan Berdasarkan Admin
+  const adminMap: Record<string, any> = {};
+  filtered.forEach(r => {
+    const admin = r.admin_id_pencatat;
+    if (!adminMap[admin]) {
+      const user = db.Users.find((u: any) => u.user_id === admin);
+      adminMap[admin] = {
+        admin_id: admin,
+        nama: user ? user.nama_lengkap : admin,
+        express: 0,
+        cargo: 0,
+        totalResi: 0,
+        totalSetoranOwner: 0,
+        kasOutlet: 0
+      };
+    }
+    if (r.tipe_layanan === "Express") adminMap[admin].express++;
+    if (r.tipe_layanan === "Cargo") adminMap[admin].cargo++;
+    adminMap[admin].totalResi++;
+    adminMap[admin].totalSetoranOwner += r.setoran_ke_owner || 0;
+    adminMap[admin].kasOutlet += r.kas_operasional || 0;
+  });
+  
+  const byAdmin = Object.values(adminMap).sort((a: any, b: any) => b.totalResi - a.totalResi);
+
+  // Ringkasan Berdasarkan Ekspedisi
+  const byEkspedisi = {
+    Express: {
+      resi: totalResiExpress,
+      omset: filtered.filter((r: any) => r.tipe_layanan === "Express").reduce((sum, r) => sum + (r.grand_total || 0), 0),
+      setoran: filtered.filter((r: any) => r.tipe_layanan === "Express").reduce((sum, r) => sum + (r.setoran_ke_owner || 0), 0),
+    },
+    Cargo: {
+      resi: totalResiCargo,
+      omset: filtered.filter((r: any) => r.tipe_layanan === "Cargo").reduce((sum, r) => sum + (r.grand_total || 0), 0),
+      setoran: filtered.filter((r: any) => r.tipe_layanan === "Cargo").reduce((sum, r) => sum + (r.setoran_ke_owner || 0), 0),
+    }
+  };
+
+  // Aktivitas Terakhir (Audit Logs)
+  let logs = db.AuditLogs;
+  if (filterOutlet && filterOutlet !== "ALL") {
+    logs = logs.filter((log: any) => log.outlet_id === filterOutlet);
+  }
+  if (dateStart) {
+    const start = new Date(dateStart).getTime();
+    logs = logs.filter((log: any) => new Date(log.timestamp).getTime() >= start);
+  }
+  if (dateEnd) {
+    const end = new Date(dateEnd).getTime() + 86400000;
+    logs = logs.filter((log: any) => new Date(log.timestamp).getTime() <= end);
+  }
+  
+  const userMap: Record<string, string> = {};
+  db.Users.forEach((u: any) => userMap[u.user_id] = u.nama_lengkap);
+
+  const aktivitasLogs = logs.slice(0, 50).map((log: any) => ({
+    ...log,
+    nama_lengkap: userMap[log.user_id] || "Sistem"
+  }));
+  
+  // Status Setoran
+  const setoranMap: Record<string, any> = {};
+  filtered.forEach(r => {
+    const dateStr = r.timestamp.split("T")[0];
+    if (!setoranMap[dateStr]) {
+      const existing = (db.SetoranData || []).find((s:any) => s.date === dateStr && s.outlet_id === (filterOutlet === "ALL" ? r.outlet_id_input : filterOutlet));
+      setoranMap[dateStr] = {
+        date: dateStr,
+        total_setoran: 0,
+        status: existing ? existing.status : "Belum Disetor",
+        transaksi: []
+      };
+    }
+    setoranMap[dateStr].total_setoran += r.setoran_ke_owner || 0;
+    setoranMap[dateStr].transaksi.push(r.resi_id);
+  });
+  
+  const statusSetoranList = Object.values(setoranMap).sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  // Grafik 7 Hari Terakhir
+  const last7Days: any[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().split("T")[0];
+    
+    let dayTotalResi = 0;
+    let daySetoran = 0;
+    
+    combined.forEach(r => {
+      if (r.timestamp.startsWith(dateStr) && (filterOutlet === "ALL" || r.outlet_id_input === filterOutlet)) {
+        dayTotalResi++;
+        daySetoran += r.setoran_ke_owner || 0;
+      }
+    });
+    
+    last7Days.push({
+      date: dateStr,
+      resi: dayTotalResi,
+      setoran: daySetoran
+    });
+  }
+
+  // Riwayat Pembatalan
+  const cancelLogs = db.AuditLogs.filter((l: any) => l.aksi === "BATAL_TRANSAKSI" && l.outlet_id === filterOutlet);
+  const pembatalanLogs = cancelLogs.map((l:any) => ({
+    ...l,
+    nama_lengkap: userMap[l.user_id] || "Sistem"
+  }));
+
+  // Alert Operasional
+  const alerts: string[] = [];
+  if (statusSetoranList.some((s:any) => s.status === "Belum Disetor" && s.total_setoran > 0)) {
+    alerts.push("Belum setor owner");
+  }
+
+  const todayStr = new Date().toISOString().split("T")[0];
+  const currentResiToday = combined.filter((r:any) => r.timestamp.startsWith(todayStr) && r.outlet_id_input === filterOutlet).length;
+  const targetHarian = 50;
+
+  return res.json({
+    status: "success",
+    data: {
+      summary: {
+        totalTransaksi: filtered.length,
+        totalResiExpress,
+        totalResiCargo,
+        grandTotalCustomer: totalOmsetGlobal,
+        totalWajibSetorOwner: totalSetoranOwner,
+        totalKasOutlet: totalKasOperasional
