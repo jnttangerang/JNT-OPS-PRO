@@ -1,6 +1,0 @@
-{
-  "name": "J&T OPS PRO",
-  "description": "Internal web application for J&T Express & Cargo operations with Gemini AI address correction, pre-input logging, financial calculator, barcode scanning, and owner dashboard.",
-  "requestFramePermissions": ["camera"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

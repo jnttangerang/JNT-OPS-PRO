@@ -1,1 +1,0 @@
-const fetch = require('node-fetch'); // Native fetch is available in Node 18+ without require if running directly, let's just use global fetch. Wait, this script is standard node. Let's run a curl instead.
