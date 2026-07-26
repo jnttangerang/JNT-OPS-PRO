@@ -2209,6 +2209,787 @@ app.post("/api/executeClosing", (req, res) => {
   return res.json({ status: "success", message: "Closing harian berhasil diselesaikan.", data: activeSetoran });
 });
 
+// ==========================================
+// PHASE 8 — REPORTING & ANALYTICS ENDPOINTS
+// ==========================================
+
+function getReportingRawTransactions(db: any) {
+  const backupMap: Record<string, any> = {};
+  (db.PreInput_Backup || []).forEach((p: any) => {
+    backupMap[p.transaksi_id] = p;
+  });
+
+  const userMap: Record<string, string> = {};
+  (db.Users || []).forEach((u: any) => {
+    userMap[u.user_id] = u.nama_lengkap || u.username;
+  });
+
+  const outletMap: Record<string, string> = {};
+  (db.Outlets || []).forEach((o: any) => {
+    outletMap[o.outlet_id] = o.nama_outlet;
+  });
+
+  const raw: any[] = [];
+
+  // Express
+  (db.EXP_Resi || []).forEach((r: any) => {
+    if (r.status_resi !== "BATAL" && r.status !== "BATAL") {
+      const txDate = r.timestamp ? r.timestamp.split("T")[0] : "";
+      const pre = backupMap[r.transaksi_id];
+      const custPay = Number(r.total_dibayar_customer) || Number(r.grand_total) || 0;
+      const yoyi = Number(r.biaya_yoyi) || 0;
+      const selisih = custPay - yoyi;
+      const setoranOwner = Number(r.setoran_ke_owner) || 0;
+      const kasOperasional = Number(r.kas_operasional) || 0;
+
+      const setoranObj = (db.Master_Setoran || []).find((s: any) => s.tanggal === txDate && s.outlet_id === r.outlet_id_input && s.status !== "DITOLAK");
+      const settlementStatus = setoranObj ? setoranObj.status : "BELUM_ADA_SETORAN";
+
+      let auditStatus = "BELUM_DIAUDIT";
+      if (r.owner_audit_status) {
+        auditStatus = r.owner_audit_status;
+      } else if (settlementStatus === "DISETUJUI") {
+        if (custPay === 0) auditStatus = "PERLU_REVIEW";
+        else if (selisih < 0) auditStatus = "SELISIH";
+        else auditStatus = "SESUAI";
+      }
+
+      raw.push({
+        resi_id: r.resi_id,
+        transaksi_id: r.transaksi_id,
+        timestamp: r.timestamp || new Date().toISOString(),
+        tanggal: txDate,
+        admin_id: r.admin_id_pencatat,
+        admin_nama: userMap[r.admin_id_pencatat] || r.admin_id_pencatat || "System",
+        outlet_id: r.outlet_id_input,
+        outlet_nama: outletMap[r.outlet_id_input] || r.outlet_id_input || "Outlet",
+        tipe_layanan: "Express",
+        tipe_produk: r.tipe_produk || "EXPRESS",
+        total_customer: custPay,
+        total_yoyi: yoyi,
+        selisih: selisih,
+        setoran_owner: setoranOwner,
+        kas_operasional: kasOperasional,
+        settlement_status: settlementStatus,
+        audit_status: auditStatus,
+        pengirim: pre?.nama_pengirim || "Umum",
+        penerima: pre?.nama_penerima || "Umum",
+        metode_bayar: r.metode_bayar || "Tunai"
+      });
+    }
+  });
+
+  // Cargo
+  (db.CRG_Resi || []).forEach((r: any) => {
+    if (r.status_resi !== "BATAL" && r.status !== "BATAL") {
+      const txDate = r.timestamp ? r.timestamp.split("T")[0] : "";
+      const pre = backupMap[r.transaksi_id];
+      const custPay = Number(r.total_dibayar_customer) || Number(r.grand_total) || 0;
+      const yoyi = Number(r.biaya_jtc) || 0;
+      const selisih = custPay - yoyi;
+      const setoranOwner = Number(r.setoran_ke_owner) || 0;
+      const kasOperasional = Number(r.kas_operasional) || 0;
+
+      const setoranObj = (db.Master_Setoran || []).find((s: any) => s.tanggal === txDate && s.outlet_id === r.outlet_id_input && s.status !== "DITOLAK");
+      const settlementStatus = setoranObj ? setoranObj.status : "BELUM_ADA_SETORAN";
+
+      let auditStatus = "BELUM_DIAUDIT";
+      if (r.owner_audit_status) {
+        auditStatus = r.owner_audit_status;
+      } else if (settlementStatus === "DISETUJUI") {
+        if (custPay === 0) auditStatus = "PERLU_REVIEW";
+        else if (selisih < 0) auditStatus = "SELISIH";
+        else auditStatus = "SESUAI";
+      }
+
+      raw.push({
+        resi_id: r.resi_id,
+        transaksi_id: r.transaksi_id,
+        timestamp: r.timestamp || new Date().toISOString(),
+        tanggal: txDate,
+        admin_id: r.admin_id_pencatat,
+        admin_nama: userMap[r.admin_id_pencatat] || r.admin_id_pencatat || "System",
+        outlet_id: r.outlet_id_input,
+        outlet_nama: outletMap[r.outlet_id_input] || r.outlet_id_input || "Outlet",
+        tipe_layanan: "Cargo",
+        tipe_produk: r.tipe_produk || "CARGO",
+        total_customer: custPay,
+        total_yoyi: yoyi,
+        selisih: selisih,
+        setoran_owner: setoranOwner,
+        kas_operasional: kasOperasional,
+        settlement_status: settlementStatus,
+        audit_status: auditStatus,
+        pengirim: pre?.nama_pengirim || "Umum",
+        penerima: pre?.nama_penerima || "Umum",
+        metode_bayar: r.metode_bayar || "Tunai"
+      });
+    }
+  });
+
+  return raw.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+}
+
+function filterReportingTransactions(transactions: any[], filters: any) {
+  const {
+    date_start, dateStart,
+    date_end, dateEnd,
+    outlet_id, filterOutlet,
+    operator_id, filterOperator,
+    service_type, filterServiceType,
+    settlement_status, filterSettlementStatus,
+    audit_status, filterAuditStatus
+  } = filters || {};
+
+  const start = date_start || dateStart || "";
+  const end = date_end || dateEnd || "";
+  const out = outlet_id || filterOutlet || "ALL";
+  const op = operator_id || filterOperator || "ALL";
+  const sType = service_type || filterServiceType || "ALL";
+  const setStat = settlement_status || filterSettlementStatus || "ALL";
+  const audStat = audit_status || filterAuditStatus || "ALL";
+
+  return transactions.filter((r) => {
+    if (out !== "ALL" && r.outlet_id !== out) return false;
+    if (op !== "ALL" && r.admin_id !== op && !r.admin_nama.toLowerCase().includes(op.toLowerCase())) return false;
+    if (sType !== "ALL" && r.tipe_layanan !== sType) return false;
+    if (setStat !== "ALL" && r.settlement_status !== setStat) return false;
+    if (audStat !== "ALL" && r.audit_status !== audStat) return false;
+    if (start && r.tanggal < start) return false;
+    if (end && r.tanggal > end) return false;
+    return true;
+  });
+}
+
+app.post("/api/getReportingSummary", (req, res) => {
+  const db = readDb();
+  const allTx = getReportingRawTransactions(db);
+  const filtered = filterReportingTransactions(allTx, req.body);
+
+  // Overall Stats
+  const total_transaksi = filtered.length;
+  const total_express = filtered.filter(r => r.tipe_layanan === "Express").length;
+  const total_cargo = filtered.filter(r => r.tipe_layanan === "Cargo").length;
+  const total_customer_payment = filtered.reduce((acc, r) => acc + r.total_customer, 0);
+  const total_yoyi = filtered.reduce((acc, r) => acc + r.total_yoyi, 0);
+  const total_setoran_owner = filtered.reduce((acc, r) => acc + r.setoran_owner, 0);
+  const total_kas_operasional = filtered.reduce((acc, r) => acc + r.kas_operasional, 0);
+  const total_selisih = total_customer_payment - total_yoyi;
+
+  // 1. Daily Report (per outlet, per tanggal)
+  const dailyMap: Record<string, any> = {};
+  filtered.forEach((r) => {
+    const key = `${r.tanggal}_${r.outlet_id}`;
+    if (!dailyMap[key]) {
+      dailyMap[key] = {
+        tanggal: r.tanggal,
+        outlet_id: r.outlet_id,
+        nama_outlet: r.outlet_nama,
+        total_transaksi: 0,
+        express: 0,
+        cargo: 0,
+        total_customer_payment: 0,
+        total_yoyi: 0,
+        total_setoran_owner: 0,
+        total_kas_operasional: 0,
+        total_selisih: 0
+      };
+    }
+    const d = dailyMap[key];
+    d.total_transaksi++;
+    if (r.tipe_layanan === "Express") d.express++;
+    if (r.tipe_layanan === "Cargo") d.cargo++;
+    d.total_customer_payment += r.total_customer;
+    d.total_yoyi += r.total_yoyi;
+    d.total_setoran_owner += r.setoran_owner;
+    d.total_kas_operasional += r.kas_operasional;
+    d.total_selisih += r.selisih;
+  });
+  const daily_report = Object.values(dailyMap).sort((a: any, b: any) => b.tanggal.localeCompare(a.tanggal));
+
+  // 2. Outlet Report
+  const outletMap: Record<string, any> = {};
+  filtered.forEach((r) => {
+    if (!outletMap[r.outlet_id]) {
+      outletMap[r.outlet_id] = {
+        outlet_id: r.outlet_id,
+        nama_outlet: r.outlet_nama,
+        total_transaksi: 0,
+        omset: 0,
+        setoran: 0,
+        kas_outlet: 0,
+        selisih: 0
+      };
+    }
+    const o = outletMap[r.outlet_id];
+    o.total_transaksi++;
+    o.omset += r.total_customer;
+    o.setoran += r.setoran_owner;
+    o.kas_outlet += r.kas_operasional;
+    o.selisih += r.selisih;
+  });
+  const outlet_report = Object.values(outletMap).sort((a: any, b: any) => b.omset - a.omset);
+
+  // 3. Operator Report
+  const operatorMap: Record<string, any> = {};
+  filtered.forEach((r) => {
+    if (!operatorMap[r.admin_id]) {
+      operatorMap[r.admin_id] = {
+        admin_id: r.admin_id,
+        nama_operator: r.admin_nama,
+        total_transaksi: 0,
+        express: 0,
+        cargo: 0,
+        omset: 0,
+        kas_operasional: 0
+      };
+    }
+    const op = operatorMap[r.admin_id];
+    op.total_transaksi++;
+    if (r.tipe_layanan === "Express") op.express++;
+    if (r.tipe_layanan === "Cargo") op.cargo++;
+    op.omset += r.total_customer;
+    op.kas_operasional += r.kas_operasional;
+  });
+  const operator_report = Object.values(operatorMap).sort((a: any, b: any) => b.total_transaksi - a.total_transaksi);
+
+  // 4. Audit Summary
+  const audit_summary = {
+    total_transaksi,
+    total_audited: filtered.filter(r => r.audit_status !== "BELUM_DIAUDIT").length,
+    sesuai: filtered.filter(r => r.audit_status === "SESUAI").length,
+    selisih: filtered.filter(r => r.audit_status === "SELISIH").length,
+    perlu_review: filtered.filter(r => r.audit_status === "PERLU_REVIEW").length,
+    belum_diaudit: filtered.filter(r => r.audit_status === "BELUM_DIAUDIT").length
+  };
+
+  // 5. Analytics
+  const highest_outlet = outlet_report.length > 0 ? outlet_report[0] : null;
+  const highest_operator = operator_report.length > 0 ? operator_report[0] : null;
+
+  const dateRevenueMap: Record<string, number> = {};
+  filtered.forEach((r) => {
+    dateRevenueMap[r.tanggal] = (dateRevenueMap[r.tanggal] || 0) + r.total_customer;
+  });
+  let highest_revenue_date: any = null;
+  Object.keys(dateRevenueMap).forEach((d) => {
+    if (!highest_revenue_date || dateRevenueMap[d] > highest_revenue_date.omset) {
+      highest_revenue_date = { tanggal: d, omset: dateRevenueMap[d] };
+    }
+  });
+
+  const uniqueDays = Object.keys(dateRevenueMap).length;
+  const avg_transactions_per_day = uniqueDays > 0 ? Math.round((total_transaksi / uniqueDays) * 10) / 10 : 0;
+  const avg_customer_payment = total_transaksi > 0 ? Math.round(total_customer_payment / total_transaksi) : 0;
+
+  // Master Setoran avg
+  const setorans = db.Master_Setoran || [];
+  const validSetorans = setorans.filter((s: any) => s.status !== "DITOLAK");
+  const totalSetoranAmt = validSetorans.reduce((acc: number, s: any) => acc + (Number(s.total_setoran_owner) || 0), 0);
+  const avg_settlement = validSetorans.length > 0 ? Math.round(totalSetoranAmt / validSetorans.length) : 0;
+
+  const analytics = {
+    highest_outlet,
+    highest_operator,
+    highest_revenue_date,
+    avg_transactions_per_day,
+    avg_customer_payment,
+    avg_settlement
+  };
+
+  // 6. Charts Data
+  const dailyChartMap: Record<string, any> = {};
+  filtered.forEach((r) => {
+    if (!dailyChartMap[r.tanggal]) {
+      dailyChartMap[r.tanggal] = {
+        date: r.tanggal,
+        total: 0,
+        express: 0,
+        cargo: 0,
+        omset: 0,
+        setoran: 0,
+        kas: 0
+      };
+    }
+    const dc = dailyChartMap[r.tanggal];
+    dc.total++;
+    if (r.tipe_layanan === "Express") dc.express++;
+    if (r.tipe_layanan === "Cargo") dc.cargo++;
+    dc.omset += r.total_customer;
+    dc.setoran += r.setoran_owner;
+    dc.kas += r.kas_operasional;
+  });
+
+  const chartDates = Object.keys(dailyChartMap).sort();
+  const daily_transactions = chartDates.map(d => ({
+    date: d,
+    total: dailyChartMap[d].total,
+    express: dailyChartMap[d].express,
+    cargo: dailyChartMap[d].cargo
+  }));
+
+  const daily_revenue = chartDates.map(d => ({
+    date: d,
+    omset: dailyChartMap[d].omset,
+    setoran: dailyChartMap[d].setoran,
+    kas: dailyChartMap[d].kas
+  }));
+
+  const express_vs_cargo = [
+    { name: "Express", value: total_express },
+    { name: "Cargo", value: total_cargo }
+  ];
+
+  const setDistMap: Record<string, number> = {
+    "DISETUJUI": 0,
+    "MENUNGGU_APPROVAL": 0,
+    "DITOLAK": 0,
+    "BELUM_ADA_SETORAN": 0
+  };
+  filtered.forEach((r) => {
+    setDistMap[r.settlement_status] = (setDistMap[r.settlement_status] || 0) + 1;
+  });
+  const settlement_status_chart = [
+    { name: "Disetujui", value: setDistMap["DISETUJUI"] },
+    { name: "Menunggu Approval", value: setDistMap["MENUNGGU_APPROVAL"] },
+    { name: "Ditolak", value: setDistMap["DITOLAK"] },
+    { name: "Belum Ada Setoran", value: setDistMap["BELUM_ADA_SETORAN"] }
+  ];
+
+  return res.json({
+    status: "success",
+    data: {
+      summary: {
+        total_transaksi,
+        total_express,
+        total_cargo,
+        total_customer_payment,
+        total_yoyi,
+        total_setoran_owner,
+        total_kas_operasional,
+        total_selisih
+      },
+      daily_report,
+      outlet_report,
+      operator_report,
+      audit_summary,
+      analytics,
+      charts: {
+        daily_transactions,
+        daily_revenue,
+        express_vs_cargo,
+        settlement_status: settlement_status_chart
+      }
+    }
+  });
+});
+
+app.post("/api/getReportingTransactions", (req, res) => {
+  const db = readDb();
+  const allTx = getReportingRawTransactions(db);
+  const filtered = filterReportingTransactions(allTx, req.body);
+  return res.json({ status: "success", data: filtered });
+});
+
+app.post("/api/getReportingSettlement", (req, res) => {
+  const db = readDb();
+  const { date_start, dateStart, date_end, dateEnd, outlet_id, filterOutlet, settlement_status, filterSettlementStatus } = req.body || {};
+  const start = date_start || dateStart || "";
+  const end = date_end || dateEnd || "";
+  const out = outlet_id || filterOutlet || "ALL";
+  const stat = settlement_status || filterSettlementStatus || "ALL";
+
+  let list = db.Master_Setoran || [];
+  list = list.filter((s: any) => {
+    if (out !== "ALL" && s.outlet_id !== out) return false;
+    if (stat !== "ALL" && s.status !== stat) return false;
+    if (start && s.tanggal < start) return false;
+    if (end && s.tanggal > end) return false;
+    return true;
+  });
+
+  const total_records = list.length;
+  const total_disetujui = list.filter((s: any) => s.status === "DISETUJUI").length;
+  const total_menunggu = list.filter((s: any) => s.status === "MENUNGGU_APPROVAL").length;
+  const total_ditolak = list.filter((s: any) => s.status === "DITOLAK").length;
+  const total_amount_disetujui = list.filter((s: any) => s.status === "DISETUJUI").reduce((acc: number, s: any) => acc + (Number(s.total_setoran_owner) || 0), 0);
+  const total_amount_menunggu = list.filter((s: any) => s.status === "MENUNGGU_APPROVAL").reduce((acc: number, s: any) => acc + (Number(s.total_setoran_owner) || 0), 0);
+
+  return res.json({
+    status: "success",
+    data: {
+      summary: {
+        total_records,
+        total_disetujui,
+        total_menunggu,
+        total_ditolak,
+        total_amount_disetujui,
+        total_amount_menunggu
+      },
+      detail: list.reverse()
+    }
+  });
+});
+
+app.post("/api/getReportingAudit", (req, res) => {
+  const db = readDb();
+  const allTx = getReportingRawTransactions(db);
+  const filtered = filterReportingTransactions(allTx, req.body);
+
+  const total_transaksi = filtered.length;
+  const total_audited = filtered.filter(r => r.audit_status !== "BELUM_DIAUDIT").length;
+  const sesuai = filtered.filter(r => r.audit_status === "SESUAI").length;
+  const selisih = filtered.filter(r => r.audit_status === "SELISIH").length;
+  const perlu_review = filtered.filter(r => r.audit_status === "PERLU_REVIEW").length;
+  const belum_diaudit = filtered.filter(r => r.audit_status === "BELUM_DIAUDIT").length;
+
+  return res.json({
+    status: "success",
+    data: {
+      summary: {
+        total_transaksi,
+        total_audited,
+        sesuai,
+        selisih,
+        perlu_review,
+        belum_diaudit
+      },
+      detail: filtered
+    }
+  });
+});
+
+// ==========================================
+// PHASE 9 — AI AUDIT ASSISTANT ENDPOINTS
+// ==========================================
+
+function getAIAssistantContext(db: any) {
+  const allTx = getReportingRawTransactions(db);
+
+  // Totals
+  const total_transaksi = allTx.length;
+  const total_express = allTx.filter(r => r.tipe_layanan === "Express").length;
+  const total_cargo = allTx.filter(r => r.tipe_layanan === "Cargo").length;
+  const total_omset = allTx.reduce((acc, r) => acc + r.total_customer, 0);
+  const total_setoran_owner = allTx.reduce((acc, r) => acc + r.setoran_owner, 0);
+  const total_kas = allTx.reduce((acc, r) => acc + r.kas_operasional, 0);
+  const total_selisih = allTx.reduce((acc, r) => acc + r.selisih, 0);
+
+  // Date map
+  const dateMap: Record<string, any> = {};
+  allTx.forEach(r => {
+    if (!dateMap[r.tanggal]) {
+      dateMap[r.tanggal] = { count: 0, omset: 0, express: 0, cargo: 0, setoran: 0 };
+    }
+    dateMap[r.tanggal].count++;
+    dateMap[r.tanggal].omset += r.total_customer;
+    if (r.tipe_layanan === "Express") dateMap[r.tanggal].express++;
+    if (r.tipe_layanan === "Cargo") dateMap[r.tanggal].cargo++;
+    dateMap[r.tanggal].setoran += r.setoran_owner;
+  });
+
+  // Outlets
+  const outletMap: Record<string, any> = {};
+  allTx.forEach(r => {
+    if (!outletMap[r.outlet_id]) {
+      outletMap[r.outlet_id] = { nama: r.outlet_nama, count: 0, omset: 0, setoran: 0 };
+    }
+    outletMap[r.outlet_id].count++;
+    outletMap[r.outlet_id].omset += r.total_customer;
+    outletMap[r.outlet_id].setoran += r.setoran_owner;
+  });
+
+  // Operators
+  const opMap: Record<string, any> = {};
+  allTx.forEach(r => {
+    if (!opMap[r.admin_id]) {
+      opMap[r.admin_id] = { nama: r.admin_nama, count: 0, omset: 0 };
+    }
+    opMap[r.admin_id].count++;
+    opMap[r.admin_id].omset += r.total_customer;
+  });
+
+  // Settlements
+  const setorans = db.Master_Setoran || [];
+  const pending_setoran = setorans.filter((s: any) => s.status === "MENUNGGU_APPROVAL");
+  const rejected_setoran = setorans.filter((s: any) => s.status === "DITOLAK");
+  const approved_setoran = setorans.filter((s: any) => s.status === "DISETUJUI");
+
+  // Audits / Anomalies
+  const resiPerluReview = allTx.filter(r => r.audit_status === "PERLU_REVIEW");
+  const resiSelisih = allTx.filter(r => r.audit_status === "SELISIH");
+
+  // Batal list
+  const expBatal = (db.EXP_Resi || []).filter((r: any) => r.status_resi === "BATAL" || r.status === "BATAL");
+  const crgBatal = (db.CRG_Resi || []).filter((r: any) => r.status_resi === "BATAL" || r.status === "BATAL");
+  const totalBatal = expBatal.length + crgBatal.length;
+
+  return {
+    summary: {
+      total_transaksi,
+      total_express,
+      total_cargo,
+      total_omset,
+      total_setoran_owner,
+      total_kas,
+      total_selisih,
+      total_batal: totalBatal
+    },
+    dates: dateMap,
+    outlets: Object.values(outletMap).sort((a: any, b: any) => b.omset - a.omset),
+    operators: Object.values(opMap).sort((a: any, b: any) => b.count - a.count),
+    settlements: {
+      total: setorans.length,
+      pending: pending_setoran.length,
+      pending_list: pending_setoran.map((s: any) => ({ setoran_id: s.setoran_id, tanggal: s.tanggal, outlet: s.outlet_name || s.outlet_id, total: s.total_setoran_owner })),
+      rejected: rejected_setoran.length,
+      rejected_list: rejected_setoran.map((s: any) => ({ setoran_id: s.setoran_id, tanggal: s.tanggal, outlet: s.outlet_name || s.outlet_id, total: s.total_setoran_owner, alasan: s.alasan_penolakan })),
+      approved: approved_setoran.length
+    },
+    audits: {
+      perlu_review_count: resiPerluReview.length,
+      selisih_count: resiSelisih.length,
+      perlu_review_samples: resiPerluReview.slice(0, 5).map(r => ({ resi_id: r.resi_id, outlet: r.outlet_nama, total: r.total_customer })),
+      selisih_samples: resiSelisih.slice(0, 5).map(r => ({ resi_id: r.resi_id, outlet: r.outlet_nama, selisih: r.selisih }))
+    }
+  };
+}
+
+async function handleAIAssistantQuestion(question: string, db: any) {
+  const context = getAIAssistantContext(db);
+  const prompt = `
+Kamu adalah 'AI Audit Assistant' resmi untuk Owner J&T Express Tangerang Barat.
+Tugasmu: Menjawab pertanyaan owner mengenai performa bisnis, omset, audit, setoran, dan transaksi berdasarkan data real berikut:
+
+[DATA OPERASIONAL BUSINESS SNAPSHOT]
+${JSON.stringify(context, null, 2)}
+
+[ATURAN UTAMA]:
+1. Jawab HANYA berdasarkan data resmi di atas.
+2. JANGAN MENGARANG ATAU MEMBUAT ANGKAMU SENDIRI.
+3. Jika data tidak tersedia atau tidak tercantum dalam snapshot, jawab persis: "Data tidak tersedia."
+4. Sertakan penjelasan darimana angka tersebut dihitung jika ditanyakan.
+5. Gunakan format mata uang Rupiah (Rp) untuk nominal finansial.
+6. Jawaban harus padat, profesional, dan langsung pada poin tanpa basa-basi berlebihan.
+
+Pertanyaan Owner: "${question}"
+`;
+
+  try {
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt
+    });
+    return response.text || "Data tidak tersedia.";
+  } catch (err: any) {
+    console.error("Gemini Assistant Error:", err?.message || err);
+    // Rule-based fallback for simple queries
+    const qLower = question.toLowerCase();
+    if (qLower.includes("omset")) {
+      return `Total omset customer terdaftar saat ini adalah Rp ${context.summary.total_omset.toLocaleString("id-ID")}. (Perhitungan dari seluruh resi Express & Cargo yang tidak dibatalkan).`;
+    }
+    if (qLower.includes("transaksi") || qLower.includes("resi")) {
+      return `Total transaksi terdaftar: ${context.summary.total_transaksi} resi (${context.summary.total_express} Express, ${context.summary.total_cargo} Cargo).`;
+    }
+    if (qLower.includes("operator") || qLower.includes("admin")) {
+      const topOp = context.operators[0];
+      return topOp ? `Operator paling aktif: ${topOp.nama} dengan total ${topOp.count} transaksi (omset Rp ${topOp.omset.toLocaleString("id-ID")}).` : "Data tidak tersedia.";
+    }
+    if (qLower.includes("outlet")) {
+      const topOut = context.outlets[0];
+      return topOut ? `Outlet dengan omset tertinggi: ${topOut.nama} dengan omset Rp ${topOut.omset.toLocaleString("id-ID")} (${topOut.count} transaksi).` : "Data tidak tersedia.";
+    }
+    if (qLower.includes("setoran") || qLower.includes("belum disetujui")) {
+      return `Terdapat ${context.settlements.pending} setoran menunggu approval owner, dan ${context.settlements.rejected} setoran ditolak.`;
+    }
+    if (qLower.includes("selisih") || qLower.includes("audit")) {
+      return `Audit menemukan ${context.audits.selisih_count} resi dengan selisih nominal dan ${context.audits.perlu_review_count} resi perlu review.`;
+    }
+    return "Data tidak tersedia saat ini. Silakan coba kembali beberapa saat lagi.";
+  }
+}
+
+const handleDailySummaryRequest = async (req: any, res: any) => {
+  const db = readDb();
+  const context = getAIAssistantContext(db);
+
+  // Get date requested or latest available date
+  const dateKeys = Object.keys(context.dates).sort().reverse();
+  const targetDate = req.body?.date || (dateKeys.length > 0 ? dateKeys[0] : new Date().toISOString().split("T")[0]);
+  const dateInfo = context.dates[targetDate] || { count: 0, omset: 0, express: 0, cargo: 0, setoran: 0 };
+
+  const prompt = `
+Kamu adalah AI Audit Assistant untuk Owner J&T.
+Buatkan 'Daily Operational Summary' singkat untuk tanggal ${targetDate} berdasarkan data berikut:
+- Total Transaksi: ${dateInfo.count} resi (${dateInfo.express} Express, ${dateInfo.cargo} Cargo)
+- Total Omset Customer: Rp ${dateInfo.omset.toLocaleString("id-ID")}
+- Total Setoran Owner: Rp ${dateInfo.setoran.toLocaleString("id-ID")}
+- Setoran Menunggu Approval: ${context.settlements.pending}
+- Setoran Ditolak: ${context.settlements.rejected}
+- Resi Perlu Review Audit: ${context.audits.perlu_review_count}
+- Resi Selisih: ${context.audits.selisih_count}
+
+Format dalam 5-6 bullet point yang sangat jelas, profesional, dan ringkas dalam Bahasa Indonesia.
+`;
+
+  let summaryText = "";
+  try {
+    const ai = getGeminiClient();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt
+    });
+    summaryText = response.text || "";
+  } catch (err) {
+    summaryText = `📊 **Ringkasan Operasional Hari Ini (${targetDate})**:\n` +
+      `• **Total Transaksi**: ${dateInfo.count} resi (${dateInfo.express} Express, ${dateInfo.cargo} Cargo)\n` +
+      `• **Total Omset Customer**: Rp ${dateInfo.omset.toLocaleString("id-ID")}\n` +
+      `• **Setoran Owner**: Rp ${dateInfo.setoran.toLocaleString("id-ID")}\n` +
+      `• **Setoran Menunggu Approval**: ${context.settlements.pending} berkas\n` +
+      `• **Item Perlu Review Audit**: ${context.audits.perlu_review_count} resi`;
+  }
+
+  return res.json({
+    status: "success",
+    data: {
+      date: targetDate,
+      summary_text: summaryText,
+      metrics: {
+        total_transaksi: dateInfo.count,
+        express: dateInfo.express,
+        cargo: dateInfo.cargo,
+        omset: dateInfo.omset,
+        setoran_owner: dateInfo.setoran,
+        pending_settlements: context.settlements.pending,
+        audit_review_count: context.audits.perlu_review_count
+      },
+      timestamp: new Date().toISOString()
+    }
+  });
+};
+
+const handleDetectAnomaliesRequest = async (req: any, res: any) => {
+  const db = readDb();
+  const context = getAIAssistantContext(db);
+
+  const anomalies: any[] = [];
+  const recommendations: string[] = [];
+
+  // Rule 1: Rejected settlements
+  if (context.settlements.rejected > 0) {
+    anomalies.push({
+      type: "SETORAN_DITOLAK",
+      severity: "HIGH",
+      title: `${context.settlements.rejected} Setoran Ditolak Owner`,
+      description: `Terdapat setoran outlet yang telah ditolak oleh owner dan membutuhkan revisi ulang oleh kasir outlet.`,
+      items: context.settlements.rejected_list
+    });
+    recommendations.push("Instruksikan kasir outlet terkait untuk melakukan perbaikan dan mengajukan ulang setoran yang ditolak.");
+  }
+
+  // Rule 2: Pending settlements
+  if (context.settlements.pending > 0) {
+    anomalies.push({
+      type: "SETORAN_PENDING",
+      severity: "MEDIUM",
+      title: `${context.settlements.pending} Setoran Menunggu Approval`,
+      description: `Ada setoran harian outlet yang belum diverifikasi dan disetujui owner.`,
+      items: context.settlements.pending_list
+    });
+    recommendations.push("Segera lakukan pemeriksaan berkas dan verifikasi bukti transfer setoran pada menu Persetujuan Setoran.");
+  }
+
+  // Rule 3: Resi Perlu Review Audit
+  if (context.audits.perlu_review_count > 0) {
+    anomalies.push({
+      type: "AUDIT_PERLU_REVIEW",
+      severity: "MEDIUM",
+      title: `${context.audits.perlu_review_count} Resi Pembayaran Customer Rp 0`,
+      description: `Ditemukan resi berstatus aktif yang dicatat dengan total pembayaran customer Rp 0. Perlu konfirmasi apakah VOID atau diskon.`,
+      items: context.audits.perlu_review_samples
+    });
+    recommendations.push("Lakukan audit ulang pada resi bernilai Rp 0 untuk memastikan tidak ada kesalahan input pembayaran kupon/kredit.");
+  }
+
+  // Rule 4: Resi Selisih Margin
+  if (context.audits.selisih_count > 0) {
+    anomalies.push({
+      type: "AUDIT_SELISIH",
+      severity: "HIGH",
+      title: `${context.audits.selisih_count} Resi Mengalami Selisih Margin`,
+      description: `Ditemukan ketidaksesuaian antara tagihan customer dengan tarif dasar YOYI/JTC.`,
+      items: context.audits.selisih_samples
+    });
+    recommendations.push("Periksa detail biaya timbangan dan diskon khusus pada resi berstatus SELISIH.");
+  }
+
+  // Rule 5: Transaksi Batal
+  if (context.summary.total_batal > 0) {
+    anomalies.push({
+      type: "TRANSAKSI_BATAL",
+      severity: "LOW",
+      title: `${context.summary.total_batal} Transaksi Dibatalkan (BATAL)`,
+      description: `Jumlah total resi yang dibatalkan oleh operator.`,
+      items: []
+    });
+  }
+
+  if (recommendations.length === 0) {
+    recommendations.push("Seluruh operasional berjalan normal. Tidak ditemukan anomali signifikan hari ini.");
+  }
+
+  return res.json({
+    status: "success",
+    data: {
+      anomalies,
+      recommendations,
+      timestamp: new Date().toISOString()
+    }
+  });
+};
+
+const handleAskAssistantRequest = async (req: any, res: any) => {
+  const db = readDb();
+  const question = req.body?.question || req.body?.prompt || "";
+  if (!question || typeof question !== "string" || !question.trim()) {
+    return res.json({
+      status: "error",
+      message: "Pertanyaan tidak boleh kosong."
+    });
+  }
+
+  const answer = await handleAIAssistantQuestion(question.trim(), db);
+
+  const suggestedQuestions = [
+    "Berapa total omset hari ini?",
+    "Siapa operator paling aktif minggu ini?",
+    "Outlet mana yang memiliki omset tertinggi?",
+    "Apakah ada setoran yang belum disetujui?",
+    "Berapa banyak resi cargo yang terinput?",
+    "Apakah ada selisih margin dalam transaksi?"
+  ];
+
+  return res.json({
+    status: "success",
+    data: {
+      question,
+      answer,
+      timestamp: new Date().toISOString(),
+      suggested_questions: suggestedQuestions
+    }
+  });
+};
+
+app.post("/api/dailySummary", handleDailySummaryRequest);
+app.post("/api/apiDailySummary", handleDailySummaryRequest);
+
+app.post("/api/detectAnomalies", handleDetectAnomaliesRequest);
+app.post("/api/apiDetectAnomalies", handleDetectAnomaliesRequest);
+
+app.post("/api/askAssistant", handleAskAssistantRequest);
+app.post("/api/apiAskAssistant", handleAskAssistantRequest);
+
 
 // === PRODUCTION STANDALONE INTEGRATION ===
 

@@ -15,8 +15,9 @@ import SettingOutletPage from "./components/owner/SettingOutletPage";
 import SetoranOwnerPage from "./components/owner/SetoranOwnerPage";
 import OwnerAuditPage from "./components/owner/OwnerAuditPage";
 import DailyClosingPage from "./components/owner/DailyClosingPage";
-import { Lock } from "lucide-react";
-import { Shield } from "lucide-react";
+import ReportingPage from "./components/owner/ReportingPage";
+import OwnerAIAssistantPage from "./components/owner/OwnerAIAssistantPage";
+import { Lock, Shield, BarChart3, Bot, Sparkles } from "lucide-react";
 import ToastContainer from "./components/ToastContainer";
 import { SessionData, Outlet } from "./types";
 import { toast } from "./utils/toast";
@@ -129,6 +130,8 @@ export default function App() {
     } else if (session.role === "OWNER") {
       navItems.push(
         { id: "dashboard", label: "Dashboard", icon: Landmark },
+        { id: "ai-assistant", label: "AI Audit Assistant", icon: Bot, iconColor: "text-amber-500" },
+        { id: "reporting", label: "Laporan & Analitik", icon: BarChart3 },
         { id: "setoran-owner", label: "Persetujuan Setoran", icon: Clipboard },
         { id: "owner-audit", label: "Audit Engine", icon: Shield },
         { id: "daily-closing", label: "Daily Closing", icon: Lock },
@@ -381,6 +384,20 @@ export default function App() {
 
         {session && currentView === "dashboard" && (
           <DashboardPage
+            session={session}
+            outlets={outlets}
+          />
+        )}
+
+        {session && currentView === "ai-assistant" && (
+          <OwnerAIAssistantPage
+            session={session}
+            outlets={outlets}
+          />
+        )}
+
+        {session && currentView === "reporting" && (
+          <ReportingPage
             session={session}
             outlets={outlets}
           />

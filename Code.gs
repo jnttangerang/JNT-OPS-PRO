@@ -113,6 +113,23 @@ function handleRouting(action, params) {
       return apiGetSetoranList(params);
     case "getSetoranDetail":
       return apiGetSetoranDetail(params);
+    case "getReportingSummary":
+      return apiGetReportingSummary(params);
+    case "getReportingTransactions":
+      return apiGetReportingTransactions(params);
+    case "getReportingSettlement":
+      return apiGetReportingSettlement(params);
+    case "getReportingAudit":
+      return apiGetReportingAudit(params);
+    case "apiDailySummary":
+    case "dailySummary":
+      return apiDailySummaryGAS(params);
+    case "apiDetectAnomalies":
+    case "detectAnomalies":
+      return apiDetectAnomaliesGAS(params);
+    case "apiAskAssistant":
+    case "askAssistant":
+      return apiAskAssistantGAS(params);
     case "testSchemaIntegrity":
       return testSchemaIntegrity();
     default:
@@ -1065,6 +1082,467 @@ function getSetoranTransactions(tanggal, outletId) {
     total_setoran_owner: totalSetoranOwner,
     total_kas_outlet: totalKasOutlet,
     data: list
+  };
+}
+
+/* PHASE 8 — REPORTING & ANALYTICS APIS */
+
+function apiGetReportingRawTransactions_() {
+  var expData = DatabaseService.getSheetData("EXP_Resi");
+  var crgData = DatabaseService.getSheetData("CRG_Resi");
+  var backupData = DatabaseService.getSheetData("PreInput_Backup");
+  var userData = DatabaseService.getSheetData("Users");
+  var outletData = DatabaseService.getSheetData("Outlets");
+  var setoranData = DatabaseService.getSheetData("Master_Setoran");
+
+  var backupMap = {};
+  if (backupData && backupData.length > 1) {
+    var bHeaders = backupData[0];
+    for (var b = 1; b < backupData.length; b++) {
+      var bObj = rowToObject_(bHeaders, backupData[b]);
+      backupMap[bObj.transaksi_id] = bObj;
+    }
+  }
+
+  var userMap = {};
+  if (userData && userData.length > 1) {
+    var uHeaders = userData[0];
+    for (var u = 1; u < userData.length; u++) {
+      var uObj = rowToObject_(uHeaders, userData[u]);
+      userMap[uObj.user_id] = uObj.nama_lengkap || uObj.username;
+    }
+  }
+
+  var outletMap = {};
+  if (outletData && outletData.length > 1) {
+    var oHeaders = outletData[0];
+    for (var o = 1; o < outletData.length; o++) {
+      var oObj = rowToObject_(oHeaders, outletData[o]);
+      outletMap[oObj.outlet_id] = oObj.nama_outlet;
+    }
+  }
+
+  var setoranMap = {};
+  if (setoranData && setoranData.length > 1) {
+    var sHeaders = setoranData[0];
+    for (var s = 1; s < setoranData.length; s++) {
+      var sObj = rowToObject_(sHeaders, setoranData[s]);
+      if (sObj.status !== "DITOLAK") {
+        setoranMap[sObj.tanggal + "_" + sObj.outlet_id] = sObj.status;
+      }
+    }
+  }
+
+  var raw = [];
+
+  if (expData && expData.length > 1) {
+    var expHeaders = expData[0];
+    for (var i = 1; i < expData.length; i++) {
+      var r = rowToObject_(expHeaders, expData[i]);
+      if (r.status_resi !== "BATAL" && r.status !== "BATAL") {
+        var txDate = r.timestamp ? r.timestamp.toString().split("T")[0] : "";
+        var pre = backupMap[r.transaksi_id] || {};
+        var custPay = Number(r.total_dibayar_customer) || Number(r.grand_total) || 0;
+        var yoyi = Number(r.biaya_yoyi) || 0;
+        var selisih = custPay - yoyi;
+        var setoranOwner = Number(r.setoran_ke_owner) || 0;
+        var kasOperasional = Number(r.kas_operasional) || 0;
+        var settlementStatus = setoranMap[txDate + "_" + r.outlet_id_input] || "BELUM_ADA_SETORAN";
+
+        var auditStatus = "BELUM_DIAUDIT";
+        if (r.owner_audit_status) {
+          auditStatus = r.owner_audit_status;
+        } else if (settlementStatus === "DISETUJUI") {
+          if (custPay === 0) auditStatus = "PERLU_REVIEW";
+          else if (selisih < 0) auditStatus = "SELISIH";
+          else auditStatus = "SESUAI";
+        }
+
+        raw.push({
+          resi_id: r.resi_id.toString(),
+          transaksi_id: (r.transaksi_id || "").toString(),
+          timestamp: (r.timestamp || "").toString(),
+          tanggal: txDate,
+          admin_id: (r.admin_id_pencatat || "").toString(),
+          admin_nama: userMap[r.admin_id_pencatat] || r.admin_id_pencatat || "System",
+          outlet_id: (r.outlet_id_input || "").toString(),
+          outlet_nama: outletMap[r.outlet_id_input] || r.outlet_id_input || "Outlet",
+          tipe_layanan: "Express",
+          tipe_produk: (r.tipe_produk || "EXPRESS").toString(),
+          total_customer: custPay,
+          total_yoyi: yoyi,
+          selisih: selisih,
+          setoran_owner: setoranOwner,
+          kas_operasional: kasOperasional,
+          settlement_status: settlementStatus,
+          audit_status: auditStatus,
+          pengirim: pre.nama_pengirim || "Umum",
+          penerima: pre.nama_penerima || "Umum",
+          metode_bayar: (r.metode_bayar || "Tunai").toString()
+        });
+      }
+    }
+  }
+
+  if (crgData && crgData.length > 1) {
+    var crgHeaders = crgData[0];
+    for (var j = 1; j < crgData.length; j++) {
+      var c = rowToObject_(crgHeaders, crgData[j]);
+      if (c.status_resi !== "BATAL" && c.status !== "BATAL") {
+        var txDateC = c.timestamp ? c.timestamp.toString().split("T")[0] : "";
+        var preC = backupMap[c.transaksi_id] || {};
+        var custPayC = Number(c.total_dibayar_customer) || Number(c.grand_total) || 0;
+        var yoyiC = Number(c.biaya_jtc) || 0;
+        var selisihC = custPayC - yoyiC;
+        var setoranOwnerC = Number(c.setoran_ke_owner) || 0;
+        var kasOperasionalC = Number(c.kas_operasional) || 0;
+        var settlementStatusC = setoranMap[txDateC + "_" + c.outlet_id_input] || "BELUM_ADA_SETORAN";
+
+        var auditStatusC = "BELUM_DIAUDIT";
+        if (c.owner_audit_status) {
+          auditStatusC = c.owner_audit_status;
+        } else if (settlementStatusC === "DISETUJUI") {
+          if (custPayC === 0) auditStatusC = "PERLU_REVIEW";
+          else if (selisihC < 0) auditStatusC = "SELISIH";
+          else auditStatusC = "SESUAI";
+        }
+
+        raw.push({
+          resi_id: c.resi_id.toString(),
+          transaksi_id: (c.transaksi_id || "").toString(),
+          timestamp: (c.timestamp || "").toString(),
+          tanggal: txDateC,
+          admin_id: (c.admin_id_pencatat || "").toString(),
+          admin_nama: userMap[c.admin_id_pencatat] || c.admin_id_pencatat || "System",
+          outlet_id: (c.outlet_id_input || "").toString(),
+          outlet_nama: outletMap[c.outlet_id_input] || c.outlet_id_input || "Outlet",
+          tipe_layanan: "Cargo",
+          tipe_produk: (c.tipe_produk || "CARGO").toString(),
+          total_customer: custPayC,
+          total_yoyi: yoyiC,
+          selisih: selisihC,
+          setoran_owner: setoranOwnerC,
+          kas_operasional: kasOperasionalC,
+          settlement_status: settlementStatusC,
+          audit_status: auditStatusC,
+          pengirim: preC.nama_pengirim || "Umum",
+          penerima: preC.nama_penerima || "Umum",
+          metode_bayar: (c.metode_bayar || "Tunai").toString()
+        });
+      }
+    }
+  }
+
+  raw.sort(function (a, b) {
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
+
+  return raw;
+}
+
+function filterReportingTransactions_(raw, params) {
+  params = params || {};
+  var start = params.date_start || params.dateStart || "";
+  var end = params.date_end || params.dateEnd || "";
+  var out = params.outlet_id || params.filterOutlet || "ALL";
+  var op = params.operator_id || params.filterOperator || "ALL";
+  var sType = params.service_type || params.filterServiceType || "ALL";
+  var setStat = params.settlement_status || params.filterSettlementStatus || "ALL";
+  var audStat = params.audit_status || params.filterAuditStatus || "ALL";
+
+  return raw.filter(function (r) {
+    if (out !== "ALL" && r.outlet_id !== out) return false;
+    if (op !== "ALL" && r.admin_id !== op && r.admin_nama.toLowerCase().indexOf(op.toLowerCase()) === -1) return false;
+    if (sType !== "ALL" && r.tipe_layanan !== sType) return false;
+    if (setStat !== "ALL" && r.settlement_status !== setStat) return false;
+    if (audStat !== "ALL" && r.audit_status !== audStat) return false;
+    if (start && r.tanggal < start) return false;
+    if (end && r.tanggal > end) return false;
+    return true;
+  });
+}
+
+function apiGetReportingSummary(params) {
+  var raw = apiGetReportingRawTransactions_();
+  var filtered = filterReportingTransactions_(raw, params);
+
+  var total_transaksi = filtered.length;
+  var total_express = 0;
+  var total_cargo = 0;
+  var total_customer_payment = 0;
+  var total_yoyi = 0;
+  var total_setoran_owner = 0;
+  var total_kas_operasional = 0;
+
+  var dailyMap = {};
+  var outletMap = {};
+  var operatorMap = {};
+  var dateRevenueMap = {};
+  var dailyChartMap = {};
+
+  for (var i = 0; i < filtered.length; i++) {
+    var r = filtered[i];
+    if (r.tipe_layanan === "Express") total_express++;
+    if (r.tipe_layanan === "Cargo") total_cargo++;
+
+    total_customer_payment += r.total_customer;
+    total_yoyi += r.total_yoyi;
+    total_setoran_owner += r.setoran_owner;
+    total_kas_operasional += r.kas_operasional;
+
+    // Daily report
+    var dKey = r.tanggal + "_" + r.outlet_id;
+    if (!dailyMap[dKey]) {
+      dailyMap[dKey] = {
+        tanggal: r.tanggal,
+        outlet_id: r.outlet_id,
+        nama_outlet: r.outlet_nama,
+        total_transaksi: 0,
+        express: 0,
+        cargo: 0,
+        total_customer_payment: 0,
+        total_yoyi: 0,
+        total_setoran_owner: 0,
+        total_kas_operasional: 0,
+        total_selisih: 0
+      };
+    }
+    dailyMap[dKey].total_transaksi++;
+    if (r.tipe_layanan === "Express") dailyMap[dKey].express++;
+    if (r.tipe_layanan === "Cargo") dailyMap[dKey].cargo++;
+    dailyMap[dKey].total_customer_payment += r.total_customer;
+    dailyMap[dKey].total_yoyi += r.total_yoyi;
+    dailyMap[dKey].total_setoran_owner += r.setoran_owner;
+    dailyMap[dKey].total_kas_operasional += r.kas_operasional;
+    dailyMap[dKey].total_selisih += r.selisih;
+
+    // Outlet report
+    if (!outletMap[r.outlet_id]) {
+      outletMap[r.outlet_id] = {
+        outlet_id: r.outlet_id,
+        nama_outlet: r.outlet_nama,
+        total_transaksi: 0,
+        omset: 0,
+        setoran: 0,
+        kas_outlet: 0,
+        selisih: 0
+      };
+    }
+    outletMap[r.outlet_id].total_transaksi++;
+    outletMap[r.outlet_id].omset += r.total_customer;
+    outletMap[r.outlet_id].setoran += r.setoran_owner;
+    outletMap[r.outlet_id].kas_outlet += r.kas_operasional;
+    outletMap[r.outlet_id].selisih += r.selisih;
+
+    // Operator report
+    if (!operatorMap[r.admin_id]) {
+      operatorMap[r.admin_id] = {
+        admin_id: r.admin_id,
+        nama_operator: r.admin_nama,
+        total_transaksi: 0,
+        express: 0,
+        cargo: 0,
+        omset: 0,
+        kas_operasional: 0
+      };
+    }
+    operatorMap[r.admin_id].total_transaksi++;
+    if (r.tipe_layanan === "Express") operatorMap[r.admin_id].express++;
+    if (r.tipe_layanan === "Cargo") operatorMap[r.admin_id].cargo++;
+    operatorMap[r.admin_id].omset += r.total_customer;
+    operatorMap[r.admin_id].kas_operasional += r.kas_operasional;
+
+    // Revenue per date
+    dateRevenueMap[r.tanggal] = (dateRevenueMap[r.tanggal] || 0) + r.total_customer;
+
+    // Daily chart map
+    if (!dailyChartMap[r.tanggal]) {
+      dailyChartMap[r.tanggal] = { date: r.tanggal, total: 0, express: 0, cargo: 0, omset: 0, setoran: 0, kas: 0 };
+    }
+    dailyChartMap[r.tanggal].total++;
+    if (r.tipe_layanan === "Express") dailyChartMap[r.tanggal].express++;
+    if (r.tipe_layanan === "Cargo") dailyChartMap[r.tanggal].cargo++;
+    dailyChartMap[r.tanggal].omset += r.total_customer;
+    dailyChartMap[r.tanggal].setoran += r.setoran_owner;
+    dailyChartMap[r.tanggal].kas += r.kas_operasional;
+  }
+
+  var daily_report = Object.keys(dailyMap).map(function(k) { return dailyMap[k]; }).sort(function(a,b) { return b.tanggal.localeCompare(a.tanggal); });
+  var outlet_report = Object.keys(outletMap).map(function(k) { return outletMap[k]; }).sort(function(a,b) { return b.omset - a.omset; });
+  var operator_report = Object.keys(operatorMap).map(function(k) { return operatorMap[k]; }).sort(function(a,b) { return b.total_transaksi - a.total_transaksi; });
+
+  var highest_outlet = outlet_report.length > 0 ? outlet_report[0] : null;
+  var highest_operator = operator_report.length > 0 ? operator_report[0] : null;
+
+  var highest_revenue_date = null;
+  Object.keys(dateRevenueMap).forEach(function(d) {
+    if (!highest_revenue_date || dateRevenueMap[d] > highest_revenue_date.omset) {
+      highest_revenue_date = { tanggal: d, omset: dateRevenueMap[d] };
+    }
+  });
+
+  var uniqueDays = Object.keys(dateRevenueMap).length;
+  var avg_transactions_per_day = uniqueDays > 0 ? Math.round((total_transaksi / uniqueDays) * 10) / 10 : 0;
+  var avg_customer_payment = total_transaksi > 0 ? Math.round(total_customer_payment / total_transaksi) : 0;
+
+  var setoranSheetData = DatabaseService.getSheetData("Master_Setoran");
+  var avg_settlement = 0;
+  if (setoranSheetData && setoranSheetData.length > 1) {
+    var sHead = setoranSheetData[0];
+    var validSetCount = 0;
+    var validSetSum = 0;
+    for (var sIdx = 1; sIdx < setoranSheetData.length; sIdx++) {
+      var sRow = rowToObject_(sHead, setoranSheetData[sIdx]);
+      if (sRow.status !== "DITOLAK") {
+        validSetCount++;
+        validSetSum += Number(sRow.total_setoran_owner) || 0;
+      }
+    }
+    if (validSetCount > 0) avg_settlement = Math.round(validSetSum / validSetCount);
+  }
+
+  var chartDates = Object.keys(dailyChartMap).sort();
+  var daily_transactions = chartDates.map(function(d) {
+    return { date: d, total: dailyChartMap[d].total, express: dailyChartMap[d].express, cargo: dailyChartMap[d].cargo };
+  });
+  var daily_revenue = chartDates.map(function(d) {
+    return { date: d, omset: dailyChartMap[d].omset, setoran: dailyChartMap[d].setoran, kas: dailyChartMap[d].kas };
+  });
+
+  var express_vs_cargo = [
+    { name: "Express", value: total_express },
+    { name: "Cargo", value: total_cargo }
+  ];
+
+  var setDistMap = { "DISETUJUI": 0, "MENUNGGU_APPROVAL": 0, "DITOLAK": 0, "BELUM_ADA_SETORAN": 0 };
+  filtered.forEach(function(r) {
+    setDistMap[r.settlement_status] = (setDistMap[r.settlement_status] || 0) + 1;
+  });
+  var settlement_status_chart = [
+    { name: "Disetujui", value: setDistMap["DISETUJUI"] },
+    { name: "Menunggu Approval", value: setDistMap["MENUNGGU_APPROVAL"] },
+    { name: "Ditolak", value: setDistMap["DITOLAK"] },
+    { name: "Belum Ada Setoran", value: setDistMap["BELUM_ADA_SETORAN"] }
+  ];
+
+  return {
+    status: "success",
+    data: {
+      summary: {
+        total_transaksi: total_transaksi,
+        total_express: total_express,
+        total_cargo: total_cargo,
+        total_customer_payment: total_customer_payment,
+        total_yoyi: total_yoyi,
+        total_setoran_owner: total_setoran_owner,
+        total_kas_operasional: total_kas_operasional,
+        total_selisih: total_customer_payment - total_yoyi
+      },
+      daily_report: daily_report,
+      outlet_report: outlet_report,
+      operator_report: operator_report,
+      audit_summary: {
+        total_transaksi: total_transaksi,
+        total_audited: filtered.filter(function(r){ return r.audit_status !== "BELUM_DIAUDIT"; }).length,
+        sesuai: filtered.filter(function(r){ return r.audit_status === "SESUAI"; }).length,
+        selisih: filtered.filter(function(r){ return r.audit_status === "SELISIH"; }).length,
+        perlu_review: filtered.filter(function(r){ return r.audit_status === "PERLU_REVIEW"; }).length,
+        belum_diaudit: filtered.filter(function(r){ return r.audit_status === "BELUM_DIAUDIT"; }).length
+      },
+      analytics: {
+        highest_outlet: highest_outlet,
+        highest_operator: highest_operator,
+        highest_revenue_date: highest_revenue_date,
+        avg_transactions_per_day: avg_transactions_per_day,
+        avg_customer_payment: avg_customer_payment,
+        avg_settlement: avg_settlement
+      },
+      charts: {
+        daily_transactions: daily_transactions,
+        daily_revenue: daily_revenue,
+        express_vs_cargo: express_vs_cargo,
+        settlement_status: settlement_status_chart
+      }
+    }
+  };
+}
+
+function apiGetReportingTransactions(params) {
+  var raw = apiGetReportingRawTransactions_();
+  var filtered = filterReportingTransactions_(raw, params);
+  return { status: "success", data: filtered };
+}
+
+function apiGetReportingSettlement(params) {
+  params = params || {};
+  var start = params.date_start || params.dateStart || "";
+  var end = params.date_end || params.dateEnd || "";
+  var out = params.outlet_id || params.filterOutlet || "ALL";
+  var stat = params.settlement_status || params.filterSettlementStatus || "ALL";
+
+  var rows = DatabaseService.getSheetData("Master_Setoran");
+  if (!rows || rows.length < 2) {
+    return { status: "success", data: { summary: { total_records: 0, total_disetujui: 0, total_menunggu: 0, total_ditolak: 0, total_amount_disetujui: 0, total_amount_menunggu: 0 }, detail: [] } };
+  }
+
+  var headers = rows[0];
+  var list = [];
+  for (var i = 1; i < rows.length; i++) {
+    var obj = rowToObject_(headers, rows[i]);
+    if (out !== "ALL" && obj.outlet_id !== out) continue;
+    if (stat !== "ALL" && obj.status !== stat) continue;
+    if (start && obj.tanggal < start) continue;
+    if (end && obj.tanggal > end) continue;
+    list.push(obj);
+  }
+
+  var total_records = list.length;
+  var total_disetujui = list.filter(function(s){ return s.status === "DISETUJUI"; }).length;
+  var total_menunggu = list.filter(function(s){ return s.status === "MENUNGGU_APPROVAL"; }).length;
+  var total_ditolak = list.filter(function(s){ return s.status === "DITOLAK"; }).length;
+  var total_amount_disetujui = list.filter(function(s){ return s.status === "DISETUJUI"; }).reduce(function(acc, s){ return acc + (Number(s.total_setoran_owner) || 0); }, 0);
+  var total_amount_menunggu = list.filter(function(s){ return s.status === "MENUNGGU_APPROVAL"; }).reduce(function(acc, s){ return acc + (Number(s.total_setoran_owner) || 0); }, 0);
+
+  return {
+    status: "success",
+    data: {
+      summary: {
+        total_records: total_records,
+        total_disetujui: total_disetujui,
+        total_menunggu: total_menunggu,
+        total_ditolak: total_ditolak,
+        total_amount_disetujui: total_amount_disetujui,
+        total_amount_menunggu: total_amount_menunggu
+      },
+      detail: list.reverse()
+    }
+  };
+}
+
+function apiGetReportingAudit(params) {
+  var raw = apiGetReportingRawTransactions_();
+  var filtered = filterReportingTransactions_(raw, params);
+
+  var total_transaksi = filtered.length;
+  var total_audited = filtered.filter(function(r){ return r.audit_status !== "BELUM_DIAUDIT"; }).length;
+  var sesuai = filtered.filter(function(r){ return r.audit_status === "SESUAI"; }).length;
+  var selisih = filtered.filter(function(r){ return r.audit_status === "SELISIH"; }).length;
+  var perlu_review = filtered.filter(function(r){ return r.audit_status === "PERLU_REVIEW"; }).length;
+  var belum_diaudit = filtered.filter(function(r){ return r.audit_status === "BELUM_DIAUDIT"; }).length;
+
+  return {
+    status: "success",
+    data: {
+      summary: {
+        total_transaksi: total_transaksi,
+        total_audited: total_audited,
+        sesuai: sesuai,
+        selisih: selisih,
+        perlu_review: perlu_review,
+        belum_diaudit: belum_diaudit
+      },
+      detail: filtered
+    }
   };
 }
 
@@ -2442,3 +2920,123 @@ function apiExecuteClosing(params) {
   
   return { status: "success", message: "Closing harian berhasil diselesaikan.", data: Object.assign({ setoran_id: activeSetoranId }, updateData) };
 }
+
+// ==========================================
+// PHASE 9 — AI AUDIT ASSISTANT (GAS ENGINE)
+// ==========================================
+
+function apiDailySummaryGAS(params) {
+  var reportData = apiGetReportingSummary(params || {});
+  var summary = reportData.data ? reportData.data.summary : {};
+  
+  var targetDate = (params && params.date) ? params.date : new Date().toISOString().split("T")[0];
+  var omset = summary.total_omset_customer || 0;
+  var setoran = summary.total_setoran_owner || 0;
+  var count = summary.total_transaksi || 0;
+
+  var text = "📊 **Ringkasan Operasional Hari Ini (" + targetDate + ")**:\n" +
+    "• **Total Transaksi**: " + count + " resi (" + (summary.total_express || 0) + " Express, " + (summary.total_cargo || 0) + " Cargo)\n" +
+    "• **Total Omset Customer**: Rp " + Number(omset).toLocaleString("id-ID") + "\n" +
+    "• **Total Setoran Owner**: Rp " + Number(setoran).toLocaleString("id-ID") + "\n" +
+    "• **Total Kas Operasional**: Rp " + Number(summary.total_kas_operasional || 0).toLocaleString("id-ID");
+
+  return {
+    status: "success",
+    data: {
+      date: targetDate,
+      summary_text: text,
+      metrics: {
+        total_transaksi: count,
+        express: summary.total_express || 0,
+        cargo: summary.total_cargo || 0,
+        omset: omset,
+        setoran_owner: setoran,
+        pending_settlements: 0,
+        audit_review_count: 0
+      },
+      timestamp: new Date().toISOString()
+    }
+  };
+}
+
+function apiDetectAnomaliesGAS(params) {
+  var setorans = DatabaseService.readData("Master_Setoran") || [];
+  var pendingList = setorans.filter(function(s) { return s.status === "MENUNGGU_APPROVAL"; });
+  var rejectedList = setorans.filter(function(s) { return s.status === "DITOLAK"; });
+
+  var anomalies = [];
+  var recommendations = [];
+
+  if (rejectedList.length > 0) {
+    anomalies.push({
+      type: "SETORAN_DITOLAK",
+      severity: "HIGH",
+      title: rejectedList.length + " Setoran Ditolak Owner",
+      description: "Terdapat setoran outlet yang telah ditolak oleh owner dan membutuhkan revisi ulang oleh kasir.",
+      items: rejectedList.map(function(s) { return { setoran_id: s.setoran_id, outlet: s.outlet_name || s.outlet_id, total: s.total_setoran_owner, alasan: s.alasan_penolakan }; })
+    });
+    recommendations.push("Instruksikan kasir outlet untuk memperbaiki setoran yang ditolak.");
+  }
+
+  if (pendingList.length > 0) {
+    anomalies.push({
+      type: "SETORAN_PENDING",
+      severity: "MEDIUM",
+      title: pendingList.length + " Setoran Menunggu Approval",
+      description: "Ada setoran harian outlet yang belum diverifikasi dan disetujui owner.",
+      items: pendingList.map(function(s) { return { setoran_id: s.setoran_id, outlet: s.outlet_name || s.outlet_id, total: s.total_setoran_owner }; })
+    });
+    recommendations.push("Segera verifikasi setoran pending pada menu Persetujuan Setoran.");
+  }
+
+  if (recommendations.length === 0) {
+    recommendations.push("Seluruh operasional berjalan normal. Tidak ditemukan anomali signifikan.");
+  }
+
+  return {
+    status: "success",
+    data: {
+      anomalies: anomalies,
+      recommendations: recommendations,
+      timestamp: new Date().toISOString()
+    }
+  };
+}
+
+function apiAskAssistantGAS(params) {
+  var question = (params && params.question) ? params.question.trim() : "";
+  if (!question) {
+    return { status: "error", message: "Pertanyaan tidak boleh kosong." };
+  }
+
+  var reportData = apiGetReportingSummary({});
+  var summary = reportData.data ? reportData.data.summary : {};
+  var qLower = question.toLowerCase();
+  var answer = "";
+
+  if (qLower.indexOf("omset") !== -1) {
+    answer = "Total omset customer terdaftar saat ini adalah Rp " + Number(summary.total_omset_customer || 0).toLocaleString("id-ID") + ". (Dihitung dari seluruh resi Express & Cargo aktif).";
+  } else if (qLower.indexOf("transaksi") !== -1 || qLower.indexOf("resi") !== -1) {
+    answer = "Total transaksi terdaftar: " + (summary.total_transaksi || 0) + " resi (" + (summary.total_express || 0) + " Express, " + (summary.total_cargo || 0) + " Cargo).";
+  } else if (qLower.indexOf("setoran") !== -1) {
+    answer = "Total setoran owner terakumulasi: Rp " + Number(summary.total_setoran_owner || 0).toLocaleString("id-ID") + ".";
+  } else {
+    answer = "Berdasarkan data operasional: Total transaksi " + (summary.total_transaksi || 0) + " resi dengan total omset Rp " + Number(summary.total_omset_customer || 0).toLocaleString("id-ID") + ".";
+  }
+
+  return {
+    status: "success",
+    data: {
+      question: question,
+      answer: answer,
+      timestamp: new Date().toISOString(),
+      suggested_questions: [
+        "Berapa total omset hari ini?",
+        "Siapa operator paling aktif minggu ini?",
+        "Outlet mana yang memiliki omset tertinggi?",
+        "Apakah ada setoran yang belum disetujui?"
+      ]
+    }
+  };
+}
+
