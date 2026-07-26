@@ -408,9 +408,32 @@ const defaultReviews = [
   }
 ];
 
+const defaultKategoriKeuangan = [
+  // PENGELUARAN
+  { id: "KAT-101", jenis: "PENGELUARAN", nama: "ATK", aktif: true, urutan: 1, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-102", jenis: "PENGELUARAN", nama: "Packing", aktif: true, urutan: 2, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-103", jenis: "PENGELUARAN", nama: "BBM", aktif: true, urutan: 3, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-104", jenis: "PENGELUARAN", nama: "Transport", aktif: true, urutan: 4, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-105", jenis: "PENGELUARAN", nama: "Parkir", aktif: true, urutan: 5, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-106", jenis: "PENGELUARAN", nama: "Listrik", aktif: true, urutan: 6, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-107", jenis: "PENGELUARAN", nama: "Internet", aktif: true, urutan: 7, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-108", jenis: "PENGELUARAN", nama: "Air Minum", aktif: true, urutan: 8, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-109", jenis: "PENGELUARAN", nama: "Konsumsi", aktif: true, urutan: 9, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-110", jenis: "PENGELUARAN", nama: "Maintenance", aktif: true, urutan: 10, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-111", jenis: "PENGELUARAN", nama: "Lainnya", aktif: true, urutan: 11, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+
+  // PEMASUKAN
+  { id: "KAT-201", jenis: "PEMASUKAN", nama: "Modal Owner", aktif: true, urutan: 1, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-202", jenis: "PEMASUKAN", nama: "Reward Pusat", aktif: true, urutan: 2, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-203", jenis: "PEMASUKAN", nama: "Insentif", aktif: true, urutan: 3, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-204", jenis: "PEMASUKAN", nama: "Cashback", aktif: true, urutan: 4, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-205", jenis: "PEMASUKAN", nama: "Pendapatan Lain", aktif: true, urutan: 5, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-206", jenis: "PEMASUKAN", nama: "Lainnya", aktif: true, urutan: 6, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" }
+];
+
 function readDb() {
   if (!fs.existsSync(dbPath)) {
-    const dbToSave = { ...initialDb, MapsReviews: defaultReviews };
+    const dbToSave = { ...initialDb, MapsReviews: defaultReviews, MasterKategoriKeuangan: defaultKategoriKeuangan };
     fs.writeFileSync(dbPath, JSON.stringify(dbToSave, null, 2));
     return dbToSave;
   }
@@ -426,13 +449,17 @@ function readDb() {
       parsed.SetoranData = [];
       updated = true;
     }
+    if (!parsed.MasterKategoriKeuangan || !Array.isArray(parsed.MasterKategoriKeuangan) || parsed.MasterKategoriKeuangan.length === 0) {
+      parsed.MasterKategoriKeuangan = defaultKategoriKeuangan;
+      updated = true;
+    }
     if (updated) {
       fs.writeFileSync(dbPath, JSON.stringify(parsed, null, 2));
     }
     return parsed;
   } catch (e) {
     console.error("Error reading database file, resetting to initial state", e);
-    const dbToSave = { ...initialDb, MapsReviews: defaultReviews };
+    const dbToSave = { ...initialDb, MapsReviews: defaultReviews, MasterKategoriKeuangan: defaultKategoriKeuangan };
     fs.writeFileSync(dbPath, JSON.stringify(dbToSave, null, 2));
     return dbToSave;
   }
@@ -2981,6 +3008,140 @@ const handleAskAssistantRequest = async (req: any, res: any) => {
   });
 };
 
+// === MASTER KATEGORI KEUANGAN ENDPOINTS ===
+
+const handleGetKategoriKeuangan = (req: any, res: any) => {
+  const db = readDb();
+  const list = db.MasterKategoriKeuangan || [];
+  const formatted = list.map((item: any) => ({
+    id: String(item.id),
+    jenis: String(item.jenis),
+    nama: String(item.nama),
+    aktif: Boolean(item.aktif),
+    urutan: Number(item.urutan) || 0,
+    created_at: item.created_at || "",
+    updated_at: item.updated_at || "",
+    created_by: item.created_by || ""
+  }));
+  formatted.sort((a: any, b: any) => a.urutan - b.urutan);
+  return res.json({ status: "success", data: formatted });
+};
+
+const handleSaveKategoriKeuangan = (req: any, res: any) => {
+  const db = readDb();
+  const { nama, jenis, urutan, created_by } = req.body || {};
+  const trimmedNama = (nama || "").trim();
+  const upperJenis = (jenis || "").trim().toUpperCase();
+
+  if (!trimmedNama) {
+    return res.json({ status: "error", message: "Nama kategori wajib diisi." });
+  }
+  if (upperJenis !== "PEMASUKAN" && upperJenis !== "PENGELUARAN") {
+    return res.json({ status: "error", message: "Jenis kategori harus PEMASUKAN atau PENGELUARAN." });
+  }
+  if (upperJenis === "PEMASUKAN" && (trimmedNama.toLowerCase() === "packing" || trimmedNama.toLowerCase() === "amplop")) {
+    return res.json({ status: "error", message: "Kategori 'Packing' & 'Amplop' berasal dari transaksi paket dan tidak boleh dijadikan Pemasukan manual." });
+  }
+
+  const list = db.MasterKategoriKeuangan || [];
+  const isDuplicate = list.some((item: any) => 
+    item.jenis.toUpperCase() === upperJenis && item.nama.toLowerCase() === trimmedNama.toLowerCase()
+  );
+  if (isDuplicate) {
+    return res.json({ status: "error", message: `Kategori '${trimmedNama}' sudah terdaftar untuk ${upperJenis}.` });
+  }
+
+  let finalUrutan = parseInt(urutan, 10);
+  if (isNaN(finalUrutan)) {
+    const sameJenis = list.filter((item: any) => item.jenis.toUpperCase() === upperJenis);
+    finalUrutan = sameJenis.length + 1;
+  }
+
+  const newId = `KAT-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
+  const nowStr = new Date().toISOString();
+
+  const newItem = {
+    id: newId,
+    jenis: upperJenis,
+    nama: trimmedNama,
+    aktif: true,
+    urutan: finalUrutan,
+    created_at: nowStr,
+    updated_at: nowStr,
+    created_by: created_by || "OWNER"
+  };
+
+  db.MasterKategoriKeuangan.push(newItem);
+  writeDb(db);
+
+  return res.json({ status: "success", message: "Kategori berhasil ditambahkan.", data: newItem });
+};
+
+const handleUpdateKategoriKeuangan = (req: any, res: any) => {
+  const db = readDb();
+  const { id, nama, urutan, aktif } = req.body || {};
+  const trimmedId = (id || "").trim();
+  const trimmedNama = (nama || "").trim();
+
+  if (!trimmedId) {
+    return res.json({ status: "error", message: "ID kategori wajib diisi." });
+  }
+  if (!trimmedNama) {
+    return res.json({ status: "error", message: "Nama kategori tidak boleh kosong." });
+  }
+
+  const list = db.MasterKategoriKeuangan || [];
+  const target = list.find((item: any) => item.id === trimmedId);
+  if (!target) {
+    return res.json({ status: "error", message: "Kategori tidak ditemukan." });
+  }
+
+  if (target.jenis.toUpperCase() === "PEMASUKAN" && (trimmedNama.toLowerCase() === "packing" || trimmedNama.toLowerCase() === "amplop")) {
+    return res.json({ status: "error", message: "Kategori 'Packing' & 'Amplop' berasal dari transaksi paket dan tidak boleh dijadikan Pemasukan manual." });
+  }
+
+  const isDuplicate = list.some((item: any) => 
+    item.id !== trimmedId && item.jenis.toUpperCase() === target.jenis.toUpperCase() && item.nama.toLowerCase() === trimmedNama.toLowerCase()
+  );
+  if (isDuplicate) {
+    return res.json({ status: "error", message: `Kategori '${trimmedNama}' sudah ada untuk ${target.jenis}.` });
+  }
+
+  target.nama = trimmedNama;
+  if (!isNaN(parseInt(urutan, 10))) {
+    target.urutan = parseInt(urutan, 10);
+  }
+  if (aktif !== undefined) {
+    target.aktif = Boolean(aktif);
+  }
+  target.updated_at = new Date().toISOString();
+
+  writeDb(db);
+  return res.json({ status: "success", message: "Kategori berhasil diperbarui.", data: target });
+};
+
+const handleSetKategoriAktif = (req: any, res: any) => {
+  const db = readDb();
+  const { id, aktif } = req.body || {};
+  const trimmedId = (id || "").trim();
+
+  if (!trimmedId) {
+    return res.json({ status: "error", message: "ID kategori wajib diisi." });
+  }
+
+  const list = db.MasterKategoriKeuangan || [];
+  const target = list.find((item: any) => item.id === trimmedId);
+  if (!target) {
+    return res.json({ status: "error", message: "Kategori tidak ditemukan." });
+  }
+
+  target.aktif = aktif !== undefined ? Boolean(aktif) : !target.aktif;
+  target.updated_at = new Date().toISOString();
+
+  writeDb(db);
+  return res.json({ status: "success", message: "Status kategori berhasil diperbarui." });
+};
+
 app.post("/api/dailySummary", handleDailySummaryRequest);
 app.post("/api/apiDailySummary", handleDailySummaryRequest);
 
@@ -2989,6 +3150,217 @@ app.post("/api/apiDetectAnomalies", handleDetectAnomaliesRequest);
 
 app.post("/api/askAssistant", handleAskAssistantRequest);
 app.post("/api/apiAskAssistant", handleAskAssistantRequest);
+
+app.get("/api/getKategoriKeuangan", handleGetKategoriKeuangan);
+app.post("/api/getKategoriKeuangan", handleGetKategoriKeuangan);
+app.post("/api/saveKategoriKeuangan", handleSaveKategoriKeuangan);
+app.post("/api/updateKategoriKeuangan", handleUpdateKategoriKeuangan);
+app.post("/api/setKategoriAktif", handleSetKategoriAktif);
+
+// === KEUANGAN OUTLET (LEDGER) ENDPOINTS ===
+
+const handleGetKeuanganOutlet = (req: any, res: any) => {
+  const db = readDb();
+  const params = { ...req.query, ...req.body };
+  const list = db.KeuanganOutlet || [];
+  const catList = db.MasterKategoriKeuangan || [];
+  const outletList = db.Outlets || [];
+
+  const catMap: Record<string, any> = {};
+  catList.forEach((c: any) => { catMap[c.id] = c; });
+
+  const outletMap: Record<string, string> = {};
+  outletList.forEach((o: any) => { outletMap[o.outlet_id] = o.nama_outlet || o.outlet_id; });
+
+  let filtered = list.filter((item: any) => {
+    const isAktif = item.aktif === true || item.aktif === "TRUE" || item.aktif === "true" || item.aktif === undefined;
+    if (!isAktif && !params.include_inactive) return false;
+
+    const itemTanggal = (item.tanggal || "").toString().slice(0, 10);
+    if (params.tanggal_awal && itemTanggal < params.tanggal_awal) return false;
+    if (params.tanggal_akhir && itemTanggal > params.tanggal_akhir) return false;
+
+    if (params.outlet_id && params.outlet_id !== "ALL" && item.outlet_id !== params.outlet_id) return false;
+    if (params.jenis && params.jenis !== "ALL" && (item.jenis || "").toUpperCase() !== params.jenis.toUpperCase()) return false;
+    if (params.kategori_id && params.kategori_id !== "ALL" && item.kategori_id !== params.kategori_id) return false;
+
+    return true;
+  });
+
+  const formatted = filtered.map((item: any) => {
+    const catObj = catMap[item.kategori_id] || {};
+    return {
+      id: String(item.id),
+      tanggal: String(item.tanggal || "").slice(0, 10),
+      outlet_id: String(item.outlet_id || ""),
+      nama_outlet: outletMap[item.outlet_id] || item.outlet_id || "",
+      jenis: String(item.jenis || catObj.jenis || "PENGELUARAN").toUpperCase(),
+      kategori_id: String(item.kategori_id || ""),
+      kategori_nama: catObj.nama || item.kategori_id || "-",
+      nominal: Number(item.nominal) || 0,
+      deskripsi: String(item.deskripsi || ""),
+      bukti_url: String(item.bukti_url || ""),
+      dibuat_oleh: String(item.dibuat_oleh || ""),
+      created_at: String(item.created_at || ""),
+      aktif: item.aktif !== false && item.aktif !== "FALSE"
+    };
+  });
+
+  formatted.sort((a: any, b: any) => {
+    if (a.created_at && b.created_at) {
+      return b.created_at.localeCompare(a.created_at);
+    }
+    return b.tanggal.localeCompare(a.tanggal);
+  });
+
+  return res.json({ status: "success", data: formatted });
+};
+
+// Helper to check if an outlet date is closed via Daily Closing
+function isOutletDateClosed(db: any, outletId: string, tanggal: string): boolean {
+  if (!outletId || !tanggal) return false;
+  const setorans = db.Master_Setoran || [];
+  return setorans.some((s: any) => s.outlet_id === outletId && (s.tanggal || "").toString().slice(0, 10) === tanggal && s.closing_status === "CLOSED");
+}
+
+const handleSaveKeuanganOutlet = (req: any, res: any) => {
+  const db = readDb();
+  const { kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, dibuat_oleh, user_id, user_role, role } = req.body || {};
+
+  const currentRole = (user_role || role || "").toUpperCase();
+  if (currentRole && currentRole !== "OWNER" && currentRole !== "ADMIN") {
+    return res.json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." });
+  }
+
+  const trimmedKategoriId = (kategori_id || "").trim();
+  const numNominal = Number(nominal) || 0;
+  const trimmedTanggal = (tanggal || "").trim().slice(0, 10);
+  const trimmedOutletId = (outlet_id || "").trim();
+
+  if (!trimmedKategoriId) return res.json({ status: "error", message: "Kategori wajib dipilih." });
+  if (!trimmedTanggal) return res.json({ status: "error", message: "Tanggal wajib diisi (YYYY-MM-DD)." });
+  if (!trimmedOutletId) return res.json({ status: "error", message: "Outlet wajib dipilih." });
+  if (numNominal <= 0) return res.json({ status: "error", message: "Nominal harus lebih besar dari 0." });
+
+  // Daily Closing check
+  if (isOutletDateClosed(db, trimmedOutletId, trimmedTanggal)) {
+    return res.json({ status: "error", message: "Kas outlet hari tersebut sudah ditutup." });
+  }
+
+  const catList = db.MasterKategoriKeuangan || [];
+  const catObj = catList.find((c: any) => c.id === trimmedKategoriId);
+
+  if (!catObj) return res.json({ status: "error", message: "Kategori tidak ditemukan." });
+  if (!catObj.aktif) return res.json({ status: "error", message: `Kategori '${catObj.nama}' sedang tidak aktif.` });
+
+  const upperJenis = String(catObj.jenis).toUpperCase();
+  const newId = `KNG-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
+  const nowStr = new Date().toISOString();
+
+  const newItem = {
+    id: newId,
+    tanggal: trimmedTanggal,
+    outlet_id: trimmedOutletId,
+    jenis: upperJenis,
+    kategori_id: trimmedKategoriId,
+    nominal: numNominal,
+    deskripsi: (deskripsi || "").trim(),
+    bukti_url: (bukti_url || "").trim(),
+    dibuat_oleh: dibuat_oleh || user_id || currentRole || "SYSTEM",
+    created_at: nowStr,
+    aktif: true
+  };
+
+  if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
+  db.KeuanganOutlet.push(newItem);
+  writeDb(db);
+
+  return res.json({ status: "success", message: "Catatan keuangan berhasil disimpan.", data: newItem });
+};
+
+const handleUpdateKeuanganOutlet = (req: any, res: any) => {
+  const db = readDb();
+  const { id, kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, user_role, role } = req.body || {};
+
+  const currentRole = (user_role || role || "").toUpperCase();
+  if (currentRole && currentRole !== "OWNER" && currentRole !== "ADMIN") {
+    return res.json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." });
+  }
+
+  const trimmedId = (id || "").trim();
+  const trimmedKategoriId = (kategori_id || "").trim();
+  const numNominal = Number(nominal) || 0;
+  const trimmedTanggal = (tanggal || "").trim().slice(0, 10);
+  const trimmedOutletId = (outlet_id || "").trim();
+
+  if (!trimmedId) return res.json({ status: "error", message: "ID transaksi keuangan wajib diisi." });
+  if (!trimmedKategoriId) return res.json({ status: "error", message: "Kategori wajib dipilih." });
+  if (!trimmedTanggal) return res.json({ status: "error", message: "Tanggal wajib diisi (YYYY-MM-DD)." });
+  if (numNominal <= 0) return res.json({ status: "error", message: "Nominal harus lebih besar dari 0." });
+
+  const list = db.KeuanganOutlet || [];
+  const target = list.find((item: any) => item.id === trimmedId);
+  if (!target) return res.json({ status: "error", message: "Catatan keuangan tidak ditemukan." });
+
+  // Daily Closing check for existing target date/outlet and updated date/outlet
+  const targetOldTanggal = (target.tanggal || "").toString().slice(0, 10);
+  if (isOutletDateClosed(db, target.outlet_id, targetOldTanggal) || isOutletDateClosed(db, trimmedOutletId || target.outlet_id, trimmedTanggal)) {
+    return res.json({ status: "error", message: "Kas outlet hari tersebut sudah ditutup." });
+  }
+
+  const catList = db.MasterKategoriKeuangan || [];
+  const catObj = catList.find((c: any) => c.id === trimmedKategoriId);
+
+  if (!catObj) return res.json({ status: "error", message: "Kategori tidak ditemukan." });
+  if (!catObj.aktif) return res.json({ status: "error", message: `Kategori '${catObj.nama}' sedang tidak aktif.` });
+
+  target.tanggal = trimmedTanggal;
+  target.jenis = String(catObj.jenis).toUpperCase();
+  target.kategori_id = trimmedKategoriId;
+  target.nominal = numNominal;
+  target.deskripsi = (deskripsi || "").trim();
+  target.bukti_url = (bukti_url || "").trim();
+  if (trimmedOutletId) {
+    target.outlet_id = trimmedOutletId;
+  }
+
+  writeDb(db);
+  return res.json({ status: "success", message: "Catatan keuangan berhasil diperbarui.", data: target });
+};
+
+const handleDeleteKeuanganOutlet = (req: any, res: any) => {
+  const db = readDb();
+  const { id, user_role, role } = req.body || {};
+  const currentRole = (user_role || role || "").toUpperCase();
+  if (currentRole && currentRole !== "OWNER" && currentRole !== "ADMIN") {
+    return res.json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." });
+  }
+
+  const trimmedId = (id || "").trim();
+
+  if (!trimmedId) return res.json({ status: "error", message: "ID transaksi keuangan wajib diisi." });
+
+  const list = db.KeuanganOutlet || [];
+  const target = list.find((item: any) => item.id === trimmedId);
+  if (!target) return res.json({ status: "error", message: "Catatan keuangan tidak ditemukan." });
+
+  // Daily Closing check
+  const targetOldTanggal = (target.tanggal || "").toString().slice(0, 10);
+  if (isOutletDateClosed(db, target.outlet_id, targetOldTanggal)) {
+    return res.json({ status: "error", message: "Kas outlet hari tersebut sudah ditutup." });
+  }
+
+  target.aktif = false;
+  writeDb(db);
+  return res.json({ status: "success", message: "Catatan keuangan berhasil dinonaktifkan." });
+};
+
+app.get("/api/getKeuanganOutlet", handleGetKeuanganOutlet);
+app.post("/api/getKeuanganOutlet", handleGetKeuanganOutlet);
+app.post("/api/saveKeuanganOutlet", handleSaveKeuanganOutlet);
+app.post("/api/updateKeuanganOutlet", handleUpdateKeuanganOutlet);
+app.post("/api/deleteKeuanganOutlet", handleDeleteKeuanganOutlet);
+
 
 
 // === PRODUCTION STANDALONE INTEGRATION ===

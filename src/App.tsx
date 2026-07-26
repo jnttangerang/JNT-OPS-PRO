@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2
+  Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2, Tags, Wallet
 } from "lucide-react";
 import useAppsScript from "./hooks/useAppsScript";
 import LoginPage from "./components/LoginPage";
@@ -17,6 +17,8 @@ import OwnerAuditPage from "./components/owner/OwnerAuditPage";
 import DailyClosingPage from "./components/owner/DailyClosingPage";
 import ReportingPage from "./components/owner/ReportingPage";
 import OwnerAIAssistantPage from "./components/owner/OwnerAIAssistantPage";
+import MasterKategoriKeuanganPage from "./components/owner/MasterKategoriKeuanganPage";
+import KeuanganOutletPage from "./components/owner/KeuanganOutletPage";
 import { Lock, Shield, BarChart3, Bot, Sparkles } from "lucide-react";
 import ToastContainer from "./components/ToastContainer";
 import { SessionData, Outlet } from "./types";
@@ -125,6 +127,7 @@ export default function App() {
         { id: "admin-dashboard", label: "Dashboard", icon: Landmark },
         { id: "pre-input", label: "Pre-Input", icon: Clipboard },
         { id: "transaksi", label: "Resi & Bayar", icon: FileText },
+        { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
         { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List }
       );
     } else if (session.role === "OWNER") {
@@ -135,6 +138,9 @@ export default function App() {
         { id: "setoran-owner", label: "Persetujuan Setoran", icon: Clipboard },
         { id: "owner-audit", label: "Audit Engine", icon: Shield },
         { id: "daily-closing", label: "Daily Closing", icon: Lock },
+        { id: "master-kategori", label: "Master Kategori Keuangan", icon: Tags, iconColor: "text-purple-600 font-bold" },
+        { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
+
         { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
         { id: "ulasan-maps", label: "Ulasan Maps", icon: Star, iconColor: "text-yellow-500 fill-yellow-500" },
         { id: "guide", label: "Deployment Guide", icon: BookOpen, iconColor: "text-emerald-600" }
@@ -419,6 +425,19 @@ export default function App() {
 
         {session && currentView === "daily-closing" && (
           <DailyClosingPage
+            session={session}
+            outlets={outlets}
+          />
+        )}
+
+        {session && currentView === "master-kategori" && (
+          <MasterKategoriKeuanganPage
+            session={session}
+          />
+        )}
+
+        {session && currentView === "keuangan-outlet" && (
+          <KeuanganOutletPage
             session={session}
             outlets={outlets}
           />

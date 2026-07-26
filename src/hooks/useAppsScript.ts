@@ -30,7 +30,9 @@ export function useAppsScript() {
         "getSetoranList", "getSetoranDetail", "createSetoran", "approveSetoran", "rejectSetoran", 
         "getAuditData", "updateAuditDecision", "validateClosing", "executeClosing",
         "getReportingSummary", "getReportingTransactions", "getReportingSettlement", "getReportingAudit",
-        "apiAskAssistant", "apiDailySummary", "apiDetectAnomalies", "askAssistant", "dailySummary", "detectAnomalies"
+        "apiAskAssistant", "apiDailySummary", "apiDetectAnomalies", "askAssistant", "dailySummary", "detectAnomalies",
+        "getKategoriKeuangan", "saveKategoriKeuangan", "updateKategoriKeuangan", "setKategoriAktif",
+        "getKeuanganOutlet", "saveKeuanganOutlet", "updateKeuanganOutlet", "deleteKeuanganOutlet"
       ];
       const isLocalAction = localActions.includes(action);
 

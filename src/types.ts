@@ -171,4 +171,33 @@ export interface DatabaseSchema {
   EXP_Resi: EXPResi[];
   CRG_Resi: CRGResi[];
   AuditLogs: AuditLog[];
+  MASTER_KATEGORI_KEUANGAN?: KategoriKeuangan[];
+  KEUANGAN_OUTLET?: KeuanganOutlet[];
+}
+
+export interface KategoriKeuangan {
+  id: string;
+  jenis: "PEMASUKAN" | "PENGELUARAN";
+  nama: string;
+  aktif: boolean;
+  urutan: number;
+  created_at?: string;
+  updated_at?: string;
+  created_by?: string;
+}
+
+export interface KeuanganOutlet {
+  id: string;
+  tanggal: string;
+  outlet_id: string;
+  jenis: "PEMASUKAN" | "PENGELUARAN";
+  kategori_id: string;
+  nominal: number;
+  deskripsi?: string;
+  bukti_url?: string;
+  dibuat_oleh: string;
+  created_at: string;
+  aktif: boolean;
+  kategori_nama?: string;
+  nama_outlet?: string;
 }
