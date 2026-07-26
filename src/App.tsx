@@ -12,6 +12,7 @@ import { LayoutDashboard, Settings } from "lucide-react";
 import RiwayatTransaksiPage from "./components/RiwayatTransaksiPage";
 import UlasanMapsPage from "./components/UlasanMapsPage";
 import SettingOutletPage from "./components/owner/SettingOutletPage";
+import SetoranOwnerPage from "./components/owner/SetoranOwnerPage";
 import ToastContainer from "./components/ToastContainer";
 import { SessionData, Outlet } from "./types";
 import { toast } from "./utils/toast";
@@ -124,6 +125,7 @@ export default function App() {
     } else if (session.role === "OWNER") {
       navItems.push(
         { id: "dashboard", label: "Dashboard", icon: Landmark },
+        { id: "setoran-owner", label: "Persetujuan Setoran", icon: Clipboard },
         { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
         { id: "ulasan-maps", label: "Ulasan Maps", icon: Star, iconColor: "text-yellow-500 fill-yellow-500" },
         { id: "guide", label: "Deployment Guide", icon: BookOpen, iconColor: "text-emerald-600" }
@@ -373,6 +375,13 @@ export default function App() {
 
         {session && currentView === "dashboard" && (
           <DashboardPage
+            session={session}
+            outlets={outlets}
+          />
+        )}
+        
+        {session && currentView === "setoran-owner" && (
+          <SetoranOwnerPage
             session={session}
             outlets={outlets}
           />
