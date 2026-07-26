@@ -14,6 +14,8 @@ import UlasanMapsPage from "./components/UlasanMapsPage";
 import SettingOutletPage from "./components/owner/SettingOutletPage";
 import SetoranOwnerPage from "./components/owner/SetoranOwnerPage";
 import OwnerAuditPage from "./components/owner/OwnerAuditPage";
+import DailyClosingPage from "./components/owner/DailyClosingPage";
+import { Lock } from "lucide-react";
 import { Shield } from "lucide-react";
 import ToastContainer from "./components/ToastContainer";
 import { SessionData, Outlet } from "./types";
@@ -129,6 +131,7 @@ export default function App() {
         { id: "dashboard", label: "Dashboard", icon: Landmark },
         { id: "setoran-owner", label: "Persetujuan Setoran", icon: Clipboard },
         { id: "owner-audit", label: "Audit Engine", icon: Shield },
+        { id: "daily-closing", label: "Daily Closing", icon: Lock },
         { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
         { id: "ulasan-maps", label: "Ulasan Maps", icon: Star, iconColor: "text-yellow-500 fill-yellow-500" },
         { id: "guide", label: "Deployment Guide", icon: BookOpen, iconColor: "text-emerald-600" }
@@ -392,6 +395,13 @@ export default function App() {
 
         {session && currentView === "owner-audit" && (
           <OwnerAuditPage
+            session={session}
+            outlets={outlets}
+          />
+        )}
+
+        {session && currentView === "daily-closing" && (
+          <DailyClosingPage
             session={session}
             outlets={outlets}
           />
