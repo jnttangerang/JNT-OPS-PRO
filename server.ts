@@ -1074,7 +1074,8 @@ function calculateDashboardSummary(filtered: any[]) {
     totalWajibSetorOwner: totalSetoranOwner,
     total_setoran_owner: totalSetoranOwner,
     totalKasOutlet: totalKasOperasional,
-    total_kas_operasional: totalKasOperasional
+    total_kas_operasional: totalKasOperasional,
+    total_transaksi: totalTransaksi
   };
 }
 
@@ -1805,6 +1806,409 @@ app.post("/api/analyzeReview", async (req, res) => {
     return res.status(200).json({ status: "error", message: errorMsg });
   }
 });
+
+
+// ==========================================
+// MOCK ENDPOINTS FOR PHASE 5, 6, 7
+// ==========================================
+
+app.post("/api/getSetoranList", (req, res) => {
+  const db = readDb();
+  let setoranData = db.Master_Setoran || [];
+  
+  const { outlet_id, status, date_start, date_end } = req.body;
+  
+  let list = setoranData.filter(s => {
+    if (outlet_id && outlet_id !== "ALL" && s.outlet_id !== outlet_id) return false;
+    if (status && status !== "ALL" && s.status !== status) return false;
+    if (date_start && s.tanggal < date_start) return false;
+    if (date_end && s.tanggal > date_end) return false;
+    return true;
+  });
+  
+  list = list.reverse(); // newest first
+  return res.json({ status: "success", data: list });
+});
+
+app.post("/api/getSetoranDetail", (req, res) => {
+  const db = readDb();
+  const { setoran_id, tanggal, outlet_id } = req.body;
+  
+  let header = null;
+  if (setoran_id) {
+    header = (db.Master_Setoran || []).find(s => s.setoran_id === setoran_id);
+  } else if (tanggal && outlet_id) {
+    header = (db.Master_Setoran || []).find(s => s.tanggal === tanggal && s.outlet_id === outlet_id && s.status !== "DITOLAK");
+  }
+  
+  if (!header) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
+  
+  const hTanggal = header.tanggal;
+  const hOutletId = header.outlet_id;
+  
+  let txList = [];
+  let expData = db.EXP_Resi || [];
+  let crgData = db.CRG_Resi || [];
+  
+  expData.forEach(tx => {
+    let txDate = tx.timestamp ? tx.timestamp.split("T")[0] : "";
+    if (txDate === hTanggal && tx.outlet_id_input === hOutletId && tx.status_resi !== "BATAL") {
+      txList.push({ ...tx, tipe_layanan: "Express" });
+    }
+  });
+  
+  crgData.forEach(tx => {
+    let txDate = tx.timestamp ? tx.timestamp.split("T")[0] : "";
+    if (txDate === hTanggal && tx.outlet_id_input === hOutletId && tx.status_resi !== "BATAL") {
+      txList.push({ ...tx, tipe_layanan: "Cargo" });
+    }
+  });
+  
+  return res.json({ status: "success", data: { header, transactions: txList } });
+});
+
+app.post("/api/createSetoran", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, admin_id } = req.body;
+  const adminPembuat = admin_id || "SYSTEM";
+  
+  if (!outlet_id || !tanggal) {
+    return res.json({ status: "error", message: "Parameter outlet_id dan tanggal diperlukan." });
+  }
+  
+  let existing = (db.Master_Setoran || []).find(s => s.tanggal === tanggal && s.outlet_id === outlet_id && s.status !== "DITOLAK");
+  if (existing) {
+    return res.json({ status: "error", message: "Setoran untuk tanggal ini sudah ada dan tidak dalam status DITOLAK." });
+  }
+  
+  let outletName = outlet_id;
+  let outData = (db.Outlets || []).find(o => o.outlet_id === outlet_id);
+  if (outData) outletName = outData.nama_outlet;
+  
+  let txList = [];
+  let totalSetoranOwner = 0;
+  let totalKasOutlet = 0;
+  
+  (db.EXP_Resi || []).forEach(tx => {
+    let txDate = tx.timestamp ? tx.timestamp.split("T")[0] : "";
+    if (txDate === tanggal && tx.outlet_id_input === outlet_id && tx.status_resi !== "BATAL") {
+      txList.push(tx);
+      totalSetoranOwner += Number(tx.setoran_ke_owner) || 0;
+      totalKasOutlet += Number(tx.kas_operasional) || 0;
+    }
+  });
+  
+  (db.CRG_Resi || []).forEach(tx => {
+    let txDate = tx.timestamp ? tx.timestamp.split("T")[0] : "";
+    if (txDate === tanggal && tx.outlet_id_input === outlet_id && tx.status_resi !== "BATAL") {
+      txList.push(tx);
+      totalSetoranOwner += Number(tx.setoran_ke_owner) || 0;
+      totalKasOutlet += Number(tx.kas_operasional) || 0;
+    }
+  });
+  
+  if (txList.length === 0) {
+    return res.json({ status: "error", message: "Tidak ada transaksi valid untuk disetor pada tanggal ini." });
+  }
+  
+  const setoranObj = {
+    setoran_id: "SET-" + Date.now(),
+    tanggal,
+    outlet_id,
+    outlet_name: outletName,
+    admin_pembuat: adminPembuat,
+    jumlah_resi: txList.length,
+    total_setoran_owner: totalSetoranOwner,
+    total_kas_outlet: totalKasOutlet,
+    status: "MENUNGGU_APPROVAL",
+    created_at: new Date().toISOString(),
+    approved_at: "",
+    approved_by: "",
+    catatan_owner: "",
+    closing_status: "",
+    closing_at: "",
+    closing_by: ""
+  };
+  
+  if (!db.Master_Setoran) db.Master_Setoran = [];
+  db.Master_Setoran.push(setoranObj);
+  writeDb(db);
+  
+  return res.json({ status: "success", message: "Setoran berhasil dibuat", data: setoranObj });
+});
+
+app.post("/api/approveSetoran", (req, res) => {
+  const db = readDb();
+  const { setoran_id, admin_id, catatan } = req.body;
+  
+  const s = (db.Master_Setoran || []).find(s => s.setoran_id === setoran_id);
+  if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
+  if (s.status === "DISETUJUI") return res.json({ status: "error", message: "Sudah disetujui sebelumnya." });
+  
+  s.status = "DISETUJUI";
+  s.approved_at = new Date().toISOString();
+  s.approved_by = admin_id;
+  s.catatan_owner = catatan || "";
+  
+  writeDb(db);
+  return res.json({ status: "success", message: "Setoran berhasil disetujui", data: s });
+});
+
+app.post("/api/rejectSetoran", (req, res) => {
+  const db = readDb();
+  const { setoran_id, admin_id, catatan } = req.body;
+  
+  if (!catatan) return res.json({ status: "error", message: "Catatan penolakan diperlukan" });
+  
+  const s = (db.Master_Setoran || []).find(s => s.setoran_id === setoran_id);
+  if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
+  if (s.status === "DISETUJUI") return res.json({ status: "error", message: "Setoran yang sudah disetujui tidak dapat ditolak." });
+  
+  s.status = "DITOLAK";
+  s.approved_at = new Date().toISOString();
+  s.approved_by = admin_id;
+  s.catatan_owner = catatan;
+  
+  writeDb(db);
+  return res.json({ status: "success", message: "Setoran ditolak", data: s });
+});
+
+app.post("/api/getAuditData", (req, res) => {
+  const db = readDb();
+  const { outlet_id, date_start, date_end } = req.body;
+  
+  let list = [];
+  let expData = db.EXP_Resi || [];
+  let crgData = db.CRG_Resi || [];
+  
+  const processTx = (tx, tipe) => {
+    if (outlet_id && outlet_id !== "ALL" && tx.outlet_id_input !== outlet_id) return;
+    let txDate = tx.timestamp ? tx.timestamp.split("T")[0] : "";
+    if (date_start && txDate < date_start) return;
+    if (date_end && txDate > date_end) return;
+    if (tx.status_resi === "BATAL") return;
+    
+    let sStatus = "BELUM_ADA_SETORAN";
+    let setoranData = (db.Master_Setoran || []).find(s => s.tanggal === txDate && s.outlet_id === tx.outlet_id_input && s.status !== "DITOLAK");
+    if (setoranData) sStatus = setoranData.status;
+    
+    let tBayar = Number(tx.total_dibayar_customer) || 0;
+    let yoyi = tipe === "EXP" ? (Number(tx.biaya_yoyi) || 0) : (Number(tx.biaya_jtc) || 0);
+    let selisih = tBayar - yoyi;
+    let totalCust = tBayar;
+    
+    let auditStatus = "BELUM_DIAUDIT";
+    if (tx.owner_audit_status) {
+       auditStatus = tx.owner_audit_status;
+    } else if (sStatus === "DISETUJUI") {
+       if (totalCust === 0) auditStatus = "PERLU_REVIEW";
+       else if (selisih < 0) auditStatus = "SELISIH";
+       else auditStatus = "SESUAI";
+    }
+    
+    list.push({
+      resi_id: tx.resi_id,
+      transaksi_id: tx.transaksi_id,
+      tipe: tipe,
+      outlet_id: tx.outlet_id_input,
+      tanggal: txDate,
+      total_customer: totalCust,
+      total_yoyi: yoyi,
+      selisih: selisih,
+      setoran_owner: tx.setoran_ke_owner || 0,
+      kas_operasional: tx.kas_operasional || 0,
+      setoran_status: sStatus,
+      audit_status: auditStatus,
+      audit_note: tx.owner_audit_note || "",
+      audited_by: tx.owner_audited_by || "",
+      timestamp: tx.timestamp
+    });
+  };
+  
+  expData.forEach(tx => processTx(tx, "EXP"));
+  crgData.forEach(tx => processTx(tx, "CRG"));
+  
+  list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  let summary = {
+    total_transaksi: list.length,
+    total_express: list.filter(x => x.tipe === "EXP").length,
+    total_cargo: list.filter(x => x.tipe === "CRG").length,
+    total_setoran_owner: list.reduce((acc, val) => acc + val.setoran_owner, 0),
+    total_kas_operasional: list.reduce((acc, val) => acc + val.kas_operasional, 0),
+    total_customer_payment: list.reduce((acc, val) => acc + val.total_customer, 0),
+    total_yoyi: list.reduce((acc, val) => acc + val.total_yoyi, 0),
+    total_selisih: list.reduce((acc, val) => acc + val.selisih, 0)
+  };
+
+  return res.json({ status: "success", data: { summary, detail: list } });
+});
+
+app.post("/api/updateAuditDecision", (req, res) => {
+  const db = readDb();
+  const { resi_id, audit_status, audit_note, owner_id } = req.body;
+  
+  if (!resi_id || !audit_status) return res.json({ status: "error", message: "resi_id dan audit_status diperlukan" });
+  
+  let tx = (db.EXP_Resi || []).find(r => r.resi_id === resi_id);
+  if (!tx) tx = (db.CRG_Resi || []).find(r => r.resi_id === resi_id);
+  
+  if (!tx) return res.json({ status: "error", message: "Data transaksi tidak ditemukan" });
+  
+  tx.owner_audit_status = audit_status;
+  tx.owner_audit_note = audit_note || "";
+  tx.owner_audited_by = owner_id || "OWNER";
+  tx.owner_audited_at = new Date().toISOString();
+  
+  writeDb(db);
+  return res.json({ status: "success", message: "Keputusan audit berhasil disimpan" });
+});
+
+app.post("/api/validateClosing", (req, res) => {
+  const db = readDb();
+  const closingDate = req.body.closing_date;
+  const outletId = req.body.outlet_id;
+  
+  if (!closingDate || !outletId) {
+    return res.json({ status: "error", message: "closing_date dan outlet_id diperlukan" });
+  }
+  
+  let setoranData = db.Master_Setoran || [];
+  let relatedSetorans = setoranData.filter(s => s.tanggal === closingDate && s.outlet_id === outletId);
+  let activeSetoran = relatedSetorans.find(s => s.status !== "DITOLAK");
+  
+  if (activeSetoran && activeSetoran.closing_status === "CLOSED") {
+    activeSetoran.total_transactions = activeSetoran.jumlah_resi;
+    return res.json({ 
+      status: "success", 
+      is_valid: true,
+      is_closed: true,
+      message: "Hari ini sudah di-closing",
+      data: activeSetoran
+    });
+  }
+  
+  let validations = [];
+  let isSuccess = true;
+  
+  let setoranDisetujui = relatedSetorans.filter(s => s.status === "DISETUJUI");
+  let setoranMenunggu = relatedSetorans.filter(s => s.status === "MENUNGGU_APPROVAL");
+  let setoranDitolak = relatedSetorans.filter(s => s.status === "DITOLAK");
+  
+  let activeTransactions = [];
+  let resiSet = {};
+  let duplicateResiCount = 0;
+  
+  let summary = {
+    total_transactions: 0,
+    total_customer_payment: 0,
+    total_setoran_owner: 0,
+    total_kas_operasional: 0,
+    total_yoyi: 0,
+    total_selisih: 0
+  };
+  
+  const processTx = (tx, tipe) => {
+    let txDate = tx.timestamp ? tx.timestamp.split("T")[0] : "";
+    if (txDate === closingDate && tx.outlet_id_input === outletId && tx.status_resi !== "BATAL") {
+      activeTransactions.push(tx);
+      summary.total_transactions++;
+      summary.total_customer_payment += (Number(tx.total_dibayar_customer) || 0);
+      summary.total_setoran_owner += (Number(tx.setoran_ke_owner) || 0);
+      summary.total_kas_operasional += (Number(tx.kas_operasional) || 0);
+      
+      let yoyi = tipe === "EXP" ? (Number(tx.biaya_yoyi) || 0) : (Number(tx.biaya_jtc) || 0);
+      summary.total_yoyi += yoyi;
+      
+      if (resiSet[tx.resi_id]) duplicateResiCount++;
+      else resiSet[tx.resi_id] = true;
+    }
+  };
+  
+  (db.EXP_Resi || []).forEach(tx => processTx(tx, "EXP"));
+  (db.CRG_Resi || []).forEach(tx => processTx(tx, "CRG"));
+  
+  summary.total_selisih = summary.total_customer_payment - summary.total_yoyi;
+  
+  if (activeTransactions.length > 0) {
+    if (setoranDisetujui.length === 0 && setoranMenunggu.length === 0 && setoranDitolak.length === 0) {
+      isSuccess = false;
+      validations.push({ error: "Belum ada setoran yang dibuat untuk hari ini." });
+    }
+    if (setoranMenunggu.length > 0) {
+      isSuccess = false;
+      validations.push({ error: "Ada " + setoranMenunggu.length + " setoran yang masih menunggu approval owner." });
+    }
+    if (setoranDitolak.length > 0) {
+      isSuccess = false;
+      validations.push({ error: "Ada " + setoranDitolak.length + " setoran yang ditolak owner dan belum diselesaikan." });
+    }
+    if (activeSetoran && activeSetoran.status !== "DISETUJUI") {
+       isSuccess = false;
+       validations.push({ error: "Setoran untuk hari ini harus disetujui (DISETUJUI) sebelum closing." });
+    }
+  }
+  
+  if (duplicateResiCount > 0) {
+    isSuccess = false;
+    validations.push({ error: "Ditemukan " + duplicateResiCount + " resi ganda." });
+  }
+  
+  let missingOp = 0, missingOutlet = 0, missingPayment = 0, missingCust = 0, invalidCalc = 0, invalidStatus = 0;
+  
+  activeTransactions.forEach(tx => {
+    if (!tx.admin_id_pencatat) missingOp++;
+    if (!tx.outlet_id_input) missingOutlet++;
+    if (!tx.metode_bayar) missingPayment++;
+    if (!tx.status_resi) invalidStatus++;
+    
+    let bayar = Number(tx.total_dibayar_customer);
+    let setoran = Number(tx.setoran_ke_owner);
+    if (isNaN(bayar) || isNaN(setoran) || typeof tx.total_dibayar_customer === "undefined") {
+      invalidCalc++;
+    }
+    
+    let foundCust = false;
+    let pre = (db.PreInput_Backup || []).find(p => p.transaksi_id === tx.transaksi_id);
+    if (pre && pre.nama_pengirim && pre.nama_penerima) foundCust = true;
+    if (!foundCust) missingCust++;
+  });
+  
+  if (missingOp > 0) { isSuccess = false; validations.push({ error: "Ditemukan " + missingOp + " transaksi tanpa operator." }); }
+  if (missingOutlet > 0) { isSuccess = false; validations.push({ error: "Ditemukan " + missingOutlet + " transaksi tanpa outlet." }); }
+  if (missingPayment > 0) { isSuccess = false; validations.push({ error: "Ditemukan " + missingPayment + " transaksi tanpa metode bayar." }); }
+  if (missingCust > 0) { isSuccess = false; validations.push({ error: "Ditemukan " + missingCust + " transaksi tanpa data pelanggan (pengirim/penerima)." }); }
+  if (invalidCalc > 0) { isSuccess = false; validations.push({ error: "Ditemukan " + invalidCalc + " transaksi dengan kalkulasi finansial tidak valid." }); }
+  if (invalidStatus > 0) { isSuccess = false; validations.push({ error: "Ditemukan " + invalidStatus + " transaksi dengan status tidak valid." }); }
+  
+  return res.json({
+    status: "success",
+    is_valid: isSuccess,
+    is_closed: false,
+    validations: validations,
+    summary: summary,
+    active_setoran_id: activeSetoran ? activeSetoran.setoran_id : null
+  });
+});
+
+app.post("/api/executeClosing", (req, res) => {
+  const db = readDb();
+  const { owner_id, closing_date, outlet_id } = req.body;
+  
+  if (!closing_date || !outlet_id) return res.json({ status: "error", message: "closing_date dan outlet_id diperlukan" });
+  
+  let activeSetoran = (db.Master_Setoran || []).find(s => s.tanggal === closing_date && s.outlet_id === outlet_id && s.status !== "DITOLAK");
+  if (!activeSetoran) return res.json({ status: "error", message: "Tidak ada setoran yang bisa di-closing." });
+  if (activeSetoran.closing_status === "CLOSED") return res.json({ status: "error", message: "Hari ini sudah di-closing." });
+  
+  activeSetoran.closing_status = "CLOSED";
+  activeSetoran.closing_at = new Date().toISOString();
+  activeSetoran.closing_by = owner_id || "SYSTEM";
+  
+  writeDb(db);
+  return res.json({ status: "success", message: "Closing harian berhasil diselesaikan.", data: activeSetoran });
+});
+
 
 // === PRODUCTION STANDALONE INTEGRATION ===
 
