@@ -101,6 +101,10 @@ function handleRouting(action, params) {
       return apiApproveSetoran(params);
     case "rejectSetoran":
       return apiRejectSetoran(params);
+    case "getAuditData":
+      return apiGetAuditData(params);
+    case "updateAuditDecision":
+      return apiUpdateAuditDecision(params);
     case "getSetoranList":
       return apiGetSetoranList(params);
     case "getSetoranDetail":
@@ -1128,11 +1132,11 @@ var DB_SCHEMA = {
   EXP_Resi: ["resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
     "biaya_lain", "biaya_asuransi", "ongkir_dasar", "biaya_yoyi", "total_dibayar_customer", "pembulatan",
     "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing", "metode_bayar_tambahan",
-    "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi"],
+    "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi", "owner_audit_status", "owner_audit_note", "owner_audited_by", "owner_audited_at"],
   CRG_Resi: ["resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
     "merk_motor", "cc_motor", "tahun_motor", "kelengkapan_motor", "biaya_asuransi", "ongkir_dasar", "biaya_jtc",
     "total_dibayar_customer", "pembulatan", "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing",
-    "metode_bayar_tambahan", "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi"],
+    "metode_bayar_tambahan", "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi", "owner_audit_status", "owner_audit_note", "owner_audited_by", "owner_audited_at"],
   AuditLogs: ["log_id", "timestamp", "user_id", "aksi", "detail", "outlet_id"],
   MapsReviews: ["id", "outlet_id", "nama_outlet", "reviewer", "stars", "text", "timestamp", "status_analisis", "analisis"],
   Master_Setoran: ["setoran_id", "tanggal", "outlet_id", "outlet_name", "admin_pembuat", "jumlah_resi", "total_setoran_owner", "total_kas_outlet", "status", "created_at", "approved_at", "approved_by", "catatan_owner"]
@@ -2026,3 +2030,199 @@ var TransactionService = {
     return { message: "Resi berhasil dibatalkan." };
   }
 };
+
+
+
+function apiGetAuditData(params) {
+  var outletId = params.outlet_id;
+  var dateStart = params.date_start;
+  var dateEnd = params.date_end;
+  
+  var expData = DatabaseService.getSheetData("EXP_Resi");
+  var crgData = DatabaseService.getSheetData("CRG_Resi");
+  var outData = DatabaseService.getSheetData("Outlets");
+  var usrData = DatabaseService.getSheetData("Users");
+  var setoranData = DatabaseService.getSheetData("Master_Setoran");
+  
+  var outMap = {};
+  if (outData && outData.length > 0) {
+    for (var o = 1; o < outData.length; o++) outMap[outData[o][0].toString()] = outData[o][1].toString();
+  }
+  var usrMap = {};
+  if (usrData && usrData.length > 0) {
+    for (var u = 1; u < usrData.length; u++) usrMap[usrData[u][0].toString()] = usrData[u][1].toString();
+  }
+  
+  // Build map of tx date + outlet -> setoran status
+  var setoranStatusMap = {}; // key: "YYYY-MM-DD_OUTLET", value: status
+  if (setoranData && setoranData.length > 0) {
+    var sHeaders = setoranData[0];
+    for (var s = 1; s < setoranData.length; s++) {
+      var sObj = rowToObject_(sHeaders, setoranData[s]);
+      if (sObj.status !== "DITOLAK") {
+        setoranStatusMap[sObj.tanggal + "_" + sObj.outlet_id] = sObj.status;
+      }
+    }
+  }
+
+  var list = [];
+  
+  if (expData && expData.length > 1) {
+    var hExp = expData[0];
+    for (var i = 1; i < expData.length; i++) {
+      var tx = rowToObject_(hExp, expData[i]);
+      if (tx.status_resi === "BATAL") continue;
+      
+      var txDate = tx.timestamp.split("T")[0];
+      if (outletId && outletId !== "ALL" && tx.outlet_id_input !== outletId) continue;
+      if (dateStart && txDate < dateStart) continue;
+      if (dateEnd && txDate > dateEnd) continue;
+      
+      var sStatus = setoranStatusMap[txDate + "_" + tx.outlet_id_input] || "BELUM_SETORAN";
+      
+      var totalCust = Number(tx.total_dibayar_customer) || 0;
+      var yoyi = Number(tx.biaya_yoyi) || 0;
+      var selisih = totalCust - yoyi;
+      
+      var auditStatus = "BELUM_DIAUDIT";
+      if (tx.owner_audit_status) {
+         auditStatus = tx.owner_audit_status;
+      } else if (sStatus === "DISETUJUI") {
+         if (totalCust === 0) auditStatus = "PERLU_REVIEW";
+         else if (selisih < 0) auditStatus = "SELISIH";
+         else auditStatus = "SESUAI";
+      }
+      
+      list.push({
+        resi_id: tx.resi_id,
+        outlet_id: tx.outlet_id_input,
+        outlet_name: outMap[tx.outlet_id_input] || tx.outlet_id_input,
+        admin: usrMap[tx.admin_id_pencatat] || tx.admin_id_pencatat,
+        customer: tx.transaksi_id, // we use transaksi_id as proxy for customer
+        tipe: "Express",
+        total_customer: totalCust,
+        total_yoyi: yoyi,
+        setoran_owner: Number(tx.setoran_ke_owner) || 0,
+        kas_operasional: Number(tx.kas_operasional) || 0,
+        selisih: selisih,
+        audit_status: auditStatus,
+        audit_note: tx.owner_audit_note || "",
+        audited_by: tx.owner_audited_by || "",
+        timestamp: tx.timestamp
+      });
+    }
+  }
+  
+  if (crgData && crgData.length > 1) {
+    var hCrg = crgData[0];
+    for (var j = 1; j < crgData.length; j++) {
+      var tc = rowToObject_(hCrg, crgData[j]);
+      if (tc.status_resi === "BATAL") continue;
+      
+      var tcDate = tc.timestamp.split("T")[0];
+      if (outletId && outletId !== "ALL" && tc.outlet_id_input !== outletId) continue;
+      if (dateStart && tcDate < dateStart) continue;
+      if (dateEnd && tcDate > dateEnd) continue;
+      
+      var sStatusC = setoranStatusMap[tcDate + "_" + tc.outlet_id_input] || "BELUM_SETORAN";
+      
+      var cTotalCust = Number(tc.total_dibayar_customer) || 0;
+      var jtc = Number(tc.biaya_jtc) || 0;
+      var cSelisih = cTotalCust - jtc;
+      
+      var cAuditStatus = "BELUM_DIAUDIT";
+      if (tc.owner_audit_status) {
+         cAuditStatus = tc.owner_audit_status;
+      } else if (sStatusC === "DISETUJUI") {
+         if (cTotalCust === 0) cAuditStatus = "PERLU_REVIEW";
+         else if (cSelisih < 0) cAuditStatus = "SELISIH";
+         else cAuditStatus = "SESUAI";
+      }
+      
+      list.push({
+        resi_id: tc.resi_id,
+        outlet_id: tc.outlet_id_input,
+        outlet_name: outMap[tc.outlet_id_input] || tc.outlet_id_input,
+        admin: usrMap[tc.admin_id_pencatat] || tc.admin_id_pencatat,
+        customer: tc.transaksi_id,
+        tipe: "Cargo",
+        total_customer: cTotalCust,
+        total_yoyi: jtc,
+        setoran_owner: Number(tc.setoran_ke_owner) || 0,
+        kas_operasional: Number(tc.kas_operasional) || 0,
+        selisih: cSelisih,
+        audit_status: cAuditStatus,
+        audit_note: tc.owner_audit_note || "",
+        audited_by: tc.owner_audited_by || "",
+        timestamp: tc.timestamp
+      });
+    }
+  }
+  
+  list.sort(function(a, b) {
+    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+  });
+  
+  var summary = {
+    total_transaksi: list.length,
+    total_express: list.filter(function(x) { return x.tipe === "Express"; }).length,
+    total_cargo: list.filter(function(x) { return x.tipe === "Cargo"; }).length,
+    total_setoran_owner: list.reduce(function(acc, val) { return acc + val.setoran_owner; }, 0),
+    total_kas_operasional: list.reduce(function(acc, val) { return acc + val.kas_operasional; }, 0),
+    total_customer_payment: list.reduce(function(acc, val) { return acc + val.total_customer; }, 0),
+    total_yoyi: list.reduce(function(acc, val) { return acc + val.total_yoyi; }, 0),
+    total_selisih: list.reduce(function(acc, val) { return acc + val.selisih; }, 0)
+  };
+
+  return { status: "success", data: { summary: summary, detail: list } };
+}
+
+
+
+function apiUpdateAuditDecision(params) {
+  var resiId = params.resi_id;
+  var auditStatus = params.audit_status;
+  var auditNote = params.audit_note || "";
+  var ownerId = params.owner_id || "OWNER";
+  
+  if (!resiId || !auditStatus) {
+    return { status: "error", message: "resi_id dan audit_status diperlukan" };
+  }
+  
+  var expRow = DatabaseService.findRowByColumn("EXP_Resi", "resi_id", resiId);
+  var crgRow = DatabaseService.findRowByColumn("CRG_Resi", "resi_id", resiId);
+  
+  var targetSheet = expRow ? "EXP_Resi" : (crgRow ? "CRG_Resi" : null);
+  var existingTx = expRow || crgRow;
+  
+  if (!targetSheet) {
+    return { status: "error", message: "Data transaksi tidak ditemukan" };
+  }
+  
+  var sheet = getSheetByName(targetSheet);
+  var headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+  if (headers.indexOf("owner_audit_status") === -1) {
+    sheet.getRange(1, headers.length + 1).setValue("owner_audit_status");
+    sheet.getRange(1, headers.length + 2).setValue("owner_audit_note");
+    sheet.getRange(1, headers.length + 3).setValue("owner_audited_by");
+    sheet.getRange(1, headers.length + 4).setValue("owner_audited_at");
+  }
+  
+  var updateData = {
+    owner_audit_status: auditStatus,
+    owner_audit_note: auditNote,
+    owner_audited_by: ownerId,
+    owner_audited_at: new Date().toISOString()
+  };
+  
+  DatabaseService.updateRowByColumn(targetSheet, "resi_id", resiId, updateData);
+  
+  DatabaseService.appendAudit(
+    ownerId,
+    "AUDIT_DECISION",
+    "Audit " + resiId + ": " + auditStatus,
+    existingTx.outlet_id_input
+  );
+  
+  return { status: "success", message: "Keputusan audit berhasil disimpan" };
+}
