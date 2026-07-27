@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { SessionData, Outlet } from "../../types";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
+import { highlightText } from "../../utils/highlight";
 import {
   Calendar,
   Filter,
@@ -15,7 +16,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   Shield,
-  HelpCircle
+  HelpCircle,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 interface OwnerAuditPageProps {
@@ -94,15 +97,15 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
 const getStatusBadge = (status: string) => {
     switch(status) {
       case "BELUM_DIAUDIT":
-        return <span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit"><Shield className="w-3 h-3"/> BELUM DIAUDIT</span>;
+        return <span className="bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit"><Shield className="w-3 h-3"/> BELUM DIAUDIT</span>;
       case "SESUAI":
-        return <span className="bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit"><ShieldCheck className="w-3 h-3"/> SESUAI</span>;
+        return <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit"><ShieldCheck className="w-3 h-3"/> SESUAI</span>;
       case "SELISIH":
-        return <span className="bg-red-50 text-red-600 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit"><ShieldAlert className="w-3 h-3"/> SELISIH</span>;
+        return <span className="bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit"><ShieldAlert className="w-3 h-3"/> SELISIH</span>;
       case "PERLU_REVIEW":
-        return <span className="bg-yellow-50 text-yellow-600 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit"><HelpCircle className="w-3 h-3"/> PERLU REVIEW</span>;
+        return <span className="bg-amber-50 text-amber-700 border border-amber-100 px-2 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 w-fit"><HelpCircle className="w-3 h-3"/> PERLU REVIEW</span>;
       default:
-        return <span className="bg-gray-50 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold">{status}</span>;
+        return <span className="bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 rounded text-[10px] font-bold">{status}</span>;
     }
   };
 
@@ -112,6 +115,17 @@ const getStatusBadge = (status: string) => {
     if (filterAdmin && !tx.admin.toLowerCase().includes(filterAdmin.toLowerCase())) return false;
     return true;
   }) || [];
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterOutlet, filterStatus, filterAdmin, dateStart, dateEnd]);
+
+  const totalPages = Math.ceil(filteredList.length / pageSize) || 1;
+  const paginatedList = filteredList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -253,17 +267,25 @@ const getStatusBadge = (status: string) => {
             </thead>
             <tbody className="divide-y divide-gray-50 font-sans">
               {loading ? (
-                <tr><td colSpan={7} className="p-8 text-center text-gray-500">Memuat data...</td></tr>
-              ) : filteredList.length > 0 ? (
-                filteredList.map((tx: any) => (
+                <tr>
+                  <td colSpan={7} className="p-6">
+                    <div className="space-y-3 animate-pulse">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <div key={i} className="h-10 bg-gray-100 rounded-lg w-full"></div>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ) : paginatedList.length > 0 ? (
+                paginatedList.map((tx: any) => (
                   <tr key={tx.resi_id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="p-4">
-                      <p className="font-mono font-bold text-gray-800">{tx.resi_id}</p>
+                      <p className="font-mono font-bold text-gray-800">{highlightText(tx.resi_id, filterAdmin)}</p>
                       <p className="text-[10px] text-gray-500 font-mono mt-0.5">{new Date(tx.timestamp).toLocaleString("id-ID")} • {tx.tipe}</p>
                     </td>
                     <td className="p-4">
                       <p className="font-semibold text-gray-800">{tx.outlet_name}</p>
-                      <p className="text-[10px] text-gray-500 mt-0.5">{tx.admin}</p>
+                      <p className="text-[10px] text-gray-500 mt-0.5">{highlightText(tx.admin, filterAdmin)}</p>
                     </td>
                     <td className="p-4 text-right">
                       <p className="font-mono font-bold text-gray-800">Rp {Number(tx.total_customer).toLocaleString("id-ID")}</p>
@@ -282,7 +304,8 @@ const getStatusBadge = (status: string) => {
                     <td className="p-4 text-center">
                       <button 
                         onClick={() => { setSelectedTx(tx); setAuditNote(tx.audit_note || ""); }}
-                        className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors inline-flex items-center justify-center w-8 h-8"
+                        className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors inline-flex items-center justify-center w-8 h-8 cursor-pointer"
+                        title="Lihat Detail Audit"
                       >
                         <ArrowRight className="w-4 h-4" />
                       </button>
@@ -293,13 +316,41 @@ const getStatusBadge = (status: string) => {
                 <tr>
                   <td colSpan={7} className="p-12 text-center text-gray-400">
                     <CheckCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p className="font-medium">Tidak ada transaksi yang sesuai filter.</p>
+                    <p className="font-semibold text-xs text-gray-600">Belum ada data audit yang sesuai filter.</p>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Bar */}
+        {totalPages > 1 && (
+          <div className="mt-4 p-3 bg-gray-50 rounded-xl border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <span className="text-gray-500 font-medium">
+              Menampilkan {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredList.length)} dari {filteredList.length} data audit
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="font-extrabold text-gray-700 px-2">
+                Halaman {currentPage} dari {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Drawer Detail */}

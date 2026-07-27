@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { 
   Wallet, Plus, Search, Filter, RefreshCw, Calendar, AlertCircle, Edit2, Trash2, 
-  ArrowUpRight, ArrowDownRight, DollarSign, FileText, ExternalLink, Image, Building2, Eye, X
+  ArrowUpRight, ArrowDownRight, DollarSign, FileText, ExternalLink, Image, Building2, Eye, X,
+  ChevronLeft, ChevronRight
 } from "lucide-react";
 import { useAppsScript } from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
+import { highlightText } from "../../utils/highlight";
 import { SessionData, Outlet, KeuanganOutlet, KategoriKeuangan } from "../../types";
 
 interface KeuanganOutletPageProps {
@@ -107,6 +109,19 @@ export default function KeuanganOutletPage({ session, outlets }: KeuanganOutletP
       item.dibuat_oleh?.toLowerCase().includes(q)
     );
   }, [ledgerList, searchQuery]);
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterOutlet, filterJenis, filterKategori, filterTanggalAwal, filterTanggalAkhir]);
+
+  const totalPages = Math.ceil(displayedList.length / pageSize) || 1;
+  const paginatedList = useMemo(() => {
+    return displayedList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [displayedList, currentPage, pageSize]);
 
   // Calculate Summary Cards
   const totalPemasukan = useMemo(() => {
@@ -486,118 +501,149 @@ export default function KeuanganOutletPage({ session, outlets }: KeuanganOutletP
       {/* Ledger Table */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden">
         {loading ? (
-          <div className="p-12 text-center text-gray-400 space-y-3">
-            <RefreshCw className="h-8 w-8 animate-spin mx-auto text-purple-600" />
-            <p className="text-xs font-semibold">Memuat catatan keuangan outlet...</p>
+          <div className="p-6 space-y-3 animate-pulse">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="h-12 bg-gray-100 rounded-xl w-full"></div>
+            ))}
           </div>
         ) : displayedList.length === 0 ? (
           <div className="p-12 text-center text-gray-400 space-y-2">
             <Wallet className="h-10 w-10 mx-auto text-gray-300 stroke-[1.5]" />
-            <p className="text-sm font-bold text-gray-700">Tidak ada catatan keuangan</p>
+            <p className="text-sm font-bold text-gray-700">Belum ada kas outlet.</p>
             <p className="text-xs text-gray-400 max-w-sm mx-auto">
               Belum ada data pemasukan atau pengeluaran operasional dalam periode filter ini.
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[750px]">
-              <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-150 text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
-                  <th className="py-3.5 px-4 w-28">Tanggal</th>
-                  <th className="py-3.5 px-4">Outlet</th>
-                  <th className="py-3.5 px-4 w-28">Jenis</th>
-                  <th className="py-3.5 px-4">Kategori</th>
-                  <th className="py-3.5 px-4 text-right w-36">Nominal</th>
-                  <th className="py-3.5 px-4">Deskripsi</th>
-                  <th className="py-3.5 px-4 w-28">Operator</th>
-                  <th className="py-3.5 px-4 text-center w-20">Bukti</th>
-                  <th className="py-3.5 px-4 text-right w-24">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
-                {displayedList.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
-                    {/* Tanggal */}
-                    <td className="py-3.5 px-4 font-mono font-bold text-gray-900 whitespace-nowrap">
-                      {item.tanggal}
-                    </td>
-
-                    {/* Outlet */}
-                    <td className="py-3.5 px-4 font-semibold text-gray-800">
-                      <span>{item.nama_outlet || item.outlet_id}</span>
-                    </td>
-
-                    {/* Jenis */}
-                    <td className="py-3.5 px-4">
-                      <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold font-mono uppercase tracking-wider ${
-                        item.jenis === "PEMASUKAN"
-                          ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                          : "bg-red-50 text-red-700 border border-red-100"
-                      }`}>
-                        {item.jenis === "PEMASUKAN" ? "+ Pemasukan" : "- Pengeluaran"}
-                      </span>
-                    </td>
-
-                    {/* Kategori */}
-                    <td className="py-3.5 px-4 font-bold text-gray-900">
-                      {item.kategori_nama || "-"}
-                    </td>
-
-                    {/* Nominal */}
-                    <td className={`py-3.5 px-4 text-right font-mono font-bold whitespace-nowrap ${
-                      item.jenis === "PEMASUKAN" ? "text-emerald-700" : "text-red-600"
-                    }`}>
-                      {item.jenis === "PEMASUKAN" ? "+" : "-"} Rp {item.nominal.toLocaleString("id-ID")}
-                    </td>
-
-                    {/* Deskripsi */}
-                    <td className="py-3.5 px-4 text-gray-600 max-w-xs truncate" title={item.deskripsi}>
-                      {item.deskripsi || <span className="text-gray-300 font-normal italic">-</span>}
-                    </td>
-
-                    {/* Operator */}
-                    <td className="py-3.5 px-4 text-gray-600 font-medium">
-                      {item.dibuat_oleh || "-"}
-                    </td>
-
-                    {/* Bukti */}
-                    <td className="py-3.5 px-4 text-center">
-                      {item.bukti_url ? (
-                        <button
-                          onClick={() => setPreviewBuktiUrl(item.bukti_url || null)}
-                          className="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
-                          title="Lihat Bukti Transaksi"
-                        >
-                          <Image className="h-3.5 w-3.5" />
-                        </button>
-                      ) : (
-                        <span className="text-gray-300 text-[10px] italic">-</span>
-                      )}
-                    </td>
-
-                    {/* Actions */}
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => handleOpenEdit(item)}
-                          className="p-1.5 text-gray-500 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
-                          title="Edit Catatan"
-                        >
-                          <Edit2 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(item)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                          title="Nonaktifkan / Hapus Catatan"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </td>
+          <div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[750px]">
+                <thead>
+                  <tr className="bg-gray-50/80 border-b border-gray-150 text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
+                    <th className="py-3.5 px-4 w-28">Tanggal</th>
+                    <th className="py-3.5 px-4">Outlet</th>
+                    <th className="py-3.5 px-4 w-28">Jenis</th>
+                    <th className="py-3.5 px-4">Kategori</th>
+                    <th className="py-3.5 px-4 text-right w-36">Nominal</th>
+                    <th className="py-3.5 px-4">Deskripsi</th>
+                    <th className="py-3.5 px-4 w-28">Operator</th>
+                    <th className="py-3.5 px-4 text-center w-20">Bukti</th>
+                    <th className="py-3.5 px-4 text-right w-24">Aksi</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
+                  {paginatedList.map((item) => (
+                    <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
+                      {/* Tanggal */}
+                      <td className="py-3.5 px-4 font-mono font-bold text-gray-900 whitespace-nowrap">
+                        {item.tanggal}
+                      </td>
+
+                      {/* Outlet */}
+                      <td className="py-3.5 px-4 font-semibold text-gray-800">
+                        <span>{item.nama_outlet || item.outlet_id}</span>
+                      </td>
+
+                      {/* Jenis */}
+                      <td className="py-3.5 px-4">
+                        <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold font-mono uppercase tracking-wider ${
+                          item.jenis === "PEMASUKAN"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                            : "bg-red-50 text-red-700 border border-red-100"
+                        }`}>
+                          {item.jenis === "PEMASUKAN" ? "+ Pemasukan" : "- Pengeluaran"}
+                        </span>
+                      </td>
+
+                      {/* Kategori */}
+                      <td className="py-3.5 px-4 font-bold text-gray-900">
+                        {item.kategori_nama ? highlightText(item.kategori_nama, searchQuery) : "-"}
+                      </td>
+
+                      {/* Nominal */}
+                      <td className={`py-3.5 px-4 text-right font-mono font-bold whitespace-nowrap ${
+                        item.jenis === "PEMASUKAN" ? "text-emerald-700" : "text-red-600"
+                      }`}>
+                        {item.jenis === "PEMASUKAN" ? "+" : "-"} Rp {item.nominal.toLocaleString("id-ID")}
+                      </td>
+
+                      {/* Deskripsi */}
+                      <td className="py-3.5 px-4 text-gray-600 max-w-xs truncate" title={item.deskripsi}>
+                        {item.deskripsi ? highlightText(item.deskripsi, searchQuery) : <span className="text-gray-300 font-normal italic">-</span>}
+                      </td>
+
+                      {/* Operator */}
+                      <td className="py-3.5 px-4 text-gray-600 font-medium">
+                        {item.dibuat_oleh ? highlightText(item.dibuat_oleh, searchQuery) : "-"}
+                      </td>
+
+                      {/* Bukti */}
+                      <td className="py-3.5 px-4 text-center">
+                        {item.bukti_url ? (
+                          <button
+                            onClick={() => setPreviewBuktiUrl(item.bukti_url || null)}
+                            className="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
+                            title="Lihat Bukti Transaksi"
+                          >
+                            <Image className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <span className="text-gray-300 text-[10px] italic">-</span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleOpenEdit(item)}
+                            className="p-1.5 text-gray-500 hover:text-purple-700 hover:bg-purple-50 rounded-lg transition-colors cursor-pointer"
+                            title="Edit Catatan"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(item)}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                            title="Nonaktifkan / Hapus Catatan"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="p-4 bg-gray-50/80 border-t border-gray-150 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                <span className="text-gray-500 font-medium">
+                  Menampilkan {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, displayedList.length)} dari {displayedList.length} data
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="font-extrabold text-gray-700 px-2">
+                    Halaman {currentPage} dari {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

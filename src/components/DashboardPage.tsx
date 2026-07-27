@@ -42,9 +42,9 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
   // Audit Log search query
   const [auditSearch, setAuditSearch] = useState("");
 
-  const loadDashboardMetrics = async () => {
+  const loadDashboardMetrics = async (isSilent = false) => {
     if (!isOwner) return;
-    setLoadingDashboard(true);
+    if (!isSilent) setLoadingDashboard(true);
     setSeedSuccess(null);
     try {
       const response = await callBackend("getDashboardData", {
@@ -60,12 +60,17 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
     } catch (e) {
       console.error("Failed to load dashboard data", e);
     } finally {
-      setLoadingDashboard(false);
+      if (!isSilent) setLoadingDashboard(false);
     }
   };
 
   useEffect(() => {
     loadDashboardMetrics();
+    // 45s Live Polling
+    const interval = setInterval(() => {
+      loadDashboardMetrics(true);
+    }, 45000);
+    return () => clearInterval(interval);
   }, [selectedOutletFilter, startDate, endDate]);
 
   // Seed database utility

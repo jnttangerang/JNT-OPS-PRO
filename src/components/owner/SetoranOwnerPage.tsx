@@ -12,7 +12,9 @@ import {
   RefreshCcw,
   ArrowLeft,
   X,
-  MessageSquare
+  MessageSquare,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 interface SetoranOwnerPageProps {
@@ -37,9 +39,17 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectModal, setShowRejectModal] = useState(false);
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
+
   useEffect(() => {
+    setCurrentPage(1);
     fetchList();
   }, [filterOutlet, filterStatus, dateStart, dateEnd]);
+
+  const totalPages = Math.ceil(list.length / pageSize) || 1;
+  const paginatedList = list.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const fetchList = async () => {
     try {
@@ -121,13 +131,13 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
   const getStatusBadge = (status: string) => {
     switch(status) {
       case "MENUNGGU_APPROVAL":
-        return <span className="bg-yellow-50 text-yellow-600 px-2 py-0.5 rounded text-[10px] font-bold">MENUNGGU</span>;
+        return <span className="bg-amber-50 text-amber-700 border border-amber-100 px-2 py-0.5 rounded text-[10px] font-bold">MENUNGGU APPROVAL</span>;
       case "DISETUJUI":
-        return <span className="bg-green-50 text-green-600 px-2 py-0.5 rounded text-[10px] font-bold">DISETUJUI</span>;
+        return <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded text-[10px] font-bold">DISETUJUI</span>;
       case "DITOLAK":
-        return <span className="bg-red-50 text-red-600 px-2 py-0.5 rounded text-[10px] font-bold">DITOLAK</span>;
+        return <span className="bg-rose-50 text-rose-700 border border-rose-100 px-2 py-0.5 rounded text-[10px] font-bold">DITOLAK</span>;
       default:
-        return <span className="bg-gray-50 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold">{status}</span>;
+        return <span className="bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 rounded text-[10px] font-bold">{status}</span>;
     }
   };
 
@@ -381,9 +391,17 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             </thead>
             <tbody className="divide-y divide-gray-50 font-sans">
               {loading ? (
-                <tr><td colSpan={9} className="p-8 text-center text-gray-500">Memuat data...</td></tr>
-              ) : list.length > 0 ? (
-                list.map((item) => (
+                <tr>
+                  <td colSpan={9} className="p-6">
+                    <div className="space-y-3 animate-pulse">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <div key={i} className="h-10 bg-gray-100 rounded-lg w-full"></div>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ) : paginatedList.length > 0 ? (
+                paginatedList.map((item) => (
                   <tr key={item.setoran_id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="p-4 font-mono font-bold text-gray-800">{item.tanggal}</td>
                     <td className="p-4 font-semibold">{item.outlet_name}</td>
@@ -396,7 +414,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                     <td className="p-4 text-center">
                       <button 
                         onClick={() => fetchDetail(item.setoran_id)}
-                        className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors inline-flex items-center gap-1 text-[10px] font-bold uppercase"
+                        className="p-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg transition-colors inline-flex items-center gap-1 text-[10px] font-bold uppercase cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" /> Detail
                       </button>
@@ -407,13 +425,41 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                 <tr>
                   <td colSpan={9} className="p-12 text-center text-gray-400">
                     <CheckCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p className="font-medium">Tidak ada setoran yang sesuai filter.</p>
+                    <p className="font-semibold text-xs text-gray-600">Belum ada data setoran dalam periode filter ini.</p>
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Bar */}
+        {totalPages > 1 && (
+          <div className="mt-4 p-3 bg-gray-50 rounded-xl border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <span className="text-gray-500 font-medium">
+              Menampilkan {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, list.length)} dari {list.length} setoran
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <span className="font-extrabold text-gray-700 px-2">
+                Halaman {currentPage} dari {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

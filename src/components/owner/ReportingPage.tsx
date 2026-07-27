@@ -21,7 +21,9 @@ import {
   ShieldAlert,
   FileSpreadsheet,
   ArrowUpRight,
-  Sparkles
+  Sparkles,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -69,6 +71,17 @@ export default function ReportingPage({ session, outlets }: ReportingPageProps) 
   const [reportSummaryData, setReportSummaryData] = useState<any>(null);
   const [detailedTx, setDetailedTx] = useState<any[]>([]);
   const [fetchingData, setFetchingData] = useState(false);
+
+  // Pagination State for Detail Table
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dateStart, dateEnd, filterOutlet, filterOperator, filterServiceType, filterSettlementStatus, filterAuditStatus, activeTab]);
+
+  const totalPages = Math.ceil(detailedTx.length / pageSize) || 1;
+  const paginatedDetailedTx = detailedTx.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   useEffect(() => {
     fetchReportSummary();
@@ -885,13 +898,15 @@ export default function ReportingPage({ session, outlets }: ReportingPageProps) 
                         <span
                           className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold ${
                             s.status === "DISETUJUI"
-                              ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
                               : s.status === "MENUNGGU_APPROVAL"
-                              ? "bg-amber-50 text-amber-600 border border-amber-200"
-                              : "bg-red-50 text-red-600 border border-red-200"
+                              ? "bg-amber-50 text-amber-700 border border-amber-100"
+                              : s.status === "DITOLAK"
+                              ? "bg-rose-50 text-rose-700 border border-rose-100"
+                              : "bg-red-50 text-red-700 border border-red-100"
                           }`}
                         >
-                          {s.status}
+                          {s.status === "MENUNGGU_APPROVAL" ? "MENUNGGU APPROVAL" : s.status}
                         </span>
                       </td>
                       <td className="py-3 px-4 text-center font-mono text-[10px]">
@@ -950,7 +965,7 @@ export default function ReportingPage({ session, outlets }: ReportingPageProps) 
       )}
 
       {/* RAW TRANSACTION DETAILS TABLE */}
-      {!fetchingData && (activeTab === "detail" || activeTab === "audit") && (
+      {(fetchingData || (activeTab === "detail" || activeTab === "audit")) && (
         <div className="bg-white rounded-2xl border border-gray-150 overflow-hidden shadow-sm">
           <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
             <h3 className="text-xs font-extrabold text-gray-800 uppercase tracking-wider">
@@ -958,70 +973,124 @@ export default function ReportingPage({ session, outlets }: ReportingPageProps) 
             </h3>
             <span className="text-xs text-gray-500 font-mono">{detailedTx.length} resi</span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-gray-50 border-b border-gray-150 text-[10px] font-extrabold text-gray-500 uppercase tracking-wider">
-                  <th className="py-3 px-4">No Resi</th>
-                  <th className="py-3 px-4">Tanggal</th>
-                  <th className="py-3 px-4">Layanan</th>
-                  <th className="py-3 px-4">Outlet</th>
-                  <th className="py-3 px-4">Operator</th>
-                  <th className="py-3 px-4 text-right">Total Customer</th>
-                  <th className="py-3 px-4 text-right">Setoran Owner</th>
-                  <th className="py-3 px-4 text-center">Status Setoran</th>
-                  <th className="py-3 px-4 text-center">Status Audit</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 text-xs font-medium text-gray-700">
-                {detailedTx.map((t: any, idx: number) => (
-                  <tr key={idx} className="hover:bg-gray-50/80 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-gray-900">{t.resi_id}</td>
-                    <td className="py-3 px-4 font-mono text-gray-500">{t.tanggal}</td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-extrabold ${
-                          t.tipe_layanan === "Express"
-                            ? "bg-red-50 text-[#E4002B]"
-                            : "bg-blue-50 text-blue-600"
-                        }`}
-                      >
-                        {t.tipe_layanan}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 font-bold text-gray-800">{t.outlet_nama}</td>
-                    <td className="py-3 px-4 text-gray-600">{t.admin_nama}</td>
-                    <td className="py-3 px-4 text-right font-bold text-emerald-600 font-mono">
-                      {formatRupiah(t.total_customer)}
-                    </td>
-                    <td className="py-3 px-4 text-right font-bold text-[#E4002B] font-mono">
-                      {formatRupiah(t.setoran_owner)}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="text-[10px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded">
-                        {t.settlement_status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span
-                        className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold ${
-                          t.audit_status === "SESUAI"
-                            ? "bg-emerald-50 text-emerald-600"
-                            : t.audit_status === "SELISIH"
-                            ? "bg-red-50 text-red-600"
-                            : t.audit_status === "PERLU_REVIEW"
-                            ? "bg-amber-50 text-amber-600"
-                            : "bg-gray-100 text-gray-500"
-                        }`}
-                      >
-                        {t.audit_status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {fetchingData ? (
+            <div className="p-6 space-y-3 animate-pulse">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="h-10 bg-gray-100 rounded-lg w-full"></div>
+              ))}
+            </div>
+          ) : detailedTx.length === 0 ? (
+            <div className="p-12 text-center text-gray-400 space-y-2">
+              <Package className="h-10 w-10 mx-auto text-gray-300 stroke-[1.5]" />
+              <p className="text-sm font-bold text-gray-700">Belum ada transaksi resi.</p>
+              <p className="text-xs text-gray-400 max-w-sm mx-auto">
+                Belum ada data resi paket dalam periode filter yang dipilih.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-150 text-[10px] font-extrabold text-gray-500 uppercase tracking-wider">
+                      <th className="py-3 px-4">No Resi</th>
+                      <th className="py-3 px-4">Tanggal</th>
+                      <th className="py-3 px-4">Layanan</th>
+                      <th className="py-3 px-4">Outlet</th>
+                      <th className="py-3 px-4">Operator</th>
+                      <th className="py-3 px-4 text-right">Total Customer</th>
+                      <th className="py-3 px-4 text-right">Setoran Owner</th>
+                      <th className="py-3 px-4 text-center">Status Setoran</th>
+                      <th className="py-3 px-4 text-center">Status Audit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-xs font-medium text-gray-700">
+                    {paginatedDetailedTx.map((t: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-gray-50/80 transition-colors">
+                        <td className="py-3 px-4 font-mono font-bold text-gray-900">{t.resi_id}</td>
+                        <td className="py-3 px-4 font-mono text-gray-500">{t.tanggal}</td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-extrabold ${
+                              t.tipe_layanan === "Express"
+                                ? "bg-red-50 text-[#E4002B]"
+                                : "bg-blue-50 text-blue-600"
+                            }`}
+                          >
+                            {t.tipe_layanan}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-bold text-gray-800">{t.outlet_nama}</td>
+                        <td className="py-3 px-4 text-gray-600">{t.admin_nama}</td>
+                        <td className="py-3 px-4 text-right font-bold text-emerald-600 font-mono">
+                          {formatRupiah(t.total_customer)}
+                        </td>
+                        <td className="py-3 px-4 text-right font-bold text-[#E4002B] font-mono">
+                          {formatRupiah(t.setoran_owner)}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                            t.settlement_status === "DISETUJUI"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                              : t.settlement_status === "MENUNGGU_APPROVAL"
+                              ? "bg-amber-50 text-amber-700 border border-amber-100"
+                              : t.settlement_status === "BELUM_DISETOR"
+                              ? "bg-red-50 text-red-700 border border-red-100"
+                              : "bg-gray-100 text-gray-700 border border-gray-200"
+                          }`}>
+                            {t.settlement_status === "MENUNGGU_APPROVAL" ? "MENUNGGU APPROVAL" : t.settlement_status}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                              t.audit_status === "SESUAI"
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                                : t.audit_status === "SELISIH"
+                                ? "bg-red-50 text-red-700 border border-red-100"
+                                : t.audit_status === "PERLU_REVIEW"
+                                ? "bg-amber-50 text-amber-700 border border-amber-100"
+                                : "bg-gray-100 text-gray-700 border border-gray-200"
+                            }`}
+                          >
+                            {t.audit_status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination Controls */}
+              {totalPages > 1 && (
+                <div className="p-4 bg-gray-50/80 border-t border-gray-150 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                  <span className="text-gray-500 font-medium">
+                    Menampilkan {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, detailedTx.length)} dari {detailedTx.length} resi
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <span className="font-extrabold text-gray-700 px-2">
+                      Halaman {currentPage} dari {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

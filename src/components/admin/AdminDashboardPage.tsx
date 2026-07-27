@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import {
   Target, AlertTriangle, FileText, CheckCircle, Clock,
-  RefreshCw, TrendingUp, DollarSign, Wallet, Users, AlertCircle, XCircle, ListCollapse
+  RefreshCw, TrendingUp, DollarSign, Wallet, Users, AlertCircle, XCircle, ListCollapse,
+  QrCode, Plus, Search, List
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -47,12 +48,28 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
 
   useEffect(() => {
     loadData();
+    // 45s Live Polling
+    const interval = setInterval(() => {
+      loadData();
+    }, 45000);
+    return () => clearInterval(interval);
   }, [activeOutletId, startDate, endDate]);
 
   if (!data) {
     return (
-      <div className="flex justify-center py-20">
-        <RefreshCw className="h-8 w-8 text-red-500 animate-spin" />
+      <div className="max-w-7xl mx-auto px-4 py-8 pb-24 space-y-6 animate-pulse">
+        <div className="h-20 bg-gray-200/80 rounded-2xl w-full"></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="h-24 bg-gray-200/80 rounded-2xl"></div>
+          <div className="h-24 bg-gray-200/80 rounded-2xl"></div>
+          <div className="h-24 bg-gray-200/80 rounded-2xl"></div>
+          <div className="h-24 bg-gray-200/80 rounded-2xl"></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="h-28 bg-gray-200/80 rounded-2xl"></div>
+          <div className="h-28 bg-gray-200/80 rounded-2xl"></div>
+        </div>
+        <div className="h-64 bg-gray-200/80 rounded-2xl"></div>
       </div>
     );
   }
@@ -81,9 +98,8 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
           <select 
             value={activeOutletId} 
             onChange={(e) => onChangeActiveOutlet && onChangeActiveOutlet(e.target.value)}
-            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs outline-none text-gray-700"
+            className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs outline-none text-gray-700 font-bold cursor-pointer"
           >
-            
             {outlets.map((o) => (
               <option key={o.outlet_id} value={o.outlet_id}>{o.nama_outlet}</option>
             ))}
@@ -106,9 +122,56 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
           </div>
           <button 
             onClick={loadData}
-            className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition"
+            className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition cursor-pointer"
+            title="Muat ulang data"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* OPERATIONAL SHORTCUTS */}
+      <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+        <p className="text-xs font-extrabold text-gray-400 uppercase tracking-wider mb-3">Pintasan Operasional</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <button
+            onClick={() => onNavigate("transaksi")}
+            className="flex items-center gap-3 p-3 bg-red-50 hover:bg-red-100 text-[#E4002B] rounded-xl font-bold text-xs transition-all cursor-pointer border border-red-100"
+          >
+            <div className="p-2 bg-[#E4002B] text-white rounded-lg">
+              <Plus className="h-4 w-4 stroke-[2.5]" />
+            </div>
+            <span>Transaksi Baru</span>
+          </button>
+
+          <button
+            onClick={() => onNavigate("keuangan-outlet")}
+            className="flex items-center gap-3 p-3 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-xl font-bold text-xs transition-all cursor-pointer border border-purple-100"
+          >
+            <div className="p-2 bg-purple-600 text-white rounded-lg">
+              <Wallet className="h-4 w-4" />
+            </div>
+            <span>Kas Outlet</span>
+          </button>
+
+          <button
+            onClick={() => onNavigate("pre-input")}
+            className="flex items-center gap-3 p-3 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl font-bold text-xs transition-all cursor-pointer border border-amber-100"
+          >
+            <div className="p-2 bg-amber-500 text-white rounded-lg">
+              <QrCode className="h-4 w-4" />
+            </div>
+            <span>Scanner</span>
+          </button>
+
+          <button
+            onClick={() => onNavigate("riwayat-transaksi")}
+            className="flex items-center gap-3 p-3 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl font-bold text-xs transition-all cursor-pointer border border-blue-100"
+          >
+            <div className="p-2 bg-blue-600 text-white rounded-lg">
+              <List className="h-4 w-4" />
+            </div>
+            <span>Riwayat Transaksi</span>
           </button>
         </div>
       </div>
@@ -167,22 +230,34 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
       {/* RINGKASAN HARI INI */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
-          <p className="text-xs font-bold text-gray-400 uppercase">Total Transaksi</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-gray-400 uppercase">Total Transaksi</p>
+            <span className="text-[9px] font-bold bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono">Hari Ini</span>
+          </div>
           <p className="text-2xl font-black text-gray-800 mt-1">{summary?.totalTransaksi || 0}</p>
           <FileText className="absolute right-[-10px] bottom-[-10px] h-16 w-16 text-gray-50 opacity-50" />
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
-          <p className="text-xs font-bold text-gray-400 uppercase">Resi Express</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-gray-400 uppercase">Resi Express</p>
+            <span className="text-[9px] font-bold bg-red-50 text-red-600 px-1.5 py-0.5 rounded font-mono">Express</span>
+          </div>
           <p className="text-2xl font-black text-red-600 mt-1">{summary?.totalResiExpress || 0}</p>
           <FileText className="absolute right-[-10px] bottom-[-10px] h-16 w-16 text-red-50 opacity-50" />
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
-          <p className="text-xs font-bold text-gray-400 uppercase">Resi Cargo</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-gray-400 uppercase">Resi Cargo</p>
+            <span className="text-[9px] font-bold bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded font-mono">Cargo</span>
+          </div>
           <p className="text-2xl font-black text-blue-600 mt-1">{summary?.totalResiCargo || 0}</p>
           <FileText className="absolute right-[-10px] bottom-[-10px] h-16 w-16 text-blue-50 opacity-50" />
         </div>
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
-          <p className="text-xs font-bold text-gray-400 uppercase">Grand Total (Cust)</p>
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-gray-400 uppercase">Grand Total (Cust)</p>
+            <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-mono">Omset Loket</span>
+          </div>
           <p className="text-lg md:text-xl font-black text-emerald-600 mt-1 font-mono">
             Rp {(summary?.grandTotalCustomer || 0).toLocaleString("id-ID")}
           </p>
@@ -280,7 +355,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
           </thead>
           <tbody className="divide-y divide-gray-100">
             {byAdmin.length === 0 ? (
-              <tr><td colSpan={6} className="text-center p-4 text-gray-400">Tidak ada data</td></tr>
+              <tr><td colSpan={6} className="text-center p-6 text-xs text-gray-400 font-medium">Belum ada data transaksi admin.</td></tr>
             ) : byAdmin.map((a:any) => (
               <tr key={a.admin_id} className="hover:bg-gray-50/50">
                 <td className="p-3 font-bold text-gray-800">{a.nama}</td>
@@ -325,7 +400,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
             </thead>
             <tbody className="divide-y divide-gray-100">
               {data.recentTransactions?.length === 0 ? (
-                <tr><td colSpan={7} className="text-center p-4 text-gray-400">Tidak ada transaksi terkini</td></tr>
+                <tr><td colSpan={7} className="text-center p-6 text-xs text-gray-400 font-medium">Belum ada transaksi hari ini.</td></tr>
               ) : data.recentTransactions?.map((r: any) => (
                 <tr key={r.resi_id} className="hover:bg-gray-50/50">
                   <td className="p-3 font-bold text-gray-800">{r.resi_id}</td>
@@ -360,7 +435,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
           </h3>
           <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
             {statusSetoranList.length === 0 ? (
-              <p className="text-center text-xs text-gray-400">Belum ada transaksi</p>
+              <p className="text-center text-xs text-gray-400 py-6 font-medium">Belum ada setoran.</p>
             ) : statusSetoranList.map((s:any) => (
               <div key={s.date} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border border-gray-100 rounded-lg gap-2">
                 <div>
@@ -393,7 +468,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
           </div>
           <div className="space-y-3 max-h-64 overflow-y-auto pr-2 text-xs">
             {pembatalanLogs.length === 0 ? (
-              <p className="text-center text-xs text-gray-400">Tidak ada pembatalan</p>
+              <p className="text-center text-xs text-gray-400 py-6 font-medium">Belum ada riwayat pembatalan.</p>
             ) : pembatalanLogs.map((l:any) => (
               <div key={l.log_id} className="p-3 bg-red-50/50 border border-red-100 rounded-lg">
                 <div className="flex justify-between font-bold text-gray-800 mb-1">
@@ -414,7 +489,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
         </h3>
         <div className="space-y-2 max-h-60 overflow-y-auto text-xs pr-2">
           {aktivitasLogs.length === 0 ? (
-            <p className="text-center text-gray-400 py-4">Belum ada aktivitas</p>
+            <p className="text-center text-gray-400 py-6 font-medium">Belum ada log aktivitas tercatat.</p>
           ) : aktivitasLogs.map((log:any) => (
             <div key={log.log_id} className="flex justify-between items-center p-2.5 hover:bg-gray-50 rounded-lg border-b border-gray-50 last:border-0">
               <div className="flex items-center gap-3">

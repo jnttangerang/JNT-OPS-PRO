@@ -76,6 +76,7 @@ export default function TransaksiPage({
   const [formError, setFormError] = useState<string | null>(null);
 
   // Photos - Paket & Resi
+  const resiInputRef = useRef<HTMLInputElement>(null);
   const [fotoPaketUrl, setFotoPaketUrl] = useState("");
   const [fotoResiUrl, setFotoResiUrl] = useState("");
   const [uploadingFotoPaket, setUploadingFotoPaket] = useState(false);
@@ -599,6 +600,9 @@ export default function TransaksiPage({
     setKelengkapanLainnya("");
     setResiDuplicateError(false);
     setFormError(null);
+    setTimeout(() => {
+      resiInputRef.current?.focus();
+    }, 100);
   };
 
   return (
@@ -800,6 +804,7 @@ export default function TransaksiPage({
                   </label>
                   <div className="relative">
                     <input
+                      ref={resiInputRef}
                       type="text"
                       value={resiId}
                       onChange={(e) => {

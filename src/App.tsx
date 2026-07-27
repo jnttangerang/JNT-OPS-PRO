@@ -21,6 +21,7 @@ import MasterKategoriKeuanganPage from "./components/owner/MasterKategoriKeuanga
 import KeuanganOutletPage from "./components/owner/KeuanganOutletPage";
 import { Lock, Shield, BarChart3, Bot, Sparkles } from "lucide-react";
 import ToastContainer from "./components/ToastContainer";
+import QuickAction from "./components/QuickAction";
 import { SessionData, Outlet } from "./types";
 import { toast } from "./utils/toast";
 
@@ -56,6 +57,24 @@ export default function App() {
         localStorage.removeItem("jnt_session");
       }
     }
+  }, []);
+
+  // Keyboard shortcut listener for Ctrl+F focus search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        const searchInput = document.querySelector<HTMLInputElement>(
+          'input[type="text"][placeholder*="Cari"], input[type="text"][placeholder*="cari"], input[data-search="true"]'
+        );
+        if (searchInput) {
+          e.preventDefault();
+          searchInput.focus();
+          searchInput.select();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   // Fetch Outlets from backend to populate tasks
@@ -527,9 +546,11 @@ export default function App() {
         <div className="mt-1 font-bold">
           Sistem Operasional & Pakar Alamat AI Aktif.
         </div>
-
       </footer>
 
+      {session && (
+        <QuickAction onNavigate={setCurrentView} currentRole={session.role} />
+      )}
     </div>
   );
 }
