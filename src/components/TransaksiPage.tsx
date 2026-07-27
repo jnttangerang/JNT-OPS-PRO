@@ -3,7 +3,7 @@ import {
   Scan, AlertTriangle, ShieldCheck, HelpCircle, FileText, Landmark, Wallet, 
   ToggleLeft, ToggleRight, ArrowRight, CheckCircle, RefreshCw, Upload, Camera
 } from "lucide-react";
-import { Html5QrcodeScanner } from "html5-qrcode";
+import { Html5Qrcode } from "html5-qrcode";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, PreInputBackup } from "../types";
 import { toast } from "../utils/toast";
@@ -33,12 +33,19 @@ export default function TransaksiPage({
   // Layout switcher
   const [jenisLayanan, setJenisLayanan] = useState<"Express" | "Cargo">("Express");
 
-  // Scanner states
+  // Scanner & Camera States
   const [resiId, setResiId] = useState("");
   const [showScanner, setShowScanner] = useState(false);
   const [checkingResi, setCheckingResi] = useState(false);
   const [resiDuplicateError, setResiDuplicateError] = useState(false);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
+  
+  const [cameraStep, setCameraStep] = useState<1 | 2>(1);
+  const cameraStepRef = useRef<1 | 2>(1);
+
+  useEffect(() => {
+    cameraStepRef.current = cameraStep;
+  }, [cameraStep]);
 
   // Common Financial inputs
   const [tipeProdukExp, setTipeProdukExp] = useState<"DOC" | "EZ" | "JSD" | "JND" | "ECO" | "HBO">("EZ");
@@ -63,8 +70,8 @@ export default function TransaksiPage({
   const [uploadingBukti, setUploadingBukti] = useState(false);
 
   // Additional fees Surcharge group
-  const [aktifkanBiayaTambahan, setAktifkanBiayaTambahan] = useState(false);
-  const [biayaAmplopInput, setBiayaAmplopInput] = useState(""); // If DOC -> auto Rp 2.000 & read-only
+  const [aktifkanBiayaTambahan, setAktifkanBiayaTambahan] = useState(true);
+  const [biayaAmplopInput, setBiayaAmplopInput] = useState(""); // If DOC -> auto Rp 2.000
   const [biayaPackingInput, setBiayaPackingInput] = useState("");
   const [metodeBayarTambahan, setMetodeBayarTambahan] = useState<"Tunai" | "QRIS" | "Transfer">("Tunai");
   const [buktiTambahanUrl, setBuktiTambahanUrl] = useState("");
@@ -79,33 +86,23 @@ export default function TransaksiPage({
   const resiInputRef = useRef<HTMLInputElement>(null);
   const [fotoPaketUrl, setFotoPaketUrl] = useState("");
   const [fotoResiUrl, setFotoResiUrl] = useState("");
+  const [fotoPaketBlob, setFotoPaketBlob] = useState<Blob | null>(null);
+  const [fotoResiBlob, setFotoResiBlob] = useState<Blob | null>(null);
+  const [fotoPaketPreview, setFotoPaketPreview] = useState("");
+  const [fotoResiPreview, setFotoResiPreview] = useState("");
   const [uploadingFotoPaket, setUploadingFotoPaket] = useState(false);
   const [uploadingFotoResi, setUploadingFotoResi] = useState(false);
-  const [analyzingResi, setAnalyzingResi] = useState(false);
-
-  // States for Popup Validasi Kualitas Foto
-  const [showValidationPopup, setShowValidationPopup] = useState(false);
-  const [validationPopupData, setValidationPopupData] = useState<{
-    type: "paket" | "resi";
-    previewUrl: string;
-    detectedResiId: string | null;
-    extractedInfo?: {
-      resi_id?: string;
-      nama_pengirim?: string;
-      hp_pengirim?: string;
-      alamat_pengirim?: string;
-      nama_penerima?: string;
-      hp_penerima?: string;
-      alamat_penerima?: string;
-      nama_barang?: string;
-    } | null;
-  } | null>(null);
 
   const fileInputRef1 = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
-  const cameraPaketInputRef = useRef<HTMLInputElement>(null);
-  const cameraResiInputRef = useRef<HTMLInputElement>(null);
-  const scannerRef = useRef<Html5QrcodeScanner | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
+      if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
+    };
+  }, [fotoPaketPreview, fotoResiPreview]);
 
   // 1. Recover pending pre-input from localstorage
   useEffect(() => {
@@ -151,42 +148,101 @@ export default function TransaksiPage({
     localStorage.removeItem("pending_transaksi_id");
     setPendingTxId(null);
     setPreInputData(null);
+    if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
+    if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
+    setFotoPaketPreview("");
+    setFotoResiPreview("");
+    setFotoPaketBlob(null);
+    setFotoResiBlob(null);
     setFotoPaketUrl("");
     setFotoResiUrl("");
   };
 
-  // 2. Barcode scanner implementation
+  // 2. Barcode & Camera implementation
+  const capturePhoto = async (type: "paket" | "resi", decodedResiId?: string) => {
+    const video = document.querySelector("#reader video") as HTMLVideoElement;
+    if (!video) {
+      toast.error("Kamera tidak ditemukan.");
+      return;
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+
+      const previewUrl = URL.createObjectURL(blob);
+
+      if (type === "paket") {
+        if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
+        setFotoPaketBlob(blob);
+        setFotoPaketPreview(previewUrl); 
+        setFotoPaketUrl(""); 
+      } else {
+        if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
+        setFotoResiBlob(blob);
+        setFotoResiPreview(previewUrl); 
+        setFotoResiUrl(""); 
+      }
+      
+      toast.success(`Foto ${type} berhasil ditangkap`);
+    }, "image/jpeg", 0.8);
+  };
+
+  const stopCameraTracks = () => {
+    const video = document.querySelector("#reader video") as HTMLVideoElement;
+    if (video && video.srcObject) {
+      const stream = video.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      video.srcObject = null;
+    }
+  };
+
   useEffect(() => {
     if (!showScanner) {
       if (scannerRef.current) {
-        scannerRef.current.clear().catch(err => {
+        const currentScanner = scannerRef.current;
+        currentScanner.stop().then(() => {
+          currentScanner.clear();
+          stopCameraTracks();
+        }).catch(err => {
           console.error("Failed to clear html5-qrcode scanner", err);
+          currentScanner.clear();
+          stopCameraTracks();
         });
         scannerRef.current = null;
       }
       return;
     }
 
-    setScanStatus("Menyiapkan kamera...");
+    setCameraStep(1);
+    setScanStatus("STEP 1: Foto fisik paket");
     
     // Initialize scanner on the 'reader' element
-    const scanner = new Html5QrcodeScanner(
-      "reader",
+    const scanner = new Html5Qrcode("reader");
+    scannerRef.current = scanner;
+
+    scanner.start(
+      { facingMode: "environment" },
       { 
         fps: 10, 
         qrbox: { width: 260, height: 180 },
         aspectRatio: 1.777778
       },
-      /* verbose= */ false
-    );
-    
-    scannerRef.current = scanner;
-
-    scanner.render(
       async (decodedText) => {
-        // Scan Success
+        if (cameraStepRef.current === 1) return; // Ignore barcodes in step 1
+        
+        // Scan Success in STEP 2
         setResiId(decodedText);
         setScanStatus(`Resi terbaca: ${decodedText}`);
+        
+        // auto capture resi
+        await capturePhoto("resi", decodedText);
+        
         setShowScanner(false);
         // Trigger duplicate verification automatically
         handleVerifyResi(decodedText);
@@ -194,12 +250,21 @@ export default function TransaksiPage({
       (error) => {
         // Scan error is triggered frequently, we keep it silent or log simple message
       }
-    );
+    ).catch(err => {
+      console.error("Failed to start scanner", err);
+      toast.error("Gagal membuka kamera. Periksa izin kamera.");
+    });
 
     return () => {
       if (scannerRef.current) {
-        scannerRef.current.clear().catch(err => {
+        const currentScanner = scannerRef.current;
+        currentScanner.stop().then(() => {
+          currentScanner.clear();
+          stopCameraTracks();
+        }).catch(err => {
           console.error("Failed to clear html5-qrcode scanner", err);
+          currentScanner.clear();
+          stopCameraTracks();
         });
         scannerRef.current = null;
       }
@@ -244,9 +309,9 @@ export default function TransaksiPage({
   useEffect(() => {
     if (jenisLayanan === "Express") {
       if (tipeProdukExp === "DOC") {
-        setBiayaLainInput("1.000"); // Auto Rp 1.000 & read-only
+        setBiayaLainInput("1.000"); // Auto Rp 1.000
         if (aktifkanBiayaTambahan) {
-          setBiayaAmplopInput("2.000"); // Auto Rp 2.000 & read-only for envelop cost
+          setBiayaAmplopInput("2.000"); // Auto Rp 2.000
         }
       } else {
         setBiayaLainInput("");
@@ -359,119 +424,6 @@ export default function TransaksiPage({
     }
   };
 
-  const handlePaketFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadingFotoPaket(true);
-    setFormError(null);
-
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Str = reader.result as string;
-        try {
-          const response = await callBackend("uploadFile", {
-            fileBase64: base64Str,
-            fileName: file.name,
-            category: "FOTO_PAKET"
-          });
-
-          if (response.status === "success" && response.data) {
-            setValidationPopupData({
-              type: "paket",
-              previewUrl: response.data,
-              detectedResiId: null
-            });
-            setShowValidationPopup(true);
-          } else {
-            setFormError(response.message || "Gagal mengunggah foto paket.");
-            toast.error(response.message || "Gagal mengunggah foto paket.");
-          }
-        } catch (err: any) {
-          setFormError("Gagal mengunggah ke server: " + err.message);
-          toast.error("Gagal mengunggah: " + err.message);
-        } finally {
-          setUploadingFotoPaket(false);
-        }
-      };
-      reader.readAsDataURL(file);
-    } catch (err: any) {
-      setFormError("Gagal membaca file: " + err.message);
-      setUploadingFotoPaket(false);
-    }
-  };
-
-  const handleResiFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadingFotoResi(true);
-    setAnalyzingResi(true);
-    setFormError(null);
-
-    try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64Str = reader.result as string;
-        try {
-          // 1. Upload File
-          const responseUpload = await callBackend("uploadFile", {
-            fileBase64: base64Str,
-            fileName: file.name,
-            category: "FOTO_RESI"
-          });
-
-          if (responseUpload.status === "success" && responseUpload.data) {
-            const uploadedUrl = responseUpload.data;
-
-            // 2. Analyze via server endpoint
-            const responseAnalyze = await fetch("/api/analyzeResiPhoto", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ fileUrl: uploadedUrl, fileBase64: base64Str })
-            });
-
-            const jsonAnalyze = await responseAnalyze.json();
-            if (jsonAnalyze.status === "success" && jsonAnalyze.data) {
-              const ext = jsonAnalyze.data;
-              setValidationPopupData({
-                type: "resi",
-                previewUrl: uploadedUrl,
-                detectedResiId: ext.resi_id || null,
-                extractedInfo: ext
-              });
-              setShowValidationPopup(true);
-            } else {
-              setValidationPopupData({
-                type: "resi",
-                previewUrl: uploadedUrl,
-                detectedResiId: null,
-                extractedInfo: null
-              });
-              setShowValidationPopup(true);
-              toast.info("Analisis AI resi gagal atau tidak lengkap. Anda masih bisa melanjutkan.");
-            }
-          } else {
-            setFormError(responseUpload.message || "Gagal mengunggah foto resi.");
-            toast.error(responseUpload.message || "Gagal mengunggah foto resi.");
-          }
-        } catch (err: any) {
-          setFormError("Gagal mengolah resi: " + err.message);
-          toast.error("Gagal mengolah resi: " + err.message);
-        } finally {
-          setUploadingFotoResi(false);
-          setAnalyzingResi(false);
-        }
-      };
-      reader.readAsDataURL(file);
-    } catch (err: any) {
-      setFormError("Gagal membaca file: " + err.message);
-      setUploadingFotoResi(false);
-      setAnalyzingResi(false);
-    }
-  };
-
   const handleKelengkapanMotorChange = (item: string) => {
     if (kelengkapanMotor.includes(item)) {
       setKelengkapanMotor(kelengkapanMotor.filter((i) => i !== item));
@@ -479,6 +431,13 @@ export default function TransaksiPage({
       setKelengkapanMotor([...kelengkapanMotor, item]);
     }
   };
+
+  const toBase64 = (blob: Blob) => new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 
   // Save Transaction Submission
   const handleSaveTransaksi = async () => {
@@ -514,6 +473,55 @@ export default function TransaksiPage({
       finalKelengkapan = items.join(", ");
     }
 
+    // Upload Blob photos if they exist in memory
+    let finalFotoPaketUrl = fotoPaketUrl;
+    let finalFotoResiUrl = fotoResiUrl;
+
+    if (fotoPaketBlob || fotoResiBlob) {
+      const formattedDate = new Date().toISOString().split("T")[0].replace(/-/g, "");
+      const resiPrefix = resiId.trim() || `TMP_${Date.now()}`;
+
+      try {
+        if (fotoPaketBlob) {
+          setUploadingFotoPaket(true);
+          const b64 = await toBase64(fotoPaketBlob);
+          const response = await callBackend("uploadFile", {
+            fileBase64: b64,
+            fileName: `FOTO_PAKET_${formattedDate}_${resiPrefix}`,
+            category: "FOTO_PAKET"
+          });
+          if (response.status === "success" && response.data) {
+            finalFotoPaketUrl = response.data;
+            setFotoPaketUrl(response.data); // cache the remote URL
+            setFotoPaketBlob(null); // free up the blob so we don't upload again
+          }
+        }
+
+        if (fotoResiBlob) {
+          setUploadingFotoResi(true);
+          const b64 = await toBase64(fotoResiBlob);
+          const response = await callBackend("uploadFile", {
+            fileBase64: b64,
+            fileName: `FOTO_RESI_${formattedDate}_${resiPrefix}`,
+            category: "FOTO_RESI"
+          });
+          if (response.status === "success" && response.data) {
+            finalFotoResiUrl = response.data;
+            setFotoResiUrl(response.data);
+            setFotoResiBlob(null);
+          }
+        }
+      } catch (err: any) {
+        setFormError("Gagal mengunggah foto saat menyimpan transaksi.");
+        toast.error("Gagal mengunggah foto.");
+        setUploadingFotoPaket(false);
+        setUploadingFotoResi(false);
+        return;
+      }
+      setUploadingFotoPaket(false);
+      setUploadingFotoResi(false);
+    }
+
     const transactionData = {
       resi_id: resiId.trim().toUpperCase(),
       transaksi_id: pendingTxId || "",
@@ -546,8 +554,8 @@ export default function TransaksiPage({
       grand_total: grandTotal,
       setoran_ke_owner: setoranKeOwner,
       kas_operasional: kasOperasional,
-      foto_paket_url: fotoPaketUrl || undefined,
-      foto_resi_url: fotoResiUrl || undefined
+      foto_paket_url: finalFotoPaketUrl || undefined,
+      foto_resi_url: finalFotoResiUrl || undefined
     };
 
     try {
@@ -558,9 +566,11 @@ export default function TransaksiPage({
 
       if (response.status === "success") {
         toast.success("Transaksi berhasil disimpan dan diselesaikan!");
-        setTransactionSuccess(true);
-        setSavedResiSummary(resiId.trim().toUpperCase());
-        localStorage.removeItem("pending_transaksi_id"); // Clear reference
+        // Remove local pre-input reference
+        localStorage.removeItem("pending_transaksi_id"); 
+        
+        // Directly reset for the next transaction
+        handleNextTransaction();
       } else {
         const msg = response.message || "Gagal menyimpan transaksi.";
         setFormError(msg);
@@ -586,11 +596,18 @@ export default function TransaksiPage({
     setTotalUangDibayarInput("");
     setMetodeBayar("Tunai");
     setBuktiBayarUrl("");
-    setAktifkanBiayaTambahan(false);
+    // We keep aktifkanBiayaTambahan true as per default
     setBiayaAmplopInput("");
     setBiayaPackingInput("");
     setMetodeBayarTambahan("Tunai");
     setBuktiTambahanUrl("");
+    
+    if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
+    if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
+    setFotoPaketPreview("");
+    setFotoResiPreview("");
+    setFotoPaketBlob(null);
+    setFotoResiBlob(null);
     setFotoPaketUrl("");
     setFotoResiUrl("");
     setMerkMotor("");
@@ -653,58 +670,10 @@ export default function TransaksiPage({
         </div>
       )}
 
-      {/* RENDER TRANSACTION SUCCESS SCREEN */}
-      {transactionSuccess ? (
-        <div className="bg-white rounded-2xl shadow-lg border border-green-100 p-8 text-center animate-fade-in max-w-lg mx-auto">
-          <div className="mx-auto bg-green-50 text-green-600 rounded-full h-16 w-16 flex items-center justify-center mb-4">
-            <CheckCircle className="h-10 w-10" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-800">
-            Transaksi Resi Tersimpan!
-          </h2>
-          <p className="text-xs text-green-600 font-mono font-bold mt-1">
-            RESI: {savedResiSummary}
-          </p>
-          
-          <div className="my-6 p-4 bg-gray-50 rounded-xl border border-gray-100 text-left text-xs space-y-2">
-            <div className="flex justify-between border-b border-gray-100 pb-1.5 text-gray-500 font-semibold">
-              <span>Rincian Finansial</span>
-              <span>Alokasi Dana</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-600">Total Dibayar Customer:</span>
-              <span className="font-bold text-gray-800">Rp {totalUangDibayarCustomer.toLocaleString("id-ID")}</span>
-            </div>
-            <div className="flex justify-between text-blue-600">
-              <span>Wajib Setor ke Owner:</span>
-              <span className="font-bold">Rp {setoranKeOwner.toLocaleString("id-ID")}</span>
-            </div>
-            <div className="flex justify-between text-green-600">
-              <span>Kas Operasional Outlet:</span>
-              <span className="font-bold">Rp {kasOperasional.toLocaleString("id-ID")}</span>
-            </div>
-          </div>
+      {/* RENDER TRANSACTION CALCULATOR FORM */}
+      <div className="space-y-6">
 
-          <div className="flex flex-col gap-3">
-            <button
-              onClick={handleNextTransaction}
-              className="py-3 bg-[#E4002B] hover:bg-[#c20023] font-semibold text-white rounded-xl shadow-md cursor-pointer transition duration-150 text-sm"
-            >
-              Proses Transaksi Baru
-            </button>
-            <button
-              onClick={() => onNavigate("dashboard")}
-              className="py-3 bg-gray-100 hover:bg-gray-200 font-semibold text-gray-700 rounded-xl transition duration-150 text-sm"
-            >
-              Lihat Dashboard Owner
-            </button>
-          </div>
-        </div>
-      ) : (
-        /* RENDER TRANSACTION CALCULATOR FORM */
-        <div className="space-y-6">
-
-          {/* 1. DETEKSI PRE-INPUT COMPONENT CARD */}
+        {/* 1. DETEKSI PRE-INPUT COMPONENT CARD */}
           {pendingTxId && preInputData ? (
             <div className="bg-red-50/50 rounded-2xl border border-red-100 p-4 sm:p-5">
               <div className="flex justify-between items-start mb-3">
@@ -766,33 +735,45 @@ export default function TransaksiPage({
             {/* LEFT COLUMN: SCAN & CALCULATIONS */}
             <div className="space-y-6">
 
-              {/* SECTION: SCAN BARCODE */}
+              {/* SECTION: SCAN BARCODE & CAMERA */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-1">
-                  <div className="flex items-center gap-2">
-                    <div className="bg-red-50 p-1.5 rounded-lg text-[#E4002B]">
-                      <Scan className="h-4 w-4" />
-                    </div>
-                    <h3 className="font-semibold text-gray-800 text-sm">Scan Resi Barcode</h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowScanner(!showScanner)}
-                    className="text-xs font-bold text-[#E4002B] hover:text-[#c20023] bg-red-50 py-1 px-2.5 rounded-lg flex items-center gap-1 cursor-pointer"
-                  >
-                    <Camera className="h-3.5 w-3.5" />
-                    <span>{showScanner ? "Tutup Scanner" : "Mulai Kamera Scan"}</span>
-                  </button>
-                </div>
+                
+                <button
+                  type="button"
+                  onClick={() => setShowScanner(!showScanner)}
+                  className="w-full bg-[#E4002B] hover:bg-[#c20023] text-white py-4 rounded-xl font-bold text-lg shadow-md flex items-center justify-center gap-3 transition-colors cursor-pointer"
+                >
+                  <Camera className="h-6 w-6" />
+                  <span>{showScanner ? "Tutup Kamera" : "Scan Resi & Foto Paket"}</span>
+                </button>
 
                 {/* Html5Qrcode Scanner Target div */}
                 {showScanner && (
-                  <div className="space-y-2 border border-gray-100 rounded-xl p-3 bg-gray-50 overflow-hidden">
-                    <div id="reader" className="w-full"></div>
+                  <div className="space-y-3 border border-gray-100 rounded-xl p-3 bg-gray-900 overflow-hidden relative">
+                    <div id="reader" className="w-full overflow-hidden rounded-lg [&_video]:w-full [&_video]:object-cover [&_video]:rounded-lg"></div>
+                    
+                    {cameraStep === 1 && (
+                      <div className="absolute inset-x-0 bottom-16 flex justify-center z-10">
+                         <button 
+                           type="button"
+                           onClick={async () => {
+                             await capturePhoto("paket");
+                             setCameraStep(2);
+                             setScanStatus("STEP 2: Arahkan ke barcode resi");
+                           }}
+                           className="bg-[#E4002B] text-white px-6 py-3 rounded-full font-bold shadow-2xl flex items-center gap-2 cursor-pointer ring-4 ring-white/50 animate-bounce"
+                         >
+                           <Camera className="w-5 h-5" /> Ambil Foto Paket
+                         </button>
+                      </div>
+                    )}
+
                     {scanStatus && (
-                      <p className="text-[10px] text-center font-mono font-bold text-gray-500 animate-pulse">
-                        {scanStatus}
-                      </p>
+                      <div className="absolute bottom-4 inset-x-4">
+                        <p className="text-sm text-center font-bold text-white bg-black/60 backdrop-blur-sm p-3 rounded-xl border border-white/20 shadow-lg">
+                          {scanStatus}
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}
@@ -840,147 +821,53 @@ export default function TransaksiPage({
                     </div>
                   )}
 
-                  {!resiDuplicateError && resiId.trim() && !checkingResi && (
+                  {(!resiDuplicateError && resiId.trim() && !checkingResi) ? (
                     <div className="mt-2 text-[10px] text-green-600 font-bold flex items-center gap-1 font-mono">
                       <ShieldCheck className="h-3.5 w-3.5 text-green-500" />
                       <span>Resi valid & siap diproses (Anti-Fraud Aman)</span>
+                    </div>
+                  ) : null}
+
+                  {/* FOTO PREVIEWS */}
+                  {(fotoPaketPreview || fotoPaketUrl || fotoResiPreview || fotoResiUrl || uploadingFotoPaket || uploadingFotoResi) && (
+                    <div className="mt-4 grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                      <div>
+                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block mb-1">Foto Paket</span>
+                        {uploadingFotoPaket ? (
+                           <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                             <RefreshCw className="h-3 w-3 animate-spin text-[#E4002B]" /> Mengunggah...
+                           </div>
+                        ) : (fotoPaketPreview || fotoPaketUrl) ? (
+                          <div className="flex items-center gap-2">
+                            <img src={fotoPaketPreview || fotoPaketUrl} alt="Paket" className="h-10 w-10 object-cover rounded border border-gray-200" referrerPolicy="no-referrer" />
+                            <span className="text-[9px] text-green-700 font-bold">✓ Tersimpan</span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 italic">Belum ada foto</span>
+                        )}
+                      </div>
+                      
+                      <div>
+                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block mb-1">Foto Resi</span>
+                        {uploadingFotoResi ? (
+                           <div className="flex items-center gap-1 text-[10px] text-gray-500">
+                             <RefreshCw className="h-3 w-3 animate-spin text-orange-500" /> Mengunggah...
+                           </div>
+                        ) : (fotoResiPreview || fotoResiUrl) ? (
+                          <div className="flex items-center gap-2">
+                            <img src={fotoResiPreview || fotoResiUrl} alt="Resi" className="h-10 w-10 object-cover rounded border border-gray-200" referrerPolicy="no-referrer" />
+                            <span className="text-[9px] text-green-700 font-bold">✓ Tersimpan</span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-gray-400 italic">Belum ada foto</span>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* DUAL CAMERA PHOTO CAPTURE */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4 animate-fade-in">
-                <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-1">
-                  <div className="bg-[#E4002B]/10 p-1.5 rounded-lg text-[#E4002B]">
-                    <Camera className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-800 text-sm">Foto Bukti Paket & Resi</h3>
-                    <p className="text-[10px] text-gray-400">Ambil foto fisik paket & kertas resi J&T</p>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {/* 1. Foto Paket */}
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider">
-                        1. Foto Fisik Paket
-                      </span>
-                      {fotoPaketUrl && (
-                        <span className="px-1.5 py-0.5 bg-green-100 text-green-800 text-[9px] font-bold rounded-full">
-                          Selesai
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-gray-500 leading-normal">
-                      Ambil foto seluruh permukaan fisik paket sebagai bukti pendukung.
-                    </p>
-                    
-                    <button
-                      type="button"
-                      onClick={() => cameraPaketInputRef.current?.click()}
-                      disabled={uploadingFotoPaket || analyzingResi}
-                      className="w-full py-2 px-3 bg-white hover:bg-slate-50 disabled:bg-gray-100 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition duration-150 cursor-pointer shadow-sm"
-                    >
-                      <Camera className="h-3.5 w-3.5 text-[#E4002B]" />
-                      <span>{uploadingFotoPaket ? "Mengunggah..." : "Ambil Foto Paket"}</span>
-                    </button>
-
-                    <input
-                      type="file"
-                      ref={cameraPaketInputRef}
-                      onChange={handlePaketFileChange}
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                    />
-
-                    {uploadingFotoPaket && (
-                      <div className="flex items-center gap-2 justify-center text-[10px] text-gray-500 py-1">
-                        <RefreshCw className="h-3 w-3 animate-spin text-[#E4002B]" />
-                        <span>Mengunggah...</span>
-                      </div>
-                    )}
-
-                    {fotoPaketUrl && (
-                      <div className="p-1 bg-white border border-slate-200 rounded-lg flex items-center gap-2">
-                        <img
-                          src={fotoPaketUrl}
-                          alt="Preview paket"
-                          className="h-8 w-8 object-cover rounded border border-gray-200 shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="overflow-hidden">
-                          <p className="text-[10px] font-bold text-slate-800">Tersimpan</p>
-                          <p className="text-[8px] text-gray-500 truncate">{fotoPaketUrl}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* 2. Foto Resi */}
-                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider">
-                        2. Foto Kertas Resi
-                      </span>
-                      {fotoResiUrl && (
-                        <span className="px-1.5 py-0.5 bg-green-100 text-green-800 text-[9px] font-bold rounded-full">
-                          Selesai
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-gray-500 leading-normal">
-                      Scan kertas resi yang dicetak untuk deteksi nomor resi & auto-fill.
-                    </p>
-                    
-                    <button
-                      type="button"
-                      onClick={() => cameraResiInputRef.current?.click()}
-                      disabled={uploadingFotoResi || analyzingResi}
-                      className="w-full py-2 px-3 bg-white hover:bg-slate-50 disabled:bg-gray-100 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 flex items-center justify-center gap-1.5 transition duration-150 cursor-pointer shadow-sm"
-                    >
-                      <Camera className="h-3.5 w-3.5 text-orange-600" />
-                      <span>
-                        {analyzingResi ? "AI Membaca..." : uploadingFotoResi ? "Mengunggah..." : "Ambil Foto Resi (AI)"}
-                      </span>
-                    </button>
-
-                    <input
-                      type="file"
-                      ref={cameraResiInputRef}
-                      onChange={handleResiFileChange}
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                    />
-
-                    {(uploadingFotoResi || analyzingResi) && (
-                      <div className="flex items-center gap-2 justify-center text-[10px] text-gray-500 py-1">
-                        <RefreshCw className="h-3 w-3 animate-spin text-orange-500" />
-                        <span>{analyzingResi ? "AI Membaca..." : "Mengunggah..."}</span>
-                      </div>
-                    )}
-
-                    {fotoResiUrl && (
-                      <div className="p-1 bg-white border border-slate-200 rounded-lg flex items-center gap-2">
-                        <img
-                          src={fotoResiUrl}
-                          alt="Preview resi"
-                          className="h-8 w-8 object-cover rounded border border-gray-200 shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
-                        <div className="overflow-hidden">
-                          <p className="text-[10px] font-bold text-orange-800">Tersimpan</p>
-                          <p className="text-[8px] text-gray-500 truncate">{fotoResiUrl}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
 
               {/* FINANCIAL CALCULATORS FOR SERVICE CATEGORY */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
@@ -1305,10 +1192,9 @@ export default function TransaksiPage({
                         </label>
                         <input
                           type="text"
-                          disabled={jenisLayanan === "Express" && tipeProdukExp === "DOC"}
                           value={biayaAmplopInput}
                           onChange={(e) => setBiayaAmplopInput(formatThousandsInput(e.target.value))}
-                          className="w-full px-3 py-2 bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
+                          className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
                           placeholder="0"
                         />
                       </div>
@@ -1455,99 +1341,9 @@ export default function TransaksiPage({
           </div>
 
         </div>
-      )}
 
-      {/* Validasi Kualitas Foto Popup */}
-      {showValidationPopup && validationPopupData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl animate-in fade-in zoom-in duration-200">
-            {/* Header */}
-            <div className="bg-slate-950 p-5 text-white flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold tracking-tight">Validasi Kualitas Foto</h3>
-                <p className="text-xs text-slate-400">
-                  {validationPopupData.type === "paket" ? "Verifikasi Foto Paket Fisik" : "Verifikasi Foto Kertas Resi"}
-                </p>
-              </div>
-            </div>
+      {/* Form Ends Here */}
 
-            {/* Body */}
-            <div className="p-6 space-y-4">
-              <div className="aspect-[4/3] w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-100 flex items-center justify-center">
-                <img
-                  src={validationPopupData.previewUrl}
-                  alt="Validation Preview"
-                  className="h-full w-full object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              </div>
-
-              {validationPopupData.type === "resi" && validationPopupData.detectedResiId && (
-                <div className="p-3 bg-orange-50 border border-orange-100 rounded-xl space-y-1">
-                  <p className="text-xs font-bold text-orange-800 uppercase tracking-wider">AI Hasil Deteksi Resi J&T:</p>
-                  <p className="text-sm font-mono font-bold text-slate-800">{validationPopupData.detectedResiId}</p>
-                </div>
-              )}
-
-              <div className="text-center space-y-1">
-                <p className="text-sm font-semibold text-slate-800">Verifikasi Hasil Foto</p>
-                <p className="text-xs text-slate-500">
-                  Apakah Foto {validationPopupData.type === "paket" ? "Paket" : "Resi"} terlihat jelas, terang, dan tidak buram?
-                </p>
-              </div>
-            </div>
-
-            {/* Footer Actions */}
-            <div className="grid grid-cols-2 gap-3 bg-slate-50 px-6 py-4 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowValidationPopup(false);
-                  setValidationPopupData(null);
-                  toast.info("Silakan ambil ulang foto.");
-                  if (validationPopupData.type === "paket") {
-                    cameraPaketInputRef.current?.click();
-                  } else {
-                    cameraResiInputRef.current?.click();
-                  }
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
-              >
-                Buram / Retake
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (validationPopupData.type === "paket") {
-                    setFotoPaketUrl(validationPopupData.previewUrl);
-                    toast.success("Foto Paket berhasil disimpan!");
-                  } else {
-                    setFotoResiUrl(validationPopupData.previewUrl);
-                    if (validationPopupData.extractedInfo) {
-                      const ext = validationPopupData.extractedInfo;
-                      if (ext.resi_id) {
-                        const rId = ext.resi_id.trim().toUpperCase();
-                        setResiId(rId);
-                        handleVerifyResi(rId);
-                        toast.success(`Foto Resi berhasil disimpan! No Resi J&T terdeteksi: ${rId}`);
-                      } else {
-                        toast.success("Foto Resi berhasil disimpan!");
-                      }
-                    } else {
-                      toast.success("Foto Resi berhasil disimpan!");
-                    }
-                  }
-                  setShowValidationPopup(false);
-                  setValidationPopupData(null);
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-lg bg-[#E4002B] py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#c20023] transition-colors cursor-pointer"
-              >
-                Jelas & Simpan
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
