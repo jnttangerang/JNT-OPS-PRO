@@ -776,7 +776,7 @@ export default function TransaksiPage({
             </div>
           ) : (
             <div className="bg-gray-50 rounded-2xl border border-gray-200 p-4 text-center text-xs text-gray-500">
-              💡 Belum memilih Pre-Input pelanggan. Menjalankan mode input loket langsung (Direct Entry). 
+              💡 Belum memilih Pre-Input pelanggan. Menjalankan mode input langsung (Direct Entry). 
               Anda bisa memilih untuk pre-input data pelanggan terlebih dahulu di halaman Pre-Input.
             </div>
           )}
@@ -883,7 +883,7 @@ export default function TransaksiPage({
                           ? "border-red-400 focus:ring-red-500 focus:border-red-500 bg-red-50" 
                           : "border-gray-200 focus:ring-[#E4002B] focus:border-[#E4002B]"
                       }`}
-                      placeholder="CONTOH: JT12345678901 / JTC98765432101"
+                      placeholder="CONTOH: JD12345678901 / JTC98765432101"
                     />
                     {checkingResi && (
                       <div className="absolute right-3 inset-y-0 flex items-center">
@@ -1188,7 +1188,7 @@ export default function TransaksiPage({
 
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                      Pembulatan / Lebih (Rp)
+                      Pembulatan (Rp)
                     </label>
                     <div className="w-full px-3 py-2.5 bg-gray-100 border border-gray-200 rounded-xl text-xs font-mono font-bold text-gray-600">
                       Rp {pembulatan.toLocaleString("id-ID")}
@@ -1268,7 +1268,7 @@ export default function TransaksiPage({
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-800 text-sm">Grup Biaya Tambahan</h3>
-                      <p className="text-[10px] text-gray-400">Kas operasional independen loket.</p>
+                      <p className="text-[10px] text-gray-400">Kas operasional Outlet.</p>
                     </div>
                   </div>
                   
