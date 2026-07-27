@@ -40,8 +40,15 @@ export default function TransaksiPage({
   const [resiDuplicateError, setResiDuplicateError] = useState(false);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
   
+  const [initialCameraStep, setInitialCameraStep] = useState<1 | 2>(1);
   const [cameraStep, setCameraStep] = useState<1 | 2>(1);
   const cameraStepRef = useRef<1 | 2>(1);
+  const layananRef = useRef<HTMLDivElement>(null);
+
+  const startCamera = (step: 1 | 2 = 1) => {
+    setInitialCameraStep(step);
+    setShowScanner(true);
+  };
 
   useEffect(() => {
     cameraStepRef.current = cameraStep;
@@ -93,9 +100,46 @@ export default function TransaksiPage({
   const [uploadingFotoPaket, setUploadingFotoPaket] = useState(false);
   const [uploadingFotoResi, setUploadingFotoResi] = useState(false);
 
+  const [successSheet, setSuccessSheet] = useState<{ resi: string; total: number } | null>(null);
+  const [countdown, setCountdown] = useState(5);
+
   const fileInputRef1 = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  useEffect(() => {
+    if (successSheet) {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          setSuccessSheet(null);
+          handleNextTransaction();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          setSuccessSheet(null);
+          onNavigate("dashboard");
+        }
+      };
+      window.addEventListener("keydown", handleKeyDown);
+
+      const interval = setInterval(() => {
+        setCountdown((c) => {
+          if (c <= 1) {
+            clearInterval(interval);
+            setSuccessSheet(null);
+            handleNextTransaction();
+            return 0;
+          }
+          return c - 1;
+        });
+      }, 1000);
+
+      return () => {
+        window.removeEventListener("keydown", handleKeyDown);
+        clearInterval(interval);
+      };
+    }
+  }, [successSheet, onNavigate]);
 
   useEffect(() => {
     return () => {
@@ -219,8 +263,12 @@ export default function TransaksiPage({
       return;
     }
 
-    setCameraStep(1);
-    setScanStatus("STEP 1: Foto fisik paket");
+    setCameraStep(initialCameraStep);
+    if (initialCameraStep === 1) {
+      setScanStatus("STEP 1: Foto fisik paket");
+    } else {
+      setScanStatus("STEP 2: Arahkan ke barcode resi");
+    }
     
     // Initialize scanner on the 'reader' element
     const scanner = new Html5Qrcode("reader");
@@ -246,6 +294,9 @@ export default function TransaksiPage({
         setShowScanner(false);
         // Trigger duplicate verification automatically
         handleVerifyResi(decodedText);
+        setTimeout(() => {
+          layananRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 300);
       },
       (error) => {
         // Scan error is triggered frequently, we keep it silent or log simple message
@@ -569,8 +620,9 @@ export default function TransaksiPage({
         // Remove local pre-input reference
         localStorage.removeItem("pending_transaksi_id"); 
         
-        // Directly reset for the next transaction
-        handleNextTransaction();
+        // Show success sheet instead of immediate reset
+        setSuccessSheet({ resi: resiId.trim().toUpperCase(), total: grandTotal });
+        setCountdown(5);
       } else {
         const msg = response.message || "Gagal menyimpan transaksi.";
         setFormError(msg);
@@ -738,14 +790,46 @@ export default function TransaksiPage({
               {/* SECTION: SCAN BARCODE & CAMERA */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
                 
-                <button
-                  type="button"
-                  onClick={() => setShowScanner(!showScanner)}
-                  className="w-full bg-[#E4002B] hover:bg-[#c20023] text-white py-4 rounded-xl font-bold text-lg shadow-md flex items-center justify-center gap-3 transition-colors cursor-pointer"
-                >
-                  <Camera className="h-6 w-6" />
-                  <span>{showScanner ? "Tutup Kamera" : "Scan Resi & Foto Paket"}</span>
-                </button>
+                {/* Scanner Main Button / Status */}
+                {(!fotoPaketPreview && !fotoResiPreview && !fotoPaketUrl && !fotoResiUrl) ? (
+                  <button
+                    type="button"
+                    onClick={() => startCamera(1)}
+                    className="w-full bg-[#E4002B] hover:bg-[#c20023] text-white py-4 rounded-xl font-bold text-lg shadow-md flex items-center justify-center gap-3 transition-colors cursor-pointer"
+                  >
+                    <Camera className="h-6 w-6" />
+                    <span>{showScanner ? "Tutup Kamera" : "Mulai Scan & Foto Paket"}</span>
+                  </button>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    <div className="w-full bg-green-50 text-green-700 py-3 px-4 rounded-xl font-bold text-base border border-green-200 shadow-sm flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="h-5 w-5 text-green-600" />
+                        <span>Scan Selesai</span>
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => startCamera(1)}
+                        className="text-xs bg-white text-gray-700 px-3 py-1.5 rounded-lg border border-gray-300 shadow-sm hover:bg-gray-50 flex items-center gap-1 cursor-pointer"
+                      >
+                        <RefreshCw className="h-3 w-3" /> Scan Ulang
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Progress Indicator */}
+                {showScanner && (
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${cameraStep === 1 ? "bg-red-100 text-red-700" : (fotoPaketPreview || fotoPaketUrl) ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                      {(fotoPaketPreview || fotoPaketUrl) ? "✔ Foto Paket" : "STEP 1: Foto Paket"}
+                    </span>
+                    <span className="text-gray-300">-</span>
+                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${cameraStep === 2 ? "bg-red-100 text-red-700" : (fotoResiPreview || fotoResiUrl) ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                      {(fotoResiPreview || fotoResiUrl) ? "✔ Scan Resi" : "STEP 2: Scan Resi"}
+                    </span>
+                  </div>
+                )}
 
                 {/* Html5Qrcode Scanner Target div */}
                 {showScanner && (
@@ -832,15 +916,24 @@ export default function TransaksiPage({
                   {(fotoPaketPreview || fotoPaketUrl || fotoResiPreview || fotoResiUrl || uploadingFotoPaket || uploadingFotoResi) && (
                     <div className="mt-4 grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
                       <div>
-                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block mb-1">Foto Paket</span>
+                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block mb-2">Foto Paket</span>
                         {uploadingFotoPaket ? (
                            <div className="flex items-center gap-1 text-[10px] text-gray-500">
                              <RefreshCw className="h-3 w-3 animate-spin text-[#E4002B]" /> Mengunggah...
                            </div>
                         ) : (fotoPaketPreview || fotoPaketUrl) ? (
-                          <div className="flex items-center gap-2">
-                            <img src={fotoPaketPreview || fotoPaketUrl} alt="Paket" className="h-10 w-10 object-cover rounded border border-gray-200" referrerPolicy="no-referrer" />
-                            <span className="text-[9px] text-green-700 font-bold">✓ Tersimpan</span>
+                          <div className="flex items-start gap-3">
+                            <img src={fotoPaketPreview || fotoPaketUrl} alt="Paket" className="h-[72px] w-[72px] object-cover rounded-lg border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded inline-block w-fit">✓ Siap Upload</span>
+                              <button 
+                                type="button" 
+                                onClick={() => startCamera(1)} 
+                                className="text-[10px] text-gray-600 bg-white border border-gray-300 px-2 py-1 rounded shadow-sm hover:bg-gray-50 flex items-center gap-1 w-fit cursor-pointer"
+                              >
+                                <RefreshCw className="h-3 w-3" /> Retake
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           <span className="text-[10px] text-gray-400 italic">Belum ada foto</span>
@@ -848,15 +941,24 @@ export default function TransaksiPage({
                       </div>
                       
                       <div>
-                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block mb-1">Foto Resi</span>
+                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block mb-2">Foto Resi</span>
                         {uploadingFotoResi ? (
                            <div className="flex items-center gap-1 text-[10px] text-gray-500">
                              <RefreshCw className="h-3 w-3 animate-spin text-orange-500" /> Mengunggah...
                            </div>
                         ) : (fotoResiPreview || fotoResiUrl) ? (
-                          <div className="flex items-center gap-2">
-                            <img src={fotoResiPreview || fotoResiUrl} alt="Resi" className="h-10 w-10 object-cover rounded border border-gray-200" referrerPolicy="no-referrer" />
-                            <span className="text-[9px] text-green-700 font-bold">✓ Tersimpan</span>
+                          <div className="flex items-start gap-3">
+                            <img src={fotoResiPreview || fotoResiUrl} alt="Resi" className="h-[72px] w-[72px] object-cover rounded-lg border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
+                            <div className="flex flex-col gap-1.5">
+                              <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded inline-block w-fit">✓ Siap Upload</span>
+                              <button 
+                                type="button" 
+                                onClick={() => startCamera(2)} 
+                                className="text-[10px] text-gray-600 bg-white border border-gray-300 px-2 py-1 rounded shadow-sm hover:bg-gray-50 flex items-center gap-1 w-fit cursor-pointer"
+                              >
+                                <RefreshCw className="h-3 w-3" /> Retake
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           <span className="text-[10px] text-gray-400 italic">Belum ada foto</span>
@@ -870,7 +972,7 @@ export default function TransaksiPage({
 
 
               {/* FINANCIAL CALCULATORS FOR SERVICE CATEGORY */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+              <div ref={layananRef} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
                 
                 {/* Switcher & Tugas Dropdown */}
                 <div className="flex gap-4 items-center border-b border-gray-100 pb-3 mb-2">
@@ -1344,6 +1446,60 @@ export default function TransaksiPage({
 
       {/* Form Ends Here */}
 
+      {/* SUCCESS ACTION SHEET */}
+      {successSheet && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+            <div className="p-6 text-center space-y-4">
+              <div className="mx-auto w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle className="h-8 w-8" />
+              </div>
+              <h2 className="text-xl font-black text-gray-800 tracking-tight">Transaksi Berhasil Disimpan</h2>
+              
+              <div className="bg-gray-50 border border-gray-100 rounded-xl p-4 space-y-3 mt-4 text-left">
+                <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Nomor Resi</span>
+                  <span className="text-sm font-bold text-gray-800 font-mono">{successSheet.resi}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Bayar</span>
+                  <span className="text-lg font-black text-[#E4002B] font-mono">Rp {successSheet.total.toLocaleString("id-ID")}</span>
+                </div>
+              </div>
+              
+              <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuccessSheet(null);
+                    onNavigate("dashboard");
+                  }}
+                  className="w-full py-3.5 bg-white border border-gray-300 text-gray-700 font-bold rounded-xl shadow-sm hover:bg-gray-50 transition-colors cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span className="text-sm">Dashboard</span>
+                  <span className="hidden sm:inline text-[9px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 font-mono">Esc</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuccessSheet(null);
+                    handleNextTransaction();
+                  }}
+                  className="w-full py-3.5 bg-[#E4002B] text-white font-bold rounded-xl shadow-md hover:bg-[#c20023] transition-colors cursor-pointer flex items-center justify-center gap-2 relative overflow-hidden"
+                >
+                  <span className="text-sm relative z-10">Transaksi Baru</span>
+                  <span className="hidden sm:inline relative z-10 text-[9px] bg-red-800/50 px-1.5 py-0.5 rounded text-white/90 font-mono">Enter</span>
+                  <div className="absolute left-0 bottom-0 top-0 bg-black/10 z-0 transition-all duration-1000 ease-linear" style={{ width: `${(countdown / 5) * 100}%` }}></div>
+                </button>
+              </div>
+              
+              <p className="text-[10px] text-gray-400 font-medium">
+                Melanjutkan otomatis dalam <strong className="text-[#E4002B]">{countdown}</strong> detik...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
