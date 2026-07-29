@@ -31,6 +31,8 @@ export interface SystemSettings {
   id: string;
   apps_script_url?: string;
   spreadsheet_id?: string;
+  divisor_express?: number;
+  divisor_cargo?: number;
   folder_bukti_bayar_customer?: string;
   folder_foto_paket?: string;
   folder_foto_resi?: string;
@@ -118,6 +120,13 @@ export interface PreInputBackup {
   alamat_asli?: string;
   catatan_admin?: string;
   nama_barang: string;
+  ekspedisi?: "Express" | "Cargo";
+  berat_timbangan?: number;
+  panjang_cm?: number;
+  lebar_cm?: number;
+  tinggi_cm?: number;
+  berat_volume?: number;
+  dasar_berat?: "TIMBANGAN" | "VOLUME";
   berat_kg: number;
   volume: string; // format: "P x L x T"
   nilai_barang: number;
@@ -132,6 +141,14 @@ export interface EXPResi {
   timestamp: string;
   admin_id_pencatat: string;
   outlet_id_input: string;
+  ekspedisi?: "Express" | "Cargo";
+  berat_timbangan?: number;
+  panjang_cm?: number;
+  lebar_cm?: number;
+  tinggi_cm?: number;
+  berat_volume?: number;
+  dasar_berat?: "TIMBANGAN" | "VOLUME";
+  berat_kg: number;
   tipe_produk: "DOC" | "EZ" | "JSD" | "JND" | "ECO" | "HBO";
   biaya_lain: number;
   biaya_asuransi: number;
@@ -156,6 +173,14 @@ export interface CRGResi {
   timestamp: string;
   admin_id_pencatat: string;
   outlet_id_input: string;
+  ekspedisi?: "Express" | "Cargo";
+  berat_timbangan?: number;
+  panjang_cm?: number;
+  lebar_cm?: number;
+  tinggi_cm?: number;
+  berat_volume?: number;
+  dasar_berat?: "TIMBANGAN" | "VOLUME";
+  berat_kg: number;
   tipe_produk: "FastTrack" | "Motor";
   merk_motor?: string;
   cc_motor?: number;

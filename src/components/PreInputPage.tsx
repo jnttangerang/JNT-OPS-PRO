@@ -7,6 +7,7 @@ import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, MasterCustomer, RiwayatPenerima } from "../types";
 import { toast } from "../utils/toast";
 import AddressBookDrawer from "./AddressBookDrawer";
+import { calculateWeight } from "../utils/weightCalculator";
 
 interface PreInputPageProps {
   session: SessionData;
@@ -50,6 +51,7 @@ export default function PreInputPage({
   const [suggestedAddress, setSuggestedAddress] = useState<string | null>(null);
 
   // States - Form Paket
+  const [ekspedisi, setEkspedisi] = useState<"Express" | "Cargo">("Express");
   const [namaBarang, setNamaBarang] = useState("");
   const [beratKg, setBeratKg] = useState("0");
   const [volP, setVolP] = useState("");
@@ -61,6 +63,27 @@ export default function PreInputPage({
   const [uploadingFotoPaket, setUploadingFotoPaket] = useState(false);
   const [uploadingFotoResi, setUploadingFotoResi] = useState(false);
   const [analyzingResi, setAnalyzingResi] = useState(false);
+  const [sysConfig, setSysConfig] = useState<any>(null);
+
+  useEffect(() => {
+    callBackend("getAllSettings")
+      .then(res => {
+        if (res?.data?.systemSettings) setSysConfig(res.data.systemSettings);
+      })
+      .catch(console.error);
+  }, [callBackend]);
+
+  const calcWeight = () => {
+    return calculateWeight(
+      parseFloat(beratKg) || 0,
+      parseFloat(volP) || 0,
+      parseFloat(volL) || 0,
+      parseFloat(volT) || 0,
+      ekspedisi,
+      sysConfig?.divisor_express || 6000,
+      sysConfig?.divisor_cargo || 5000
+    );
+  };
 
   // Address Book Drawers
   const [bukuPengirimOpen, setBukuPengirimOpen] = useState(false);
@@ -388,7 +411,12 @@ export default function PreInputPage({
       alamat_asli: alamatPenerimaAsli || "",
       catatan_admin: catatanAdmin.trim(),
       nama_barang: namaBarang.trim(),
-      berat_kg: Number(beratKg) || 0,
+      ekspedisi: ekspedisi,
+      berat_timbangan: Number(beratKg) || 0,
+      panjang_cm: Number(volP) || 0,
+      lebar_cm: Number(volL) || 0,
+      tinggi_cm: Number(volT) || 0,
+      berat_kg: calcWeight().berat_penagihan,
       volume: vol,
       nilai_barang: valueNum,
       foto_paket_url: fotoPaketUrl,
@@ -864,6 +892,37 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
                 <h3 className="font-semibold text-gray-800 text-sm">Data Paket</h3>
               </div>
 
+              {/* Jenis Ekspedisi */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Jenis Ekspedisi <span className="text-red-500">*</span>
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="ekspedisi_preinput"
+                      value="Express"
+                      checked={ekspedisi === "Express"}
+                      onChange={() => setEkspedisi("Express")}
+                      className="accent-[#E4002B]"
+                    />
+                    <span className="text-sm font-medium text-gray-800">Express</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="radio" 
+                      name="ekspedisi_preinput"
+                      value="Cargo"
+                      checked={ekspedisi === "Cargo"}
+                      onChange={() => setEkspedisi("Cargo")}
+                      className="accent-[#E4002B]"
+                    />
+                    <span className="text-sm font-medium text-gray-800">Cargo</span>
+                  </label>
+                </div>
+              </div>
+
               {/* Nama Barang */}
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
@@ -882,12 +941,13 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                    Berat Aktual (KG)
+                    Berat Timbangan (KG)
                   </label>
                   <div className="relative">
                     <input
                       type="number"
                       step="0.1"
+                      min="0"
                       value={beratKg}
                       onChange={(e) => setBeratKg(e.target.value)}
                       className="w-full pl-3 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
@@ -906,6 +966,7 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
                   <div className="flex items-center gap-1">
                     <input
                       type="number"
+                      min="0"
                       value={volP}
                       onChange={(e) => setVolP(e.target.value)}
                       className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center text-gray-800 focus:ring-1 focus:ring-[#E4002B] focus:outline-none"
@@ -914,6 +975,7 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
                     <span className="text-gray-400 text-xs">x</span>
                     <input
                       type="number"
+                      min="0"
                       value={volL}
                       onChange={(e) => setVolL(e.target.value)}
                       className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center text-gray-800 focus:ring-1 focus:ring-[#E4002B] focus:outline-none"
@@ -922,6 +984,7 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
                     <span className="text-gray-400 text-xs">x</span>
                     <input
                       type="number"
+                      min="0"
                       value={volT}
                       onChange={(e) => setVolT(e.target.value)}
                       className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center text-gray-800 focus:ring-1 focus:ring-[#E4002B] focus:outline-none"
@@ -929,6 +992,22 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
                     />
                     <span className="text-[10px] text-gray-400 font-bold ml-1">cm</span>
                   </div>
+                </div>
+              </div>
+
+              {/* Calculated Results (Read-only) */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <span className="block text-[10px] font-bold text-gray-400 uppercase">Berat Volume</span>
+                  <span className="block text-sm font-bold text-gray-700">{calcWeight().berat_volume} kg</span>
+                </div>
+                <div className="border-l border-gray-200">
+                  <span className="block text-[10px] font-bold text-gray-400 uppercase">Dasar Perhitungan</span>
+                  <span className="block text-sm font-bold text-blue-600">{calcWeight().dasar_berat}</span>
+                </div>
+                <div className="border-l border-gray-200">
+                  <span className="block text-[10px] font-bold text-[#E4002B] uppercase">Berat Penagihan</span>
+                  <span className="block text-sm font-black text-[#E4002B]">{calcWeight().berat_penagihan} kg</span>
                 </div>
               </div>
 

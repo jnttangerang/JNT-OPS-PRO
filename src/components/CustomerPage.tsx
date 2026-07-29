@@ -647,8 +647,8 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
                                   <span className="font-bold text-gray-800">{item.nama_barang}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-400 block text-[10px]">Berat / Volume:</span>
-                                  <span>{item.berat} kg | {item.volume}</span>
+                                  <span className="text-gray-400 block text-[10px]">Timbangan / Penagihan (Dasar):</span>
+                                  <span>{item.berat_timbangan || 0} kg / {item.berat_penagihan || 0} kg ({item.dasar_berat || "TIMBANGAN"}) | Vol: {item.volume}</span>
                                 </div>
                                 <div>
                                   <span className="text-gray-400 block text-[10px]">Total Bayar:</span>

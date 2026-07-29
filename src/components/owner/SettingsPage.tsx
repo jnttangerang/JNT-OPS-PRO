@@ -96,9 +96,9 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
     setUserList(prev => prev.map(u => u.user_id === userId ? { ...u, [field]: value } : u));
   };
 
-  const handleChangeDrive = (field: keyof SystemSettings, value: string) => {
+  const handleChangeDrive = (field: keyof SystemSettings, value: string | number) => {
     if (systemSettings) {
-      setSystemSettings({ ...systemSettings, [field]: value });
+      setSystemSettings({ ...systemSettings, [field]: value } as SystemSettings);
       setDriveValidation(prev => ({ ...prev, [field]: "none" }));
     }
   };
@@ -414,6 +414,12 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
             >
               <Tags size={18} /> Kategori Keuangan
             </button>
+            <button
+              onClick={() => setActiveTab("ekspedisi")}
+              className={`w-full text-left px-4 py-3 rounded-xl font-bold flex items-center gap-3 transition-colors ${activeTab === "ekspedisi" ? "bg-blue-600 text-white shadow-md border-l-4 border-blue-800" : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-100"}`}
+            >
+              <FileText size={18} /> Master Ekspedisi
+            </button>
           </div>
 
           {/* STORAGE & DATABASE */}
@@ -676,6 +682,58 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
             </div>
           )}
 
+          {/* TAB: MASTER EKSPEDISI */}
+          {activeTab === "ekspedisi" && systemSettings && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 space-y-6">
+              <div className="flex items-center gap-2 border-b border-gray-100 pb-3">
+                <FileText className="text-blue-600 w-5 h-5" />
+                <h2 className="font-bold text-gray-800 text-base">Konfigurasi Ekspedisi (Divisor)</h2>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* EXPRESS */}
+                <div className="space-y-2">
+                  <label className="block font-bold text-gray-800 text-sm">Volume Divisor (Express)</label>
+                  <p className="text-xs text-gray-500">Nilai pembagi untuk pengiriman tipe Express (standar 6000).</p>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <input 
+                      type="number" 
+                      value={(systemSettings as any).divisor_express || 6000} 
+                      onChange={(e) => handleChangeDrive("divisor_express", parseInt(e.target.value) || 6000)} 
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#E4002B] outline-none"
+                    />
+                    <button 
+                      onClick={() => saveDriveItem("divisor_express")}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-colors shrink-0 ${savedStatus["drive_divisor_express"] ? "bg-green-100 text-green-700" : "bg-[#E4002B] hover:bg-red-700 text-white"}`}
+                    >
+                      {savedStatus["drive_divisor_express"] ? <><Check size={14} /> Oke</> : <><Save size={14} /> Simpan</>}
+                    </button>
+                  </div>
+                </div>
+
+                {/* CARGO */}
+                <div className="space-y-2">
+                  <label className="block font-bold text-gray-800 text-sm">Volume Divisor (Cargo)</label>
+                  <p className="text-xs text-gray-500">Nilai pembagi untuk pengiriman tipe Cargo (standar 5000).</p>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <input 
+                      type="number" 
+                      value={(systemSettings as any).divisor_cargo || 5000} 
+                      onChange={(e) => handleChangeDrive("divisor_cargo", parseInt(e.target.value) || 5000)} 
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#E4002B] outline-none"
+                    />
+                    <button 
+                      onClick={() => saveDriveItem("divisor_cargo")}
+                      className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-colors shrink-0 ${savedStatus["drive_divisor_cargo"] ? "bg-green-100 text-green-700" : "bg-[#E4002B] hover:bg-red-700 text-white"}`}
+                    >
+                      {savedStatus["drive_divisor_cargo"] ? <><Check size={14} /> Oke</> : <><Save size={14} /> Simpan</>}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* TAB: DRIVE & DATABASE */}
           {activeTab === "drive" && systemSettings && (
             <div className="space-y-6">
@@ -688,31 +746,11 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
               <div className="bg-white border-2 border-blue-100 rounded-2xl p-5 shadow-sm space-y-4">
                 <h3 className="font-bold text-gray-800 text-base flex items-center gap-2 border-b border-gray-100 pb-2">
                   <HardDrive className="text-blue-600" size={18} />
-                  Integrasi Database Spreadsheet
+                  Integrasi Database
                 </h3>
-
-                {/* ID Spreadsheet Database */}
-                <div className="flex flex-col gap-2">
-                  <div>
-                    <label className="block font-bold text-gray-800 text-sm">ID Spreadsheet Database</label>
-                    <p className="text-xs text-gray-500">ID unik Google Sheet yang dipakai sebagai database utama (diambil dari URL Spreadsheet antara /d/ dan /edit).</p>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                    <input 
-                      type="text" 
-                      value={(systemSettings as any).spreadsheet_id || ""} 
-                      onChange={(e) => handleChangeDrive("spreadsheet_id", e.target.value)} 
-                      placeholder="1a2b3c4d5e6f7g8h9i0j..."
-                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#E4002B] outline-none font-mono min-w-0"
-                    />
-                    <button 
-                      onClick={() => saveDriveItem("spreadsheet_id")}
-                      className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-colors shrink-0 ${savedStatus["drive_spreadsheet_id"] ? "bg-green-100 text-green-700" : "bg-[#E4002B] hover:bg-red-700 text-white"}`}
-                    >
-                      {savedStatus["drive_spreadsheet_id"] ? <><Check size={14} /> Oke</> : <><Save size={14} /> Simpan</>}
-                    </button>
-                  </div>
-                </div>
+                <p className="text-sm text-gray-500">
+                  Sistem database sekarang menggunakan local JSON file dan backend Node.js.
+                </p>
               </div>
 
               {/* FOLDER DRIVE OPERASIONAL */}

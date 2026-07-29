@@ -96,7 +96,7 @@ export default function DeveloperPage() {
           Developer Console
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Konfigurasi teknis database, URL Apps Script, dan diagnostik sistem.
+          Konfigurasi teknis database dan diagnostik sistem.
         </p>
       </div>
 
@@ -117,18 +117,8 @@ export default function DeveloperPage() {
           </button>
         </div>
 
-        <div className="space-y-4 text-sm">
-          <div>
-            <label className="block font-bold text-gray-800 mb-1">URL Apps Script Web App</label>
-            <input
-              type="text"
-              value={appsScriptUrl}
-              onChange={(e) => setAppsScriptUrl(e.target.value)}
-              placeholder="https://script.google.com/macros/s/AKfycb.../exec"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 font-mono text-xs focus:border-[#E4002B] outline-none"
-            />
-            <p className="text-[11px] text-gray-400 mt-1">URL Web App deployment Google Apps Script (akhiran /exec).</p>
-          </div>
+        <div className="space-y-4 text-sm text-gray-500">
+          <p>Konfigurasi endpoint telah dipindahkan ke local backend server.</p>
         </div>
       </div>
 

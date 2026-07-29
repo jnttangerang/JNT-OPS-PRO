@@ -7,6 +7,8 @@ import { Html5Qrcode } from "html5-qrcode";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, PreInputBackup } from "../types";
 import { toast } from "../utils/toast";
+import { calculateWeight } from "../utils/weightCalculator";
+import AddressBookDrawer from "./AddressBookDrawer";
 
 interface TransaksiPageProps {
   session: SessionData;
@@ -32,6 +34,31 @@ export default function TransaksiPage({
 
   // Layout switcher
   const [jenisLayanan, setJenisLayanan] = useState<"Express" | "Cargo">("Express");
+
+  // Weight / Dimensions (Manual Input or Synced from Pre-Input)
+  const [beratKg, setBeratKg] = useState("0");
+  const [volP, setVolP] = useState("");
+  const [volL, setVolL] = useState("");
+  const [volT, setVolT] = useState("");
+  const [sysConfig, setSysConfig] = useState<any>(null);
+
+  useEffect(() => {
+    callBackend("getAllSettings")
+      .then((res) => {
+        if (res?.data?.systemSettings) setSysConfig(res.data.systemSettings);
+      })
+      .catch(console.error);
+  }, [callBackend]);
+
+  const calculatedWeight = calculateWeight(
+    parseFloat(beratKg) || 0,
+    parseFloat(volP) || 0,
+    parseFloat(volL) || 0,
+    parseFloat(volT) || 0,
+    jenisLayanan,
+    sysConfig?.divisor_express || 6000,
+    sysConfig?.divisor_cargo || 5000
+  );
 
   // Scanner & Camera States
   const [resiId, setResiId] = useState("");
@@ -162,19 +189,24 @@ export default function TransaksiPage({
     try {
       const response = await callBackend("getPreInput", { transaksi_id: txId });
       if (response.status === "success" && response.data) {
-        setPreInputData(response.data);
+        const data = response.data;
+        setPreInputData(data);
+        if (data.ekspedisi) setJenisLayanan(data.ekspedisi);
+        else if (data.berat_kg >= 15) setJenisLayanan("Cargo");
+
+        setBeratKg(data.berat_timbangan?.toString() || data.berat_kg?.toString() || "0");
+        setVolP(data.panjang_cm?.toString() || "");
+        setVolL(data.lebar_cm?.toString() || "");
+        setVolT(data.tinggi_cm?.toString() || "");
+
         // Pre-fill fields where possible
-        if (response.data.nilai_barang > 0) {
+        if (data.nilai_barang > 0) {
           // Auto estimate insurance (usually 0.2% of value, but we let user input, we can pre-seed with a simple calc)
-          const insEstimate = Math.ceil(response.data.nilai_barang * 0.002);
+          const insEstimate = Math.ceil(data.nilai_barang * 0.002);
           setBiayaAsuransiInput(insEstimate.toLocaleString("id-ID"));
         }
-        // If package weight is high, suggest Cargo layout
-        if (response.data.berat_kg >= 15) {
-          setJenisLayanan("Cargo");
-        }
-        if (response.data.foto_paket_url) {
-          setFotoPaketUrl(response.data.foto_paket_url);
+        if (data.foto_paket_url) {
+          setFotoPaketUrl(data.foto_paket_url);
         }
         if (response.data.foto_resi_url) {
           setFotoResiUrl(response.data.foto_resi_url);
@@ -580,6 +612,15 @@ export default function TransaksiPage({
       outlet_id_input: activeOutletId,
       tipe_produk: jenisLayanan === "Express" ? tipeProdukExp : tipeProdukCrg,
       
+      // Weight & Volume
+      ekspedisi: jenisLayanan,
+      berat_timbangan: Number(beratKg) || 0,
+      panjang_cm: Number(volP) || 0,
+      lebar_cm: Number(volL) || 0,
+      tinggi_cm: Number(volT) || 0,
+      berat_kg: calculatedWeight.berat_penagihan,
+      volume: (Number(volP) * Number(volL) * Number(volT)).toString(),
+
       // Cargo Motor specific attributes
       merk_motor: merkMotor || undefined,
       cc_motor: Number(ccMotor) || undefined,
@@ -1000,6 +1041,80 @@ export default function TransaksiPage({
                         Cargo
                       </button>
                     </div>
+                  </div>
+                </div>
+
+                {/* Berat & Volume Grid */}
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                      Berat Timbangan (KG)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        value={beratKg}
+                        onChange={(e) => setBeratKg(e.target.value)}
+                        className="w-full pl-3 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
+                        placeholder="0.0"
+                      />
+                      <div className="absolute right-3 inset-y-0 flex items-center text-xs text-gray-400 font-bold">
+                        KG
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                      Volume Paket (P x L x T)
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min="0"
+                        value={volP}
+                        onChange={(e) => setVolP(e.target.value)}
+                        className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center text-gray-800 focus:ring-1 focus:ring-[#E4002B] focus:outline-none"
+                        placeholder="P"
+                      />
+                      <span className="text-gray-400 text-xs">x</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={volL}
+                        onChange={(e) => setVolL(e.target.value)}
+                        className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center text-gray-800 focus:ring-1 focus:ring-[#E4002B] focus:outline-none"
+                        placeholder="L"
+                      />
+                      <span className="text-gray-400 text-xs">x</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={volT}
+                        onChange={(e) => setVolT(e.target.value)}
+                        className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center text-gray-800 focus:ring-1 focus:ring-[#E4002B] focus:outline-none"
+                        placeholder="T"
+                      />
+                      <span className="text-[10px] text-gray-400 font-bold ml-1">cm</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Calculated Results (Read-only) */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 grid grid-cols-3 gap-2 text-center mb-4">
+                  <div>
+                    <span className="block text-[10px] font-bold text-gray-400 uppercase">Berat Volume</span>
+                    <span className="block text-sm font-bold text-gray-700">{calculatedWeight.berat_volume} kg</span>
+                  </div>
+                  <div className="border-l border-gray-200">
+                    <span className="block text-[10px] font-bold text-gray-400 uppercase">Dasar Perhitungan</span>
+                    <span className="block text-sm font-bold text-blue-600">{calculatedWeight.dasar_berat}</span>
+                  </div>
+                  <div className="border-l border-gray-200">
+                    <span className="block text-[10px] font-bold text-[#E4002B] uppercase">Berat Penagihan</span>
+                    <span className="block text-sm font-black text-[#E4002B]">{calculatedWeight.berat_penagihan} kg</span>
                   </div>
                 </div>
 
