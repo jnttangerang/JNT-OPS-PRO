@@ -68,7 +68,8 @@ const initialDb = {
       role: "ADMIN",
       outlet_id_home: "OUT-001",
       nama_lengkap: "Siti Aminah (Karawaci)",
-      status_aktif: "AKTIF"
+      status_aktif: "AKTIF",
+      no_wa: "08111111111"
     },
     {
       user_id: "USR-002",
@@ -77,7 +78,8 @@ const initialDb = {
       role: "ADMIN",
       outlet_id_home: "OUT-002",
       nama_lengkap: "Budi Santoso (Cikokol)",
-      status_aktif: "AKTIF"
+      status_aktif: "AKTIF",
+      no_wa: "08222222222"
     },
     {
       user_id: "USR-003",
@@ -86,26 +88,63 @@ const initialDb = {
       role: "OWNER",
       outlet_id_home: "OUT-001",
       nama_lengkap: "Hendra Wijaya (Owner)",
-      status_aktif: "AKTIF"
+      status_aktif: "AKTIF",
+      no_wa: "08333333333"
     }
   ],
   Outlets: [
     {
       outlet_id: "OUT-001",
       nama_outlet: "J&T Express - Tangerang Karawaci",
-      alamat_outlet: "Jl. Karawaci Raya No.12, Karawaci, Tangerang"
+      kode_outlet: "TGR01",
+      no_wa_outlet: "081234567890",
+      alamat_outlet: "Jl. Karawaci Raya No.12, Karawaci, Tangerang",
+      latitude: -6.2088,
+      longitude: 106.634,
+      radius_operasional: 50,
+      status_aktif: "AKTIF",
+      target_express: 25,
+      target_cargo: 15
     },
     {
       outlet_id: "OUT-002",
       nama_outlet: "J&T Express - Tangerang Cikokol",
-      alamat_outlet: "Jl. M.H. Thamrin No.8, Cikokol, Tangerang"
+      kode_outlet: "TGR02",
+      no_wa_outlet: "081234567891",
+      alamat_outlet: "Jl. M.H. Thamrin No.8, Cikokol, Tangerang",
+      latitude: -6.2155,
+      longitude: 106.638,
+      radius_operasional: 50,
+      status_aktif: "AKTIF",
+      target_express: 20,
+      target_cargo: 10
     },
     {
       outlet_id: "OUT-003",
       nama_outlet: "J&T Cargo - Tangerang Balaraja",
-      alamat_outlet: "Jl. Raya Serang Km 24, Balaraja, Tangerang"
+      kode_outlet: "TGR03",
+      no_wa_outlet: "081234567892",
+      alamat_outlet: "Jl. Raya Serang Km 24, Balaraja, Tangerang",
+      latitude: -6.1944,
+      longitude: 106.467,
+      radius_operasional: 100,
+      status_aktif: "AKTIF",
+      target_express: 15,
+      target_cargo: 30
     }
   ],
+  SystemSettings: {
+    id: "SETTING-1",
+    apps_script_url: "",
+    spreadsheet_id: "",
+    folder_bukti_bayar_customer: "",
+    folder_foto_paket: "",
+    folder_foto_resi: "",
+    folder_bukti_kas_masuk: "",
+    folder_bukti_kas_keluar: "",
+    folder_bukti_transfer_admin_owner: "",
+    folder_bukti_transfer_owner_dp: ""
+  },
   Master_Customer: [
     {
       customer_id: "CST-001",
@@ -431,9 +470,273 @@ const defaultKategoriKeuangan = [
   { id: "KAT-206", jenis: "PEMASUKAN", nama: "Lainnya", aktif: true, urutan: 6, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" }
 ];
 
+function normalizePhone(phone: any): string {
+  if (!phone) return "";
+  let digits = String(phone).replace(/\D/g, "");
+  if (digits.startsWith("0")) {
+    digits = "62" + digits.slice(1);
+  } else if (digits.startsWith("8")) {
+    digits = "62" + digits;
+  }
+  return digits;
+}
+
+function autoUpsertCustomerAndAddressBook(db: any, params: {
+  nama_pengirim: string;
+  hp_pengirim: string;
+  alamat_pengirim: string;
+  nama_penerima: string;
+  hp_penerima: string;
+  alamat_penerima: string;
+  timestamp?: string;
+}) {
+  const nowStr = params.timestamp || new Date().toISOString();
+  
+  if (!db.MASTER_CUSTOMER) db.MASTER_CUSTOMER = [];
+  if (!db.MASTER_PENGIRIM) db.MASTER_PENGIRIM = [];
+  if (!db.MASTER_PENERIMA) db.MASTER_PENERIMA = [];
+
+  // 1. SENDER: MASTER_CUSTOMER & MASTER_PENGIRIM
+  const hpSenderClean = (params.hp_pengirim || "").trim();
+  const hpSenderNorm = normalizePhone(hpSenderClean);
+  const namaSenderClean = (params.nama_pengirim || "").trim();
+  const alamatSenderClean = (params.alamat_pengirim || "").trim();
+
+  let senderCustId = "";
+  if (hpSenderClean || hpSenderNorm) {
+    let custObj = db.MASTER_CUSTOMER.find((c: any) => 
+      normalizePhone(c.telepon || c.no_hp) === hpSenderNorm
+    );
+
+    if (custObj) {
+      if (namaSenderClean && custObj.nama !== namaSenderClean) {
+        custObj.nama = namaSenderClean;
+      }
+      custObj.updated_at = nowStr;
+      senderCustId = custObj.customer_id;
+    } else {
+      const count = db.MASTER_CUSTOMER.length + 1;
+      senderCustId = "CUS" + String(count).padStart(6, "0");
+      custObj = {
+        customer_id: senderCustId,
+        nama: namaSenderClean,
+        telepon: hpSenderClean,
+        created_at: nowStr,
+        updated_at: nowStr,
+        status: "AKTIF"
+      };
+      db.MASTER_CUSTOMER.push(custObj);
+    }
+
+    if (db.Master_Customer) {
+      let legacyCust = db.Master_Customer.find((c: any) => normalizePhone(c.no_hp) === hpSenderNorm);
+      if (legacyCust) {
+        legacyCust.nama_pengirim = namaSenderClean;
+        legacyCust.alamat_pengirim = alamatSenderClean;
+        legacyCust.last_updated = nowStr;
+      } else {
+        db.Master_Customer.push({
+          customer_id: senderCustId,
+          nama_pengirim: namaSenderClean,
+          no_hp: hpSenderClean,
+          alamat_pengirim: alamatSenderClean,
+          outlet_id: "OUT-001",
+          last_updated: nowStr
+        });
+      }
+    }
+
+    if (alamatSenderClean) {
+      let sndAddress = db.MASTER_PENGIRIM.find((p: any) => 
+        (p.customer_id === senderCustId || normalizePhone(p.telepon) === hpSenderNorm) &&
+        (p.alamat || "").trim().toLowerCase() === alamatSenderClean.toLowerCase()
+      );
+
+      if (sndAddress) {
+        sndAddress.jumlah_pengiriman = (sndAddress.jumlah_pengiriman || 0) + 1;
+        sndAddress.tanggal_terakhir = nowStr;
+        sndAddress.updated_at = nowStr;
+        sndAddress.nama = namaSenderClean;
+        sndAddress.telepon = hpSenderClean;
+      } else {
+        const sndCount = db.MASTER_PENGIRIM.length + 1;
+        const newSnd = {
+          id: "SND-" + String(sndCount).padStart(6, "0"),
+          customer_id: senderCustId,
+          nama: namaSenderClean,
+          telepon: hpSenderClean,
+          provinsi: "",
+          kabupaten: "",
+          kecamatan: "",
+          kelurahan: "",
+          kode_pos: "",
+          alamat: alamatSenderClean,
+          jumlah_pengiriman: 1,
+          tanggal_pertama: nowStr,
+          tanggal_terakhir: nowStr,
+          status: "AKTIF",
+          created_at: nowStr,
+          updated_at: nowStr
+        };
+        db.MASTER_PENGIRIM.push(newSnd);
+      }
+    }
+  }
+
+  // 2. RECIPIENT: MASTER_CUSTOMER & MASTER_PENERIMA
+  const hpRecClean = (params.hp_penerima || "").trim();
+  const hpRecNorm = normalizePhone(hpRecClean);
+  const namaRecClean = (params.nama_penerima || "").trim();
+  const alamatRecClean = (params.alamat_penerima || "").trim();
+
+  let recCustId = "";
+  if (hpRecClean || hpRecNorm) {
+    let recCustObj = db.MASTER_CUSTOMER.find((c: any) => 
+      normalizePhone(c.telepon || c.no_hp) === hpRecNorm
+    );
+
+    if (recCustObj) {
+      if (namaRecClean && recCustObj.nama !== namaRecClean) {
+        recCustObj.nama = namaRecClean;
+      }
+      recCustObj.updated_at = nowStr;
+      recCustId = recCustObj.customer_id;
+    } else {
+      const count = db.MASTER_CUSTOMER.length + 1;
+      recCustId = "CUS" + String(count).padStart(6, "0");
+      recCustObj = {
+        customer_id: recCustId,
+        nama: namaRecClean,
+        telepon: hpRecClean,
+        created_at: nowStr,
+        updated_at: nowStr,
+        status: "AKTIF"
+      };
+      db.MASTER_CUSTOMER.push(recCustObj);
+    }
+
+    if (alamatRecClean) {
+      let rcvAddress = db.MASTER_PENERIMA.find((r: any) => 
+        (r.customer_id === recCustId || normalizePhone(r.telepon) === hpRecNorm) &&
+        (r.alamat || "").trim().toLowerCase() === alamatRecClean.toLowerCase()
+      );
+
+      if (rcvAddress) {
+        rcvAddress.jumlah_diterima = (rcvAddress.jumlah_diterima || 0) + 1;
+        rcvAddress.tanggal_terakhir = nowStr;
+        rcvAddress.updated_at = nowStr;
+        rcvAddress.nama = namaRecClean;
+        rcvAddress.telepon = hpRecClean;
+      } else {
+        const rcvCount = db.MASTER_PENERIMA.length + 1;
+        const newRcv = {
+          id: "RCV-" + String(rcvCount).padStart(6, "0"),
+          customer_id: recCustId,
+          nama: namaRecClean,
+          telepon: hpRecClean,
+          provinsi: "",
+          kabupaten: "",
+          kecamatan: "",
+          kelurahan: "",
+          kode_pos: "",
+          alamat: alamatRecClean,
+          jumlah_diterima: 1,
+          tanggal_pertama: nowStr,
+          tanggal_terakhir: nowStr,
+          status: "AKTIF",
+          created_at: nowStr,
+          updated_at: nowStr
+        };
+        db.MASTER_PENERIMA.push(newRcv);
+      }
+    }
+
+    if (db.Riwayat_Penerima) {
+      let rPenerima = db.Riwayat_Penerima.find(
+        (r: any) => (r.customer_id === senderCustId || r.customer_id === recCustId) && normalizePhone(r.no_hp_penerima) === hpRecNorm
+      );
+      if (rPenerima) {
+        rPenerima.nama_penerima = namaRecClean;
+        rPenerima.alamat_penerima = alamatRecClean;
+        rPenerima.tanggal_terakhir_kirim = nowStr;
+      } else {
+        db.Riwayat_Penerima.push({
+          id: "REC-" + String(Date.now()).slice(-5) + Math.floor(Math.random() * 10),
+          customer_id: senderCustId || recCustId,
+          nama_penerima: namaRecClean,
+          no_hp_penerima: hpRecClean,
+          alamat_penerima: alamatRecClean,
+          tanggal_terakhir_kirim: nowStr
+        });
+      }
+    }
+  }
+
+  return { senderCustId, recCustId };
+}
+
+function syncExistingDataToThreeLayers(db: any) {
+  if (!db.MASTER_CUSTOMER) db.MASTER_CUSTOMER = [];
+  if (!db.MASTER_PENGIRIM) db.MASTER_PENGIRIM = [];
+  if (!db.MASTER_PENERIMA) db.MASTER_PENERIMA = [];
+
+  if (db.MASTER_CUSTOMER.length === 0 && db.Master_Customer && db.Master_Customer.length > 0) {
+    db.Master_Customer.forEach((c: any, idx: number) => {
+      const custId = "CUS" + String(idx + 1).padStart(6, "0");
+      const phone = (c.no_hp || c.telepon || "").trim();
+      if (phone) {
+        db.MASTER_CUSTOMER.push({
+          customer_id: custId,
+          nama: c.nama_pengirim || c.nama || "Customer",
+          telepon: phone,
+          created_at: c.last_updated || new Date().toISOString(),
+          updated_at: c.last_updated || new Date().toISOString(),
+          status: "AKTIF"
+        });
+
+        if (c.alamat_pengirim) {
+          db.MASTER_PENGIRIM.push({
+            id: "SND-" + String(idx + 1).padStart(6, "0"),
+            customer_id: custId,
+            nama: c.nama_pengirim || "Customer",
+            telepon: phone,
+            provinsi: "",
+            kabupaten: "",
+            kecamatan: "",
+            kelurahan: "",
+            kode_pos: "",
+            alamat: c.alamat_pengirim,
+            jumlah_pengiriman: 1,
+            tanggal_pertama: c.last_updated || new Date().toISOString(),
+            tanggal_terakhir: c.last_updated || new Date().toISOString(),
+            status: "AKTIF",
+            created_at: c.last_updated || new Date().toISOString(),
+            updated_at: c.last_updated || new Date().toISOString()
+          });
+        }
+      }
+    });
+  }
+
+  if (db.PreInput_Backup && Array.isArray(db.PreInput_Backup)) {
+    db.PreInput_Backup.forEach((pi: any) => {
+      autoUpsertCustomerAndAddressBook(db, {
+        nama_pengirim: pi.nama_pengirim,
+        hp_pengirim: pi.hp_pengirim,
+        alamat_pengirim: pi.alamat_pengirim,
+        nama_penerima: pi.nama_penerima,
+        hp_penerima: pi.hp_penerima,
+        alamat_penerima: pi.alamat_penerima,
+        timestamp: pi.timestamp
+      });
+    });
+  }
+}
+
 function readDb() {
   if (!fs.existsSync(dbPath)) {
     const dbToSave = { ...initialDb, MapsReviews: defaultReviews, MasterKategoriKeuangan: defaultKategoriKeuangan };
+    syncExistingDataToThreeLayers(dbToSave);
     fs.writeFileSync(dbPath, JSON.stringify(dbToSave, null, 2));
     return dbToSave;
   }
@@ -453,6 +756,10 @@ function readDb() {
       parsed.MasterKategoriKeuangan = defaultKategoriKeuangan;
       updated = true;
     }
+    if (!parsed.MASTER_CUSTOMER || !Array.isArray(parsed.MASTER_CUSTOMER) || parsed.MASTER_CUSTOMER.length === 0) {
+      syncExistingDataToThreeLayers(parsed);
+      updated = true;
+    }
     if (updated) {
       fs.writeFileSync(dbPath, JSON.stringify(parsed, null, 2));
     }
@@ -460,6 +767,7 @@ function readDb() {
   } catch (e) {
     console.error("Error reading database file, resetting to initial state", e);
     const dbToSave = { ...initialDb, MapsReviews: defaultReviews, MasterKategoriKeuangan: defaultKategoriKeuangan };
+    syncExistingDataToThreeLayers(dbToSave);
     fs.writeFileSync(dbPath, JSON.stringify(dbToSave, null, 2));
     return dbToSave;
   }
@@ -486,6 +794,14 @@ function addAuditLog(userId: string, action: string, detail: string, outletId: s
 }
 
 // === API ROUTES ===
+
+app.post("/api/ping", (req, res) => {
+  return res.json({ status: "success", message: "pong" });
+});
+
+app.post("/api/testConnection", (req, res) => {
+  return res.json({ status: "success", message: "Connection OK" });
+});
 
 // 1. LOGIN API
 app.post("/api/login", (req, res) => {
@@ -537,8 +853,8 @@ app.post("/api/updateSettingsOutlet", (req, res) => {
     outlets.forEach(newOutlet => {
       const idx = db.Outlets.findIndex((o: any) => o.outlet_id === newOutlet.outlet_id);
       if (idx !== -1) {
-        db.Outlets[idx].target_resi_harian = newOutlet.target_resi_harian;
-        db.Outlets[idx].target_resi_bulanan = newOutlet.target_resi_bulanan;
+        // Updated with new fields
+        db.Outlets[idx] = { ...db.Outlets[idx], ...newOutlet };
       }
     });
     writeDb(db);
@@ -546,6 +862,107 @@ app.post("/api/updateSettingsOutlet", (req, res) => {
   }
 
   return res.status(400).json({ status: "error", message: "Data tidak valid" });
+});
+
+app.post("/api/testDriveConnection", (req, res) => {
+  const { folderId } = req.body;
+  if (!folderId || folderId.length < 10) {
+    return res.json({ status: "error", message: "Folder ID invalid" });
+  }
+  
+  // Simulate checking drive validation
+  setTimeout(() => {
+    res.json({ status: "success", message: "Folder ID valid" });
+  }, 500);
+});
+
+app.post("/api/changePassword", (req, res) => {
+  const { user_id, old_password, new_password } = req.body;
+  const db = readDb();
+  const user = db.Users.find((u: any) => u.user_id === user_id);
+  if (!user) return res.json({ status: "error", message: "User tidak ditemukan" });
+  
+  // Note: in a real app, verify hash. We just check prefix/exact match for mock purposes.
+  // Actually, since mock hashing was just "hash_" + password, we do a simple check.
+  const oldHash = old_password.startsWith("hash_") ? old_password : "hash_" + old_password;
+  if (user.password_hash !== oldHash && user.password_hash !== old_password) {
+    return res.json({ status: "error", message: "Kata sandi lama salah" });
+  }
+
+  user.password_hash = "hash_" + new_password;
+  writeDb(db);
+  return res.json({ status: "success", message: "Kata sandi berhasil diubah" });
+});
+
+app.post("/api/getAllSettings", (req, res) => {
+  const db = readDb();
+  // Return users (without hashes), outlets, and system settings
+  const safeUsers = db.Users.map((u: any) => {
+    const { password_hash, ...rest } = u;
+    return rest;
+  });
+  res.json({
+    status: "success",
+    data: {
+      users: safeUsers,
+      outlets: db.Outlets,
+      systemSettings: db.SystemSettings || initialDb.SystemSettings
+    }
+  });
+});
+
+app.post("/api/saveAllSettings", (req, res) => {
+  const { user_id, users, outlets, systemSettings } = req.body;
+  const db = readDb();
+  
+  const caller = db.Users.find((u: any) => u.user_id === user_id);
+  if (!caller) {
+    return res.status(403).json({ status: "error", message: "Akses ditolak" });
+  }
+  
+  const isOwner = caller.role === "OWNER";
+
+  // Update Outlets (Owner only)
+  if (isOwner && Array.isArray(outlets)) {
+    outlets.forEach((newOutlet: any) => {
+      const idx = db.Outlets.findIndex((o: any) => o.outlet_id === newOutlet.outlet_id);
+      if (idx !== -1) {
+        db.Outlets[idx] = { ...db.Outlets[idx], ...newOutlet };
+      } else {
+        db.Outlets.push(newOutlet);
+      }
+    });
+  }
+
+  // Update System Settings (Owner only)
+  if (isOwner && systemSettings) {
+    db.SystemSettings = { ...db.SystemSettings, ...systemSettings };
+  }
+
+  // Update Users (Admin can only update own password/WA. Owner can update all)
+  if (Array.isArray(users)) {
+    users.forEach((updatedUser: any) => {
+      const idx = db.Users.findIndex((u: any) => u.user_id === updatedUser.user_id);
+      if (idx !== -1) {
+        if (isOwner) {
+          // Owner can update anything
+          db.Users[idx] = { ...db.Users[idx], ...updatedUser };
+          // Keep password if not changed in frontend, frontend should not send it if empty
+        } else {
+          // Admin can only update themselves, and only no_wa / password
+          if (updatedUser.user_id === caller.user_id) {
+            if (updatedUser.no_wa !== undefined) db.Users[idx].no_wa = updatedUser.no_wa;
+            if (updatedUser.password_hash) db.Users[idx].password_hash = updatedUser.password_hash;
+          }
+        }
+      } else if (isOwner) {
+        db.Users.push(updatedUser);
+      }
+    });
+  }
+
+  writeDb(db);
+  return res.json({ status: "success", message: "Konfigurasi berhasil disimpan" });
 });
 
 app.get("/api/getOutlets", (req, res) => {
@@ -565,6 +982,403 @@ app.get("/api/getUsers", (req, res) => {
 app.get("/api/users", (req, res) => {
   const db = readDb();
   res.json({ status: "success", data: db.Users.filter((u: any) => u.status_aktif === "AKTIF") });
+});
+
+// 3.5. GET ALL CUSTOMERS
+app.post("/api/getCustomers", (req, res) => {
+  const db = readDb();
+  
+  // Aggregate transactions to calculate "Jumlah Pengiriman", "Tanggal Terakhir Kirim", and "Tanggal Pertama Kirim"
+  const preInputs = db.PreInput_Backup || [];
+  const transExp = db.EXP_Resi || [];
+  const transCrg = db.CRG_Resi || [];
+
+  const customerStats = new Map<string, { total: number, first_date: string, last_date: string }>();
+
+  // Map pre-inputs by hp_pengirim
+  preInputs.forEach((pi: any) => {
+    if (!pi.hp_pengirim) return;
+    const hp = pi.hp_pengirim;
+    const dateStr = pi.timestamp;
+    if (!customerStats.has(hp)) {
+      customerStats.set(hp, { total: 0, first_date: dateStr, last_date: dateStr });
+    }
+    const stat = customerStats.get(hp)!;
+    stat.total += 1;
+    if (new Date(dateStr) < new Date(stat.first_date)) stat.first_date = dateStr;
+    if (new Date(dateStr) > new Date(stat.last_date)) stat.last_date = dateStr;
+  });
+
+  const customers = db.Master_Customer.map((c: any) => {
+    const stats = customerStats.get(c.no_hp) || { total: 0, first_date: c.last_updated, last_date: c.last_updated };
+    
+    // Determine status: Baru (first sent within 7 days), Tidak Aktif (no send in 30 days), Aktif
+    const now = new Date();
+    const lastDate = new Date(stats.last_date || c.last_updated);
+    const firstDate = new Date(stats.first_date || c.last_updated);
+    
+    const daysSinceLast = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+    const daysSinceFirst = Math.floor((now.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    let status = "Aktif";
+    if (daysSinceLast > 30) {
+      status = "Tidak Aktif";
+    } else if (daysSinceFirst <= 7) {
+      status = "Baru";
+    }
+
+    return {
+      ...c,
+      total_pengiriman: stats.total,
+      tanggal_pertama_kirim: stats.first_date,
+      tanggal_terakhir_kirim: stats.last_date,
+      status
+    };
+  });
+  
+  return res.json({ status: "success", data: customers });
+});
+
+// 3.6. GET CUSTOMER HISTORY
+app.post("/api/getCustomerHistory", (req, res) => {
+  const { hp_pengirim } = req.body;
+  if (!hp_pengirim) return res.json({ status: "success", data: [] });
+
+  const db = readDb();
+  
+  // Find all PreInputs for this customer
+  const preInputs = (db.PreInput_Backup || []).filter((pi: any) => pi.hp_pengirim === hp_pengirim);
+  
+  // Join with EXP_Resi and CRG_Resi
+  const history = preInputs.map((pi: any) => {
+    const exp = (db.EXP_Resi || []).find((e: any) => e.transaksi_id === pi.transaksi_id);
+    const crg = (db.CRG_Resi || []).find((c: any) => c.transaksi_id === pi.transaksi_id);
+    const resi = exp || crg;
+    
+    return {
+      tanggal: pi.timestamp,
+      no_resi: resi ? resi.resi_id : "-",
+      tipe: exp ? "Express" : (crg ? "Cargo" : "-"),
+      biaya: resi ? resi.total_dibayar_customer : 0,
+      status: pi.status
+    };
+  }).sort((a: any, b: any) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+
+  return res.json({ status: "success", data: history });
+});
+
+// 3.7. GET BUKU PENGIRIM
+app.post("/api/getBukuPengirim", (req, res) => {
+  const { search } = req.body || {};
+  const db = readDb();
+  let list = db.MASTER_PENGIRIM || [];
+
+  if (search && search.trim()) {
+    const q = search.trim().toLowerCase();
+    list = list.filter((p: any) => 
+      (p.nama || "").toLowerCase().includes(q) ||
+      (p.telepon || "").toLowerCase().includes(q) ||
+      (p.alamat || "").toLowerCase().includes(q)
+    );
+  }
+
+  list = [...list].sort((a: any, b: any) => 
+    new Date(b.tanggal_terakhir || 0).getTime() - new Date(a.tanggal_terakhir || 0).getTime()
+  );
+
+  return res.json({ status: "success", data: list });
+});
+
+// 3.8. GET BUKU PENERIMA
+app.post("/api/getBukuPenerima", (req, res) => {
+  const { search } = req.body || {};
+  const db = readDb();
+  let list = db.MASTER_PENERIMA || [];
+
+  if (search && search.trim()) {
+    const q = search.trim().toLowerCase();
+    list = list.filter((r: any) => 
+      (r.nama || "").toLowerCase().includes(q) ||
+      (r.telepon || "").toLowerCase().includes(q) ||
+      (r.alamat || "").toLowerCase().includes(q)
+    );
+  }
+
+  list = [...list].sort((a: any, b: any) => 
+    new Date(b.tanggal_terakhir || 0).getTime() - new Date(a.tanggal_terakhir || 0).getTime()
+  );
+
+  return res.json({ status: "success", data: list });
+});
+
+// 3.9. GET CUSTOMERS MASTER
+app.post("/api/getCustomersMaster", (req, res) => {
+  const db = readDb();
+  const customers = db.MASTER_CUSTOMER || [];
+  const preInputs = db.PreInput_Backup || [];
+  const expResi = db.EXP_Resi || [];
+  const crgResi = db.CRG_Resi || [];
+  const mapsReviews = db.MapsReviews || [];
+
+  const statsMap = new Map<string, {
+    total_resi: number;
+    total_paket: number;
+    total_ongkir: number;
+    total_omzet: number;
+    first_date: string;
+    last_date: string;
+    outlet_ids: Set<string>;
+  }>();
+
+  preInputs.forEach((pi: any) => {
+    const hpNorm = normalizePhone(pi.hp_pengirim);
+    if (!hpNorm) return;
+    const exp = expResi.find((e: any) => e.transaksi_id === pi.transaksi_id);
+    const crg = crgResi.find((c: any) => c.transaksi_id === pi.transaksi_id);
+    const resi = exp || crg;
+
+    const dateStr = pi.timestamp || new Date().toISOString();
+    if (!statsMap.has(hpNorm)) {
+      statsMap.set(hpNorm, {
+        total_resi: 0,
+        total_paket: 0,
+        total_ongkir: 0,
+        total_omzet: 0,
+        first_date: dateStr,
+        last_date: dateStr,
+        outlet_ids: new Set()
+      });
+    }
+
+    const st = statsMap.get(hpNorm)!;
+    st.total_paket += 1;
+    if (pi.outlet_id_tugas) st.outlet_ids.add(pi.outlet_id_tugas);
+    if (resi) {
+      st.total_resi += 1;
+      st.total_ongkir += (resi.ongkir_dasar || 0);
+      st.total_omzet += (resi.grand_total || resi.total_dibayar_customer || 0);
+    }
+    if (new Date(dateStr) < new Date(st.first_date)) st.first_date = dateStr;
+    if (new Date(dateStr) > new Date(st.last_date)) st.last_date = dateStr;
+  });
+
+  const data = customers.map((c: any) => {
+    const hp = (c.telepon || c.no_hp || "").trim();
+    const hpNorm = normalizePhone(hp);
+    const st = statsMap.get(hpNorm) || {
+      total_resi: 0,
+      total_paket: 0,
+      total_ongkir: 0,
+      total_omzet: 0,
+      first_date: c.created_at || new Date().toISOString(),
+      last_date: c.updated_at || new Date().toISOString(),
+      outlet_ids: new Set()
+    };
+
+    const hasReview = mapsReviews.some((mr: any) => 
+      (mr.author_name || "").toLowerCase().includes((c.nama || c.nama_pengirim || "").toLowerCase()) ||
+      (mr.text || "").toLowerCase().includes((c.nama || c.nama_pengirim || "").toLowerCase())
+    );
+
+    return {
+      customer_id: c.customer_id,
+      nama: c.nama || c.nama_pengirim || "Customer",
+      telepon: hp,
+      created_at: c.created_at || st.first_date,
+      updated_at: c.updated_at || st.last_date,
+      status: c.status || "AKTIF",
+      total_resi: st.total_resi,
+      total_paket: st.total_paket,
+      total_ongkir: st.total_ongkir,
+      total_omzet: st.total_omzet,
+      customer_sejak: st.first_date,
+      last_shipment: st.last_date,
+      maps_review_status: hasReview ? "Contributor" : "Belum Review",
+      outlet_id: Array.from(st.outlet_ids)[0] || c.outlet_id || "OUT-001"
+    };
+  });
+
+  data.sort((a: any, b: any) => new Date(b.last_shipment).getTime() - new Date(a.last_shipment).getTime());
+
+  return res.json({ status: "success", data });
+});
+
+// 3.10. GET CUSTOMER DETAIL FULL (ANALYTICS & ADDRESSES)
+app.post("/api/getCustomerDetailFull", (req, res) => {
+  const { customer_id, telepon } = req.body || {};
+  const db = readDb();
+  const customers = db.MASTER_CUSTOMER || [];
+  const senders = db.MASTER_PENGIRIM || [];
+  const receivers = db.MASTER_PENERIMA || [];
+  const preInputs = db.PreInput_Backup || [];
+  const expResi = db.EXP_Resi || [];
+  const crgResi = db.CRG_Resi || [];
+  const mapsReviews = db.MapsReviews || [];
+
+  const searchPhoneNorm = normalizePhone(telepon);
+  let customer = customers.find((c: any) => 
+    (customer_id && c.customer_id === customer_id) || 
+    (searchPhoneNorm && normalizePhone(c.telepon || c.no_hp) === searchPhoneNorm)
+  );
+
+  if (!customer && telepon) {
+    customer = {
+      customer_id: customer_id || "CUS-UNKNOWN",
+      nama: "Customer",
+      telepon: telepon,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      status: "AKTIF"
+    };
+  } else if (!customer) {
+    return res.status(404).json({ status: "error", message: "Customer tidak ditemukan" });
+  }
+
+  const phone = (customer.telepon || customer.no_hp || "").trim();
+  const phoneNorm = normalizePhone(phone);
+  const cId = customer.customer_id;
+
+  const pengirim_addresses = senders.filter((s: any) => s.customer_id === cId || normalizePhone(s.telepon) === phoneNorm);
+  const penerima_addresses = receivers.filter((r: any) => r.customer_id === cId || normalizePhone(r.telepon) === phoneNorm);
+
+  const custPreInputs = preInputs.filter((pi: any) => normalizePhone(pi.hp_pengirim) === phoneNorm);
+
+  let totalResi = 0;
+  let totalPaket = custPreInputs.length;
+  let totalOngkir = 0;
+  let totalOmzet = 0;
+  let totalBerat = 0;
+  let firstDate = custPreInputs.length > 0 ? custPreInputs[0].timestamp : (customer.created_at || new Date().toISOString());
+  let lastDate = custPreInputs.length > 0 ? custPreInputs[0].timestamp : (customer.updated_at || new Date().toISOString());
+
+  const barangFreq: Record<string, number> = {};
+  const destFreq: Record<string, number> = {};
+  const dayFreq: Record<string, number> = {};
+  const hourFreq: Record<string, number> = {};
+  let expressCount = 0;
+  let cargoCount = 0;
+
+  const riwayat_pengiriman = custPreInputs.map((pi: any) => {
+    const exp = expResi.find((e: any) => e.transaksi_id === pi.transaksi_id);
+    const crg = crgResi.find((c: any) => c.transaksi_id === pi.transaksi_id);
+    const resi = exp || crg;
+
+    const dateObj = new Date(pi.timestamp);
+    const dateStr = pi.timestamp;
+
+    if (new Date(dateStr) < new Date(firstDate)) firstDate = dateStr;
+    if (new Date(dateStr) > new Date(lastDate)) lastDate = dateStr;
+
+    totalBerat += (Number(pi.berat_kg) || 0);
+
+    if (pi.nama_barang) {
+      const bg = pi.nama_barang.trim();
+      barangFreq[bg] = (barangFreq[bg] || 0) + 1;
+    }
+    if (pi.alamat_penerima) {
+      const dest = pi.alamat_penerima.split(",").pop()?.trim() || pi.alamat_penerima.trim();
+      destFreq[dest] = (destFreq[dest] || 0) + 1;
+    }
+    const dayNames = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
+    const dayName = dayNames[dateObj.getDay()];
+    dayFreq[dayName] = (dayFreq[dayName] || 0) + 1;
+
+    const hour = dateObj.getHours();
+    const hourLabel = `${String(hour).padStart(2, '0')}:00 - ${String((hour + 1) % 24).padStart(2, '0')}:00`;
+    hourFreq[hourLabel] = (hourFreq[hourLabel] || 0) + 1;
+
+    let resiId = "-";
+    let layanan = "-";
+    let jenisProduk = "-";
+    let totalBayar = 0;
+    let admin = pi.admin_id || "SYSTEM";
+
+    if (exp) {
+      expressCount++;
+      totalResi++;
+      resiId = exp.resi_id;
+      layanan = "Express";
+      jenisProduk = exp.tipe_produk;
+      totalBayar = exp.grand_total || exp.total_dibayar_customer;
+      totalOngkir += (exp.ongkir_dasar || 0);
+      totalOmzet += totalBayar;
+      if (exp.admin_id_pencatat) admin = exp.admin_id_pencatat;
+    } else if (crg) {
+      cargoCount++;
+      totalResi++;
+      resiId = crg.resi_id;
+      layanan = "Cargo";
+      jenisProduk = crg.tipe_produk;
+      totalBayar = crg.grand_total || crg.total_dibayar_customer;
+      totalOngkir += (crg.ongkir_dasar || 0);
+      totalOmzet += totalBayar;
+      if (crg.admin_id_pencatat) admin = crg.admin_id_pencatat;
+    }
+
+    return {
+      tanggal: pi.timestamp,
+      no_resi: resiId,
+      layanan: layanan,
+      jenis_produk: jenisProduk,
+      nama_barang: pi.nama_barang,
+      berat: pi.berat_kg,
+      volume: pi.volume,
+      total_bayar: totalBayar,
+      status: pi.status,
+      admin: admin
+    };
+  }).sort((a: any, b: any) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+
+  const getMostFrequent = (obj: Record<string, number>) => {
+    let maxK = "-";
+    let maxV = 0;
+    Object.entries(obj).forEach(([k, v]) => {
+      if (v > maxV) {
+        maxV = v;
+        maxK = k;
+      }
+    });
+    return maxK;
+  };
+
+  const hasReview = mapsReviews.some((mr: any) => 
+    (mr.author_name || "").toLowerCase().includes((customer.nama || customer.nama_pengirim || "").toLowerCase()) ||
+    (mr.text || "").toLowerCase().includes((customer.nama || customer.nama_pengirim || "").toLowerCase())
+  );
+
+  return res.json({
+    status: "success",
+    data: {
+      customer: {
+        ...customer,
+        nama: customer.nama || customer.nama_pengirim || "Customer",
+        telepon: phone
+      },
+      pengirim_addresses,
+      penerima_addresses,
+      summary: {
+        customer_sejak: firstDate,
+        total_resi: totalResi,
+        total_paket: totalPaket,
+        total_ongkir: totalOngkir,
+        total_omzet: totalOmzet,
+        last_shipment: lastDate,
+        maps_review_status: hasReview ? "Contributor" : "Belum Review"
+      },
+      analytics: {
+        total_transaksi: totalResi || totalPaket,
+        total_paket: totalPaket,
+        total_ongkir: totalOngkir,
+        berat_rata_rata: totalPaket > 0 ? Number((totalBerat / totalPaket).toFixed(2)) : 0,
+        layanan_favorit: expressCount >= cargoCount ? (expressCount > 0 ? "Express" : "N/A") : "Cargo",
+        barang_paling_sering: getMostFrequent(barangFreq),
+        kota_tujuan_terbanyak: getMostFrequent(destFreq),
+        hari_pengiriman_terbanyak: getMostFrequent(dayFreq),
+        jam_pengiriman_terbanyak: getMostFrequent(hourFreq)
+      },
+      riwayat_pengiriman
+    }
+  });
 });
 
 // 4. SEARCH CUSTOMER
@@ -674,50 +1488,6 @@ app.post("/api/saveDataPreInput", (req, res) => {
     status: "PENDING" as const
   };
   db.PreInput_Backup.unshift(newPreInput);
-
-  // 2. Add or update Master_Customer
-  let customer = db.Master_Customer.find(
-    (c: any) => c.no_hp === hp_pengirim
-  );
-
-  const nowStr = new Date().toISOString();
-  if (customer) {
-    customer.nama_pengirim = nama_pengirim;
-    customer.alamat_pengirim = alamat_pengirim;
-    customer.outlet_id = outlet_id_tugas || customer.outlet_id;
-    customer.last_updated = nowStr;
-  } else {
-    customer = {
-      customer_id: "CST-" + String(Date.now()).slice(-5),
-      nama_pengirim,
-      no_hp: hp_pengirim,
-      alamat_pengirim,
-      outlet_id: outlet_id_tugas || "OUT-001",
-      last_updated: nowStr
-    };
-    db.Master_Customer.push(customer);
-  }
-
-  // 3. Add or update Riwayat_Penerima
-  let rPenerima = db.Riwayat_Penerima.find(
-    (r: any) => r.customer_id === customer.customer_id && r.no_hp_penerima === hp_penerima
-  );
-
-  if (rPenerima) {
-    rPenerima.nama_penerima = nama_penerima;
-    rPenerima.alamat_penerima = alamat_penerima;
-    rPenerima.tanggal_terakhir_kirim = nowStr;
-  } else {
-    rPenerima = {
-      id: "REC-" + String(Date.now()).slice(-5) + Math.floor(Math.random() * 10),
-      customer_id: customer.customer_id,
-      nama_penerima,
-      no_hp_penerima: hp_penerima,
-      alamat_penerima,
-      tanggal_terakhir_kirim: nowStr
-    };
-    db.Riwayat_Penerima.push(rPenerima);
-  }
 
   writeDb(db);
 
@@ -829,11 +1599,32 @@ app.post("/api/saveTransaksi", (req, res) => {
   }
 
   // Update PreInput_Backup status to SELESAI if transaction_id was pending
+  let pre = null;
   if (data.transaksi_id) {
-    const pre = db.PreInput_Backup.find((p: any) => p.transaksi_id === data.transaksi_id);
+    pre = db.PreInput_Backup.find((p: any) => p.transaksi_id === data.transaksi_id);
     if (pre) {
       pre.status = "SELESAI";
     }
+  }
+
+  // Trigger Auto Upsert for Customer Master & Address Book (ONLY AFTER TRANSACTION IS SAVED)
+  const senderName = pre?.nama_pengirim || data.nama_pengirim || "";
+  const senderHp = pre?.hp_pengirim || data.hp_pengirim || "";
+  const senderAddr = pre?.alamat_pengirim || data.alamat_pengirim || "";
+  const recName = pre?.nama_penerima || data.nama_penerima || "";
+  const recHp = pre?.hp_penerima || data.hp_penerima || "";
+  const recAddr = pre?.alamat_penerima || data.alamat_penerima || "";
+
+  if (senderHp || recHp) {
+    autoUpsertCustomerAndAddressBook(db, {
+      nama_pengirim: senderName,
+      hp_pengirim: senderHp,
+      alamat_pengirim: senderAddr,
+      nama_penerima: recName,
+      hp_penerima: recHp,
+      alamat_penerima: recAddr,
+      timestamp
+    });
   }
 
   writeDb(db);
@@ -992,6 +1783,24 @@ app.post("/api/uploadFile", (req, res) => {
   if (!fileBase64) {
     return res.status(400).json({ status: "error", message: "File data (base64) tidak boleh kosong" });
   }
+
+  const db = readDb();
+  const sysConfig = db.SystemSettings || initialDb.SystemSettings;
+  
+  // Mapping category to Google Drive folder config (simulated for Local File System)
+  let targetFolderId = "";
+  switch (category) {
+    case "BUKTI_BAYAR": targetFolderId = sysConfig.folder_bukti_bayar_customer || ""; break;
+    case "FOTO_PAKET": targetFolderId = sysConfig.folder_foto_paket || ""; break;
+    case "FOTO_RESI": targetFolderId = sysConfig.folder_foto_resi || ""; break;
+    case "KAS_MASUK": targetFolderId = sysConfig.folder_bukti_kas_masuk || ""; break;
+    case "KAS_KELUAR": targetFolderId = sysConfig.folder_bukti_kas_keluar || ""; break;
+    case "BUKTI_ADD": targetFolderId = sysConfig.folder_bukti_bayar_customer || ""; break;
+    default: targetFolderId = "";
+  }
+  
+  // Requirement: Hardcode folder ID is not allowed. We simulate reading from DB config here.
+  // In a real environment (Apps Script), we would use GoogleDriveApp.getFolderById(targetFolderId).
 
   try {
     // Extract format and data
@@ -1197,9 +2006,9 @@ function calculateTargetHarian(combined: any[], filterOutlet: string, outlets: a
   let targetTotal = 0;
   if (filterOutlet && filterOutlet !== "ALL") {
     const outlet = outlets.find((o: any) => o.outlet_id === filterOutlet);
-    targetTotal = outlet?.target_resi_harian || 50;
+    targetTotal = (outlet?.target_express || 0) + (outlet?.target_cargo || 0) || outlet?.target_resi_harian || 50;
   } else {
-    targetTotal = outlets.reduce((sum: number, o: any) => sum + (o.target_resi_harian || 50), 0);
+    targetTotal = outlets.reduce((sum: number, o: any) => sum + ((o.target_express || 0) + (o.target_cargo || 0) || o.target_resi_harian || 50), 0);
   }
 
   return {

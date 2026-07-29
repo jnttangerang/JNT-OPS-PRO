@@ -148,6 +148,8 @@ function handleRouting(action, params) {
       return apiAskAssistantGAS(params);
     case "testSchemaIntegrity":
       return testSchemaIntegrity();
+    case "testDriveConnection":
+      return apiTestDriveConnection(params);
     default:
       return { status: "error", message: "Aksi tidak dikenali: " + action };
   }
@@ -3512,3 +3514,15 @@ function apiDeleteKeuanganOutlet(params) {
   }
 }
 
+
+function apiTestDriveConnection(params) {
+  var folderId = params.folderId;
+  if (!folderId) return { status: "error", message: "Folder ID kosong" };
+  try {
+    var folder = DriveApp.getFolderById(folderId);
+    var name = folder.getName();
+    return { status: "success", message: "Folder ditemukan: " + name };
+  } catch(e) {
+    return { status: "error", message: "Folder tidak ditemukan atau akses ditolak" };
+  }
+}

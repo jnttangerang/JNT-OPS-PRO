@@ -8,23 +8,90 @@ export interface User {
   outlet_id_home: string;
   nama_lengkap: string;
   status_aktif: "AKTIF" | "NON-AKTIF";
+  no_wa?: string;
 }
 
 export interface Outlet {
   outlet_id: string;
   nama_outlet: string;
+  kode_outlet?: string;
+  no_wa_outlet?: string;
   alamat_outlet: string;
+  latitude?: number;
+  longitude?: number;
+  radius_operasional?: number;
+  status_aktif?: "AKTIF" | "NON-AKTIF";
   target_resi_harian?: number;
   target_resi_bulanan?: number;
+  target_express?: number;
+  target_cargo?: number;
 }
+
+export interface SystemSettings {
+  id: string;
+  apps_script_url?: string;
+  spreadsheet_id?: string;
+  folder_bukti_bayar_customer?: string;
+  folder_foto_paket?: string;
+  folder_foto_resi?: string;
+  folder_bukti_kas_masuk?: string;
+  folder_bukti_kas_keluar?: string;
+  folder_bukti_transfer_admin_owner?: string;
+  folder_bukti_transfer_owner_dp?: string;
+}
+
 
 export interface MasterCustomer {
   customer_id: string;
-  nama_pengirim: string;
-  no_hp: string;
-  alamat_pengirim: string;
-  outlet_id: string;
-  last_updated: string;
+  nama: string;
+  telepon: string;
+  created_at?: string;
+  updated_at?: string;
+  status?: "AKTIF" | "NON-AKTIF";
+  // Legacy fields fallback
+  nama_pengirim?: string;
+  no_hp?: string;
+  alamat_pengirim?: string;
+  outlet_id?: string;
+  last_updated?: string;
+}
+
+export interface MasterPengirim {
+  id: string;
+  customer_id: string;
+  nama: string;
+  telepon: string;
+  provinsi?: string;
+  kabupaten?: string;
+  kecamatan?: string;
+  kelurahan?: string;
+  kode_pos?: string;
+  alamat: string;
+  jumlah_pengiriman: number;
+  tanggal_pertama: string;
+  tanggal_terakhir: string;
+  status: "AKTIF" | "NON-AKTIF";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MasterPenerima {
+  id: string;
+  customer_id: string;
+  nama: string;
+  telepon: string;
+  provinsi?: string;
+  kabupaten?: string;
+  kecamatan?: string;
+  kelurahan?: string;
+  kode_pos?: string;
+  alamat: string;
+  jumlah_diterima: number;
+  tanggal_pertama: string;
+  tanggal_terakhir: string;
+  status: "AKTIF" | "NON-AKTIF";
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RiwayatPenerima {
@@ -171,6 +238,7 @@ export interface DatabaseSchema {
   EXP_Resi: EXPResi[];
   CRG_Resi: CRGResi[];
   AuditLogs: AuditLog[];
+  SystemSettings?: SystemSettings;
   MASTER_KATEGORI_KEUANGAN?: KategoriKeuangan[];
   KEUANGAN_OUTLET?: KeuanganOutlet[];
 }

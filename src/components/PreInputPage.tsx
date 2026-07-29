@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import { 
   User, Phone, MapPin, Sparkles, Camera, Image as ImageIcon, 
-  Save, ArrowLeft, CheckCircle2, Clipboard, ChevronRight, RefreshCw, AlertCircle
+  Save, ArrowLeft, CheckCircle2, Clipboard, ChevronRight, RefreshCw, AlertCircle, BookOpen
 } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, MasterCustomer, RiwayatPenerima } from "../types";
 import { toast } from "../utils/toast";
+import AddressBookDrawer from "./AddressBookDrawer";
 
 interface PreInputPageProps {
   session: SessionData;
@@ -60,6 +61,10 @@ export default function PreInputPage({
   const [uploadingFotoPaket, setUploadingFotoPaket] = useState(false);
   const [uploadingFotoResi, setUploadingFotoResi] = useState(false);
   const [analyzingResi, setAnalyzingResi] = useState(false);
+
+  // Address Book Drawers
+  const [bukuPengirimOpen, setBukuPengirimOpen] = useState(false);
+  const [bukuPenerimaOpen, setBukuPenerimaOpen] = useState(false);
 
   // States for Popup Validasi Kualitas Foto
   const [showValidationPopup, setShowValidationPopup] = useState(false);
@@ -570,11 +575,21 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
           {/* LEFT COLUMN: SENDER FORM */}
           <div className="space-y-6">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
-              <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-2">
-                <div className="bg-red-50 p-1.5 rounded-lg text-[#E4002B]">
-                  <User className="h-4 w-4" />
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="bg-red-50 p-1.5 rounded-lg text-[#E4002B]">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <h3 className="font-semibold text-gray-800 text-sm">Data Pengirim</h3>
                 </div>
-                <h3 className="font-semibold text-gray-800 text-sm">Data Pengirim</h3>
+                <button
+                  type="button"
+                  onClick={() => setBukuPengirimOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-50 text-[#E4002B] hover:bg-red-100 transition-colors text-xs font-bold cursor-pointer"
+                >
+                  <BookOpen size={13} />
+                  <span>Buku Pengirim</span>
+                </button>
               </div>
 
               {/* Nama Pengirim dengan Suggestions */}
@@ -698,11 +713,21 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
             
             {/* DATA PENERIMA */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
-              <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-2">
-                <div className="bg-red-50 p-1.5 rounded-lg text-[#E4002B]">
-                  <User className="h-4 w-4" />
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3 mb-2">
+                <div className="flex items-center gap-2">
+                  <div className="bg-red-50 p-1.5 rounded-lg text-[#E4002B]">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <h3 className="font-semibold text-gray-800 text-sm">Data Penerima</h3>
                 </div>
-                <h3 className="font-semibold text-gray-800 text-sm">Data Penerima</h3>
+                <button
+                  type="button"
+                  onClick={() => setBukuPenerimaOpen(true)}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-red-50 text-[#E4002B] hover:bg-red-100 transition-colors text-xs font-bold cursor-pointer"
+                >
+                  <BookOpen size={13} />
+                  <span>Buku Penerima</span>
+                </button>
               </div>
 
               {/* Nama Penerima */}
@@ -1133,6 +1158,31 @@ PAKET: ${namaBarang.trim()} | ${photoStatus} | ${beratKg} KG | Vol: ${volStr} | 
           </div>
         </div>
       )}
+
+      {/* Address Book Drawers */}
+      <AddressBookDrawer
+        isOpen={bukuPengirimOpen}
+        onClose={() => setBukuPengirimOpen(false)}
+        type="PENGIRIM"
+        onSelect={(item) => {
+          setNamaPengirim(item.nama);
+          setHpPengirim(item.telepon);
+          setAlamatPengirim(item.alamat);
+          toast.success(`Pengirim "${item.nama}" dipilih`);
+        }}
+      />
+
+      <AddressBookDrawer
+        isOpen={bukuPenerimaOpen}
+        onClose={() => setBukuPenerimaOpen(false)}
+        type="PENERIMA"
+        onSelect={(item) => {
+          setNamaPenerima(item.nama);
+          setHpPenerima(item.telepon);
+          setAlamatPenerima(item.alamat);
+          toast.success(`Penerima "${item.nama}" dipilih`);
+        }}
+      />
 
     </div>
   );

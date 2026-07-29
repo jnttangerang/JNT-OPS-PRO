@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2, Tags, Wallet
+  Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2, Tags, Wallet, Users, Terminal
 } from "lucide-react";
 import useAppsScript from "./hooks/useAppsScript";
 import LoginPage from "./components/LoginPage";
@@ -11,13 +11,14 @@ import AdminDashboardPage from "./components/admin/AdminDashboardPage";
 import { LayoutDashboard, Settings } from "lucide-react";
 import RiwayatTransaksiPage from "./components/RiwayatTransaksiPage";
 import UlasanMapsPage from "./components/UlasanMapsPage";
-import SettingOutletPage from "./components/owner/SettingOutletPage";
+import CustomerPage from "./components/CustomerPage";
+import DeveloperPage from "./components/DeveloperPage";
+import SettingsPage from "./components/owner/SettingsPage";
 import SetoranOwnerPage from "./components/owner/SetoranOwnerPage";
 import OwnerAuditPage from "./components/owner/OwnerAuditPage";
 import DailyClosingPage from "./components/owner/DailyClosingPage";
 import ReportingPage from "./components/owner/ReportingPage";
 import OwnerAIAssistantPage from "./components/owner/OwnerAIAssistantPage";
-import MasterKategoriKeuanganPage from "./components/owner/MasterKategoriKeuanganPage";
 import KeuanganOutletPage from "./components/owner/KeuanganOutletPage";
 import { Lock, Shield, BarChart3, Bot, Sparkles } from "lucide-react";
 import ToastContainer from "./components/ToastContainer";
@@ -139,56 +140,115 @@ export default function App() {
     }
   };
 
-  const navItems: Array<{ id: string; label: string; icon: React.ComponentType<any>; iconColor?: string }> = [];
+  type NavItem = { id: string; label: string; icon: React.ComponentType<any>; iconColor?: string };
+  type NavGroup = { title: string; items: NavItem[] };
+  
+  const navGroups: NavGroup[] = [];
+  
   if (session) {
     if (session.role === "ADMIN") {
-      navItems.push(
-        { id: "admin-dashboard", label: "Dashboard", icon: Landmark },
-        { id: "pre-input", label: "Pre-Input", icon: Clipboard },
-        { id: "transaksi", label: "Resi & Bayar", icon: FileText },
-        { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
-        { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List }
+      navGroups.push(
+        {
+          title: "OPERASIONAL",
+          items: [
+            { id: "admin-dashboard", label: "Dashboard", icon: Landmark },
+            { id: "pre-input", label: "Pre-Input", icon: Clipboard },
+            { id: "transaksi", label: "Resi & Bayar", icon: FileText },
+            { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
+            { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
+          ]
+        },
+        {
+          title: "CUSTOMER",
+          items: [
+            { id: "dashboard-customer", label: "Dashboard Customer", icon: BarChart3 },
+            { id: "customer", label: "Data Customer", icon: Users },
+            { id: "analisa-customer", label: "Analisa Customer", icon: Star },
+          ]
+        },
+        {
+          title: "PENGATURAN",
+          items: [
+            { id: "settings", label: "Pengaturan Akun", icon: Settings }
+          ]
+        }
       );
     } else if (session.role === "OWNER") {
-      navItems.push(
-        { id: "dashboard", label: "Dashboard", icon: Landmark },
-        { id: "ai-assistant", label: "AI Audit Assistant", icon: Bot, iconColor: "text-amber-500" },
-        { id: "reporting", label: "Laporan & Analitik", icon: BarChart3 },
-        { id: "setoran-owner", label: "Persetujuan Setoran", icon: Clipboard },
-        { id: "owner-audit", label: "Audit Engine", icon: Shield },
-        { id: "daily-closing", label: "Daily Closing", icon: Lock },
-        { id: "master-kategori", label: "Master Kategori Keuangan", icon: Tags, iconColor: "text-purple-600 font-bold" },
-        { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
-
-        { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
-        { id: "ulasan-maps", label: "Ulasan Maps", icon: Star, iconColor: "text-yellow-500 fill-yellow-500" },
-        { id: "guide", label: "Deployment Guide", icon: BookOpen, iconColor: "text-emerald-600" }
+      navGroups.push(
+        {
+          title: "OPERASIONAL",
+          items: [
+            { id: "dashboard", label: "Dashboard", icon: Landmark },
+            { id: "pre-input", label: "Pre-Input", icon: Clipboard },
+            { id: "transaksi", label: "Resi & Bayar", icon: FileText },
+            { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
+            { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
+          ]
+        },
+        {
+          title: "CUSTOMER",
+          items: [
+            { id: "dashboard-customer", label: "Dashboard Customer", icon: BarChart3 },
+            { id: "customer", label: "Data Customer", icon: Users },
+            { id: "analisa-customer", label: "Analisa Customer", icon: Star },
+          ]
+        },
+        {
+          title: "MONITORING",
+          items: [
+            { id: "ai-assistant", label: "AI Audit Assistant", icon: Bot, iconColor: "text-amber-500" },
+            { id: "reporting", label: "Laporan & Analitik", icon: BarChart3 },
+            { id: "ulasan-maps", label: "Ulasan Maps", icon: Star, iconColor: "text-yellow-500 fill-yellow-500" },
+          ]
+        },
+        {
+          title: "KEUANGAN",
+          items: [
+            { id: "setoran-owner", label: "Persetujuan Setoran", icon: Clipboard },
+            { id: "owner-audit", label: "Audit Engine", icon: Shield },
+            { id: "daily-closing", label: "Daily Closing", icon: Lock },
+          ]
+        },
+        {
+          title: "PENGATURAN",
+          items: [
+            { id: "settings", label: "Pengaturan & Konfigurasi", icon: Settings },
+            { id: "developer", label: "Developer", icon: Terminal, iconColor: "text-blue-600" },
+          ]
+        }
       );
     }
   }
 
   const renderNavLinks = (onItemClick?: () => void) => {
-    return navItems.map((item) => {
-      const Icon = item.icon;
-      const isActive = currentView === item.id;
-      return (
-        <button
-          key={item.id}
-          onClick={() => {
-            setCurrentView(item.id);
-            if (onItemClick) onItemClick();
-          }}
-          className={`w-full text-left py-3 px-4 rounded-xl flex items-center gap-3 transition-all text-xs font-bold cursor-pointer ${
-            isActive 
-              ? "bg-red-50 text-[#E4002B] border-l-4 border-[#E4002B] pl-3" 
-              : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-          }`}
-        >
-          <Icon className={`h-4.5 w-4.5 ${item.iconColor || ""}`} />
-          <span>{item.label}</span>
-        </button>
-      );
-    });
+    return navGroups.map((group, gIdx) => (
+      <div key={gIdx} className="mb-6 last:mb-0">
+        <h3 className="px-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{group.title}</h3>
+        <div className="space-y-1">
+          {group.items.map((item) => {
+            const Icon = item.icon;
+            const isActive = currentView === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setCurrentView(item.id);
+                  if (onItemClick) onItemClick();
+                }}
+                className={`w-full text-left py-2.5 px-4 rounded-xl flex items-center gap-3 transition-all text-xs font-bold cursor-pointer ${
+                  isActive 
+                    ? "bg-red-50 text-[#E4002B] border-l-4 border-[#E4002B] pl-3" 
+                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                }`}
+              >
+                <Icon className={`h-4.5 w-4.5 ${item.iconColor || ""}`} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ));
   };
 
   return (
@@ -449,11 +509,6 @@ export default function App() {
           />
         )}
 
-        {session && currentView === "master-kategori" && (
-          <MasterKategoriKeuanganPage
-            session={session}
-          />
-        )}
 
         {session && currentView === "keuangan-outlet" && (
           <KeuanganOutletPage
@@ -484,58 +539,31 @@ export default function App() {
           <UlasanMapsPage />
         )}
 
-        {session && currentView === "guide" && (
-          <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-150 p-6 space-y-4">
-              <div className="flex items-center gap-2 border-b border-gray-100 pb-3 mb-2">
-                <BookOpen className="h-5 w-5 text-emerald-600" />
-                <h2 className="text-lg font-bold text-gray-800">Panduan Deployment J&T Express & Cargo</h2>
-              </div>
-
-              <div className="text-xs text-gray-600 space-y-3 leading-relaxed">
-                <p>
-                  Aplikasi **J&T OPS PRO** ini telah didesain dengan arsitektur hibrida berkelas tinggi. Seluruh antarmuka dikodekan menggunakan **React 19** dan dikonfigurasi agar dapat dideploy ke **Google Apps Script** instan dengan performa tanpa cela.
-                </p>
-
-                <h3 className="font-bold text-gray-800 text-sm mt-4">Langkah 1: Setup Google Sheet</h3>
-                <ol className="list-decimal pl-5 space-y-1.5 font-sans">
-                  <li>Buat Spreadsheet baru di Google Drive Anda.</li>
-                  <li>Buka Spreadsheet, lalu klik **Extensions** &gt; **Apps Script**.</li>
-                  <li>Hapus kode bawaan di dalam editor script.</li>
-                </ol>
-
-                <h3 className="font-bold text-gray-800 text-sm mt-4">Langkah 2: Tambahkan Backend Script (`Code.gs`)</h3>
-                <p>
-                  Salin seluruh isi file <code className="bg-gray-100 px-1 font-mono text-red-700">Code.gs</code> yang telah dibuat di folder proyek Anda dan paste ke dalam file **Code.gs** di editor Google Apps Script Anda.
-                </p>
-
-                <h3 className="font-bold text-gray-800 text-sm mt-4">Langkah 3: Tambahkan Frontend (`Index.html`)</h3>
-                <p>
-                  Di editor Apps Script, klik tombol tambah file (+) &gt; pilih **HTML**, beri nama <code className="bg-gray-100 px-1 font-mono">Index</code>. Salin isi file <code className="bg-gray-100 px-1 font-mono text-[#E4002B]">Index.html</code> dari proyek ini dan paste ke file tersebut.
-                </p>
-
-                <h3 className="font-bold text-gray-800 text-sm mt-4">Langkah 4: Konfigurasi API Key Gemini</h3>
-                <p>
-                  Dapatkan API Key gratis untuk model Gemini di AI Studio. Di editor Apps Script Anda, buka **Project Settings** (ikon gir di sebelah kiri) &gt; **Script Properties** &gt; Tambahkan properti berikut:
-                </p>
-                <div className="bg-gray-900 text-white font-mono p-3 rounded-lg text-[11px] overflow-x-auto space-y-1">
-                  <p><span className="text-[#E4002B]">GEMINI_API_KEY</span> = [Kunci API Gemini Anda]</p>
-                  <p><span className="text-blue-400">DRIVE_FOLDER_ID</span> = [ID Folder Google Drive untuk upload foto - Opsional]</p>
-                </div>
-
-                <h3 className="font-bold text-gray-800 text-sm mt-4">Langkah 5: Publish / Deploy Aplikasi</h3>
-                <ol className="list-decimal pl-5 space-y-1.5 font-sans">
-                  <li>Klik tombol **Deploy** di kanan atas &gt; pilih **New Deployment**.</li>
-                  <li>Pilih jenis deployment: **Web App**.</li>
-                  <li>Ubah **Execute as:** menjadi **Me (email Anda)**.</li>
-                  <li>Ubah **Who has access:** menjadi **Anyone** atau sesuaikan dengan outlet Anda.</li>
-                  <li>Klik **Deploy**, berikan izin akses Google Drive & Sheets ketika diminta.</li>
-                  <li>Salin **Web App URL** yang dihasilkan. Selamat! Aplikasi J&T OPS PRO Anda sudah bisa diakses online dari HP seluruh admin outlet.</li>
-                </ol>
-              </div>
-            </div>
-          </div>
+        {session && currentView === "settings" && (
+          <SettingsPage
+            session={session}
+            outlets={outlets}
+          />
         )}
+
+        {session && currentView === "customer" && (
+          <CustomerPage
+            outlets={outlets}
+          />
+        )}
+
+        {session && currentView === "dashboard-customer" && (
+          <div className="p-8 text-center text-gray-500">Halaman Dashboard Customer sedang dalam pengembangan.</div>
+        )}
+        
+        {session && currentView === "analisa-customer" && (
+          <div className="p-8 text-center text-gray-500">Halaman Analisa Customer sedang dalam pengembangan.</div>
+        )}
+
+        {session && currentView === "developer" && (
+          <DeveloperPage />
+        )}
+
       </main>
 
       {/* FOOTER */}
