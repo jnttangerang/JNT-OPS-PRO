@@ -35,6 +35,7 @@ export function useAppsScript() {
         "getKeuanganOutlet", "saveKeuanganOutlet", "updateKeuanganOutlet", "deleteKeuanganOutlet",
         "getAllSettings", "saveAllSettings",
         "getCustomers", "getCustomerHistory", "getBukuPengirim", "getBukuPenerima", "getCustomersMaster", "getCustomerDetailFull",
+        "saveDataPreInput", "getPreInputDrafts", "updatePreInputStatus", "getPreInput",
         "ping", "testConnection"
       ];
       const isLocalAction = localActions.includes(action);

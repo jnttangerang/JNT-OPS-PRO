@@ -1444,6 +1444,9 @@ app.post("/api/checkDuplicateResi", (req, res) => {
 // 7. SAVE DATA PREINPUT
 app.post("/api/saveDataPreInput", (req, res) => {
   const {
+    transaksi_id,
+    is_draft,
+    status: reqStatus,
     admin_id,
     outlet_id_tugas,
     nama_pengirim,
@@ -1468,60 +1471,105 @@ app.post("/api/saveDataPreInput", (req, res) => {
     foto_resi_url
   } = req.body;
 
-  if (!nama_pengirim || !hp_pengirim || !alamat_pengirim || !nama_penerima || !hp_penerima || !alamat_penerima || !nama_barang) {
-    return res.status(400).json({ status: "error", message: "Seluruh data pengirim, penerima, dan nama barang wajib diisi!" });
+  if (!is_draft) {
+    if (!nama_pengirim || !hp_pengirim || !alamat_pengirim || !nama_penerima || !hp_penerima || !alamat_penerima || !nama_barang) {
+      return res.status(400).json({ status: "error", message: "Seluruh data pengirim, penerima, dan nama barang wajib diisi!" });
+    }
+  } else {
+    // For auto-save draft, require at least one field to avoid empty trash
+    if (!nama_pengirim && !hp_pengirim && !nama_penerima && !nama_barang) {
+      return res.status(200).json({ status: "ignored", message: "Draft kosong, dilewati." });
+    }
   }
 
   const db = readDb();
-  const txId = "TRX-" + Math.floor(Date.now() / 1000);
+  if (!db.PreInput_Backup) db.PreInput_Backup = [];
 
-  // 1. Save PreInput Backup record
-  const newPreInput = {
+  let existing = transaksi_id ? db.PreInput_Backup.find((p: any) => p.transaksi_id === transaksi_id) : null;
+  const txId = existing ? existing.transaksi_id : (transaksi_id || ("TRX-" + Math.floor(Date.now() / 1000)));
+
+  const finalStatus = reqStatus || (existing ? existing.status : (is_draft ? "Draft" : "Siap Dibayar"));
+
+  const preInputObj = {
     transaksi_id: txId,
-    timestamp: new Date().toISOString(),
-    admin_id: admin_id || "SYSTEM",
-    outlet_id_tugas: outlet_id_tugas || "OUT-001",
-    nama_pengirim,
-    hp_pengirim,
-    alamat_pengirim,
-    nama_penerima,
-    hp_penerima,
-    alamat_penerima,
-    alamat_penerima_asli: alamat_penerima_asli || alamat_asli || "",
-    alamat_asli: alamat_asli || alamat_penerima_asli || "",
-    catatan_admin: catatan_admin || "",
-    nama_barang,
-    ekspedisi: ekspedisi || "Express",
-    berat_timbangan: Number(berat_timbangan) || 0,
-    panjang_cm: Number(panjang_cm) || 0,
-    lebar_cm: Number(lebar_cm) || 0,
-    tinggi_cm: Number(tinggi_cm) || 0,
-    berat_volume: Number(req.body.berat_volume) || 0,
-    dasar_berat: "TIMBANGAN",
-      berat_kg: Number(berat_kg) || 0,
-    volume: volume || "0 x 0 x 0",
-    nilai_barang: Number(nilai_barang) || 0,
-    foto_paket_url: foto_paket_url || "",
-    foto_resi_url: foto_resi_url || "",
-    status: "PENDING" as const
+    timestamp: existing ? existing.timestamp : new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    admin_id: admin_id || existing?.admin_id || "SYSTEM",
+    outlet_id_tugas: outlet_id_tugas || existing?.outlet_id_tugas || "OUT-001",
+    nama_pengirim: nama_pengirim || existing?.nama_pengirim || "",
+    hp_pengirim: hp_pengirim || existing?.hp_pengirim || "",
+    alamat_pengirim: alamat_pengirim || existing?.alamat_pengirim || "",
+    nama_penerima: nama_penerima || existing?.nama_penerima || "",
+    hp_penerima: hp_penerima || existing?.hp_penerima || "",
+    alamat_penerima: alamat_penerima || existing?.alamat_penerima || "",
+    alamat_penerima_asli: alamat_penerima_asli || alamat_asli || existing?.alamat_penerima_asli || "",
+    alamat_asli: alamat_asli || alamat_penerima_asli || existing?.alamat_asli || "",
+    catatan_admin: catatan_admin || existing?.catatan_admin || "",
+    nama_barang: nama_barang || existing?.nama_barang || "",
+    ekspedisi: ekspedisi || existing?.ekspedisi || "Express",
+    berat_timbangan: Number(berat_timbangan) || existing?.berat_timbangan || 0,
+    panjang_cm: Number(panjang_cm) || existing?.panjang_cm || 0,
+    lebar_cm: Number(lebar_cm) || existing?.lebar_cm || 0,
+    tinggi_cm: Number(tinggi_cm) || existing?.tinggi_cm || 0,
+    berat_volume: Number(req.body.berat_volume) || existing?.berat_volume || 0,
+    dasar_berat: req.body.dasar_berat || existing?.dasar_berat || "TIMBANGAN",
+    berat_kg: Number(berat_kg) || existing?.berat_kg || 0,
+    volume: volume || existing?.volume || "0 x 0 x 0",
+    nilai_barang: Number(nilai_barang) || existing?.nilai_barang || 0,
+    foto_paket_url: foto_paket_url || existing?.foto_paket_url || "",
+    foto_resi_url: foto_resi_url || existing?.foto_resi_url || "",
+    status: finalStatus
   };
-  db.PreInput_Backup.unshift(newPreInput);
+
+  if (existing) {
+    Object.assign(existing, preInputObj);
+  } else {
+    db.PreInput_Backup.unshift(preInputObj);
+  }
 
   writeDb(db);
 
-  // Audit Log
-  addAuditLog(
-    admin_id || "SYSTEM",
-    "PREINPUT_SIMPAN",
-    `Mencatat pre-input '${nama_pengirim}' ke '${nama_penerima}' (${txId})`,
-    outlet_id_tugas || "OUT-001"
-  );
+  // Auto upsert customer & address book
+  autoUpsertCustomerAndAddressBook(db, {
+    nama_pengirim: preInputObj.nama_pengirim,
+    hp_pengirim: preInputObj.hp_pengirim,
+    alamat_pengirim: preInputObj.alamat_pengirim,
+    nama_penerima: preInputObj.nama_penerima,
+    hp_penerima: preInputObj.hp_penerima,
+    alamat_penerima: preInputObj.alamat_penerima,
+    timestamp: preInputObj.timestamp
+  });
 
   return res.json({
     status: "success",
-    message: "Data pre-input berhasil disimpan!",
-    data: { transaksi_id: txId, preInput: newPreInput }
+    message: is_draft ? "Draft berhasil diperbarui!" : "Data pre-input berhasil disimpan!",
+    data: { transaksi_id: txId, preInput: preInputObj }
   });
+});
+
+// 7.1 GET ALL PREINPUT DRAFTS FOR WORKSPACE
+app.post("/api/getPreInputDrafts", (req, res) => {
+  const db = readDb();
+  if (!db.PreInput_Backup) db.PreInput_Backup = [];
+  return res.json({ status: "success", data: db.PreInput_Backup });
+});
+
+// 7.2 UPDATE PREINPUT STATUS
+app.post("/api/updatePreInputStatus", (req, res) => {
+  const { transaksi_id, status } = req.body || {};
+  if (!transaksi_id || !status) {
+    return res.status(400).json({ status: "error", message: "transaksi_id dan status wajib!" });
+  }
+  const db = readDb();
+  if (!db.PreInput_Backup) db.PreInput_Backup = [];
+  const pre = db.PreInput_Backup.find((p: any) => p.transaksi_id === transaksi_id);
+  if (!pre) {
+    return res.status(404).json({ status: "error", message: "Draft pre-input tidak ditemukan" });
+  }
+  pre.status = status;
+  pre.updated_at = new Date().toISOString();
+  writeDb(db);
+  return res.json({ status: "success", message: `Status draft berhasil diubah ke ${status}`, data: pre });
 });
 
 // 8. GET PREINPUT DETAILS
