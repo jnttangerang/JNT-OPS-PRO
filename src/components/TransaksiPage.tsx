@@ -8,6 +8,7 @@ import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, PreInputBackup } from "../types";
 import { toast } from "../utils/toast";
 import { calculateWeight } from "../utils/weightCalculator";
+import { getDisplayImageUrl } from "../utils/image";
 import AddressBookDrawer from "./AddressBookDrawer";
 
 interface TransaksiPageProps {
@@ -971,7 +972,7 @@ export default function TransaksiPage({
                            </div>
                         ) : (fotoPaketPreview || fotoPaketUrl) ? (
                           <div className="flex items-start gap-3">
-                            <img src={fotoPaketPreview || fotoPaketUrl} alt="Paket" className="h-[72px] w-[72px] object-cover rounded-lg border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
+                            <img src={getDisplayImageUrl(fotoPaketPreview || fotoPaketUrl)} alt="Paket" className="h-[72px] w-[72px] object-cover rounded-lg border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
                             <div className="flex flex-col gap-1.5">
                               <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded inline-block w-fit">✓ Siap Upload</span>
                               <button 
@@ -996,7 +997,7 @@ export default function TransaksiPage({
                            </div>
                         ) : (fotoResiPreview || fotoResiUrl) ? (
                           <div className="flex items-start gap-3">
-                            <img src={fotoResiPreview || fotoResiUrl} alt="Resi" className="h-[72px] w-[72px] object-cover rounded-lg border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
+                            <img src={getDisplayImageUrl(fotoResiPreview || fotoResiUrl)} alt="Resi" className="h-[72px] w-[72px] object-cover rounded-lg border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
                             <div className="flex flex-col gap-1.5">
                               <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded inline-block w-fit">✓ Siap Upload</span>
                               <button 
@@ -1366,7 +1367,7 @@ export default function TransaksiPage({
 
                       {buktiBayarUrl && (
                         <div className="p-2 bg-white border border-gray-100 rounded-lg flex items-center gap-2">
-                          <img src={buktiBayarUrl} alt="bukti" className="h-10 w-10 object-cover rounded" />
+                          <img src={getDisplayImageUrl(buktiBayarUrl)} alt="bukti" className="h-10 w-10 object-cover rounded" referrerPolicy="no-referrer" />
                           <span className="text-[10px] text-green-700 font-bold truncate">{buktiBayarUrl}</span>
                         </div>
                       )}
@@ -1478,7 +1479,7 @@ export default function TransaksiPage({
 
                           {buktiTambahanUrl && (
                             <div className="p-2 bg-white border border-gray-100 rounded-lg flex items-center gap-2">
-                              <img src={buktiTambahanUrl} alt="bukti" className="h-10 w-10 object-cover rounded" />
+                              <img src={getDisplayImageUrl(buktiTambahanUrl)} alt="bukti" className="h-10 w-10 object-cover rounded" referrerPolicy="no-referrer" />
                               <span className="text-[10px] text-green-700 font-bold truncate">{buktiTambahanUrl}</span>
                             </div>
                           )}

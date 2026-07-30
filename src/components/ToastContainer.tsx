@@ -8,7 +8,15 @@ export default function ToastContainer() {
 
   useEffect(() => {
     const unsubscribe = subscribeToasts((newToast) => {
-      setToasts((prev) => [...prev, newToast]);
+      setToasts((prev) => {
+        // Deduplicate identical toast messages to avoid stacking duplicate bubbles
+        const exists = prev.some((t) => t.message === newToast.message);
+        if (exists) {
+          return prev.map((t) => (t.message === newToast.message ? newToast : t));
+        }
+        return [...prev, newToast];
+      });
+
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
       }, 4000);

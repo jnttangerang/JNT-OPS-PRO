@@ -52,6 +52,46 @@ function getGeminiClient(): GoogleGenAI {
   return aiClient;
 }
 
+async function generateGeminiContentWithFallback(ai: GoogleGenAI, params: {
+  contents: any;
+  config?: any;
+}) {
+  const models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"];
+  let lastError: any = null;
+
+  for (const model of models) {
+    try {
+      const res = await ai.models.generateContent({
+        model,
+        contents: params.contents,
+        config: params.config
+      });
+      if (res && res.text) {
+        return res;
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`Gemini model ${model} failed:`, err?.message || err);
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+  throw lastError || new Error("Gemini API service unavailable");
+}
+
+function formatGeminiErrorMessage(error: any): string {
+  const errStr = typeof error === "object" ? (error?.message || JSON.stringify(error)) : String(error);
+  if (errStr.includes("503") || errStr.includes("UNAVAILABLE") || errStr.includes("high demand") || errStr.includes("temporary")) {
+    return "Layanan AI sedang dalam lalu lintas tinggi / padat. Silakan coba lagi beberapa saat lagi atau isi manual.";
+  }
+  if (errStr.includes("429") || errStr.includes("RESOURCE_EXHAUSTED") || errStr.includes("Quota")) {
+    return "Kuota AI harian telah mencapai batas. Silakan coba lagi nanti atau isi manual.";
+  }
+  if (errStr.includes("API key") || errStr.includes("INVALID_ARGUMENT") || errStr.includes("NOT_FOUND")) {
+    return "Konfigurasi API Key Gemini belum diatur atau tidak valid.";
+  }
+  return "Layanan AI sedang tidak dapat diakses saat ini. Silakan isi/rapikan secara manual.";
+}
+
 // SHA-256 simulation helper for password checking (or plain text/simple hash for mock)
 function simulateHash(password: string): string {
   // Simple simulation of a hash (SHA-256)
@@ -1791,32 +1831,21 @@ app.post("/api/perbaikiAlamatAI", async (req, res) => {
     const ai = getGeminiClient();
     const prompt = `Rapikan alamat berikut: "${alamat}"`;
     
-    // According to Gemini-API guidelines, we use ai.models.generateContent
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generateGeminiContentWithFallback(ai, {
       contents: prompt,
       config: {
         systemInstruction: GEM_ALAMAT_SYSTEM_INSTRUCTION,
-        temperature: 0.1, // lower temperature to make sure it doesn't invent details
+        temperature: 0.1,
       }
     });
 
     const result = response.text?.trim() || alamat;
     return res.json({ status: "success", data: result });
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    
-    // Custom friendly message for rate limits or other common errors
-    let userMsg = "Gagal memproses perbaikan alamat via AI.";
-    if (error.status === 429 || error.message?.includes("RESOURCE_EXHAUSTED") || error.message?.includes("Quota")) {
-      userMsg = "Kuota AI gratis harian sudah tercapai, coba lagi beberapa saat lagi atau isi manual.";
-    } else if (error.message?.includes("API key")) {
-      userMsg = "API Key Gemini belum disetting di workspace. Silakan isi manual atau configure di Settings > Secrets.";
-    } else {
-      userMsg = `Terjadi kesalahan AI: ${error.message || "Unknown error"}. Silakan isi/rapikan manual.`;
-    }
-
-    return res.status(200).json({ status: "error", message: userMsg, data: alamat });
+    console.error("Gemini API Error:", error?.message || error);
+    const userMsg = formatGeminiErrorMessage(error);
+    const cleanedFallback = (alamat || "").replace(/\s+/g, " ").trim();
+    return res.status(200).json({ status: "error", message: userMsg, data: cleanedFallback });
   }
 });
 
@@ -1873,8 +1902,7 @@ app.post("/api/analyzeResiPhoto", async (req, res) => {
       text: "Silakan analisis foto resi ini dan ekstrak seluruh data paket & resi_id."
     };
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generateGeminiContentWithFallback(ai, {
       contents: { parts: [imagePart, textPart] },
       config: {
         systemInstruction,
@@ -1900,15 +1928,8 @@ app.post("/api/analyzeResiPhoto", async (req, res) => {
     const extractedData = JSON.parse(resultText);
     return res.json({ status: "success", data: extractedData });
   } catch (error: any) {
-    console.error("Gemini API Analyze Error:", error);
-    let userMsg = "Gagal memproses analisis foto resi via AI.";
-    if (error.status === 429 || error.message?.includes("RESOURCE_EXHAUSTED") || error.message?.includes("Quota")) {
-      userMsg = "Kuota AI gratis harian sudah tercapai, coba lagi beberapa saat lagi atau isi manual.";
-    } else if (error.message?.includes("API key")) {
-      userMsg = "API Key Gemini belum disetting di workspace. Silakan isi manual.";
-    } else {
-      userMsg = `Terjadi kesalahan AI: ${error.message || "Unknown error"}. Silakan isi manual.`;
-    }
+    console.error("Gemini API Analyze Error:", error?.message || error);
+    const userMsg = formatGeminiErrorMessage(error);
     return res.status(200).json({ status: "error", message: userMsg });
   }
 });
@@ -2721,8 +2742,7 @@ app.post("/api/analyzeReview", async (req, res) => {
 
     const prompt = `Rating Bintang: ${rating}\nTeks Ulasan: "${reviewText || ""}"`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
+    const response = await generateGeminiContentWithFallback(ai, {
       contents: prompt,
       config: {
         systemInstruction,
@@ -3749,8 +3769,7 @@ Pertanyaan Owner: "${question}"
 
   try {
     const ai = getGeminiClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+    const response = await generateGeminiContentWithFallback(ai, {
       contents: prompt
     });
     return response.text || "Data tidak tersedia.";
@@ -3808,8 +3827,7 @@ Format dalam 5-6 bullet point yang sangat jelas, profesional, dan ringkas dalam 
   let summaryText = "";
   try {
     const ai = getGeminiClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+    const response = await generateGeminiContentWithFallback(ai, {
       contents: prompt
     });
     summaryText = response.text || "";

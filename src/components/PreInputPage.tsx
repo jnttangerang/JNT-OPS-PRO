@@ -9,6 +9,7 @@ import { SessionData, Outlet, MasterCustomer, RiwayatPenerima } from "../types";
 import { toast } from "../utils/toast";
 import AddressBookDrawer from "./AddressBookDrawer";
 import { calculateWeight } from "../utils/weightCalculator";
+import { getDisplayImageUrl } from "../utils/image";
 
 interface PreInputPageProps {
   session: SessionData;
@@ -86,6 +87,7 @@ export default function PreInputPage({
   const [submittedTxId, setSubmittedTxId] = useState<string | null>(null);
   const [clearingText, setClearingText] = useState("");
   const [copiedNotification, setCopiedNotification] = useState(false);
+  const [copiedFieldKey, setCopiedFieldKey] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Address Book Drawers
@@ -97,6 +99,7 @@ export default function PreInputPage({
   const [validationPopupData, setValidationPopupData] = useState<{
     type: "paket" | "resi";
     previewUrl: string;
+    remoteUrl?: string;
     detectedResiId: string | null;
     extractedInfo?: {
       resi_id?: string;
@@ -417,39 +420,102 @@ export default function PreInputPage({
 
   // Populate form fields from a Draft object
   const populateFormFromDraft = (draft: any) => {
-    setNamaPengirim(draft.nama_pengirim || "");
-    setHpPengirim(draft.hp_pengirim || "");
-    setAlamatPengirim(draft.alamat_pengirim || "");
-    setNamaPenerima(draft.nama_penerima || "");
-    setHpPenerima(draft.hp_penerima || "");
-    setAlamatPenerima(draft.alamat_penerima || "");
-    setEkspedisi(draft.ekspedisi === "Cargo" ? "Cargo" : "Express");
-    setNamaBarang(draft.nama_barang || "");
-    setBeratKg(String(draft.berat_timbangan || draft.berat_kg || 0));
-    setVolP(draft.panjang_cm ? String(draft.panjang_cm) : "");
-    setVolL(draft.lebar_cm ? String(draft.lebar_cm) : "");
-    setVolT(draft.tinggi_cm ? String(draft.tinggi_cm) : "");
-    
-    if (draft.nilai_barang) {
-      setNilaiBarangRaw(Number(draft.nilai_barang).toLocaleString("id-ID"));
+    if (!draft) return;
+
+    // 1. Pengirim
+    setNamaPengirim(draft.nama_pengirim || draft.namaPengirim || draft.pengirim || draft.nama || "");
+    setHpPengirim(draft.hp_pengirim || draft.hpPengirim || draft.no_hp_pengirim || draft.telepon_pengirim || draft.hp || "");
+    setAlamatPengirim(draft.alamat_pengirim || draft.alamatPengirim || draft.alamat_pengirim_asli || draft.alamat || "");
+
+    // 2. Penerima & Alamat
+    setNamaPenerima(draft.nama_penerima || draft.namaPenerima || draft.penerima || "");
+    setHpPenerima(draft.hp_penerima || draft.hpPenerima || draft.no_hp_penerima || draft.telepon_penerima || "");
+    setAlamatPenerima(draft.alamat_penerima || draft.alamatPenerima || "");
+    setAlamatPenerimaAsli(draft.alamat_penerima_asli || draft.alamat_asli || draft.alamat_penerima || draft.alamatPenerima || "");
+
+    // 3. Ekspedisi
+    const expStr = String(draft.ekspedisi || draft.layanan || draft.service || draft.jenis_layanan || "Express").toUpperCase();
+    setEkspedisi(expStr.includes("CARGO") ? "Cargo" : "Express");
+
+    // 4. Barang
+    setNamaBarang(draft.nama_barang || draft.namaBarang || draft.barang || draft.deskripsi_barang || draft.deskripsi || "");
+
+    // 5. Berat
+    const bVal = [
+      draft.berat_timbangan,
+      draft.berat_kg,
+      draft.beratKg,
+      draft.berat,
+      draft.berat_penagihan
+    ].find(v => v !== undefined && v !== null && v !== "" && !isNaN(Number(v)) && Number(v) > 0);
+    setBeratKg(bVal !== undefined ? String(bVal) : "0");
+
+    // 6. Volume (P, L, T)
+    let p = draft.panjang_cm ?? draft.panjang ?? draft.panjangCm ?? draft.volP;
+    let l = draft.lebar_cm ?? draft.lebar ?? draft.lebarCm ?? draft.volL;
+    let t = draft.tinggi_cm ?? draft.tinggi ?? draft.tinggiCm ?? draft.volT;
+
+    if ((!p || !l || !t || Number(p) === 0) && (draft.volume || draft.dimensi)) {
+      const volStr = String(draft.volume || draft.dimensi || "");
+      const parts = volStr.toLowerCase().split(/x|\*/).map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+      if (parts.length >= 3) {
+        p = p || parts[0];
+        l = l || parts[1];
+        t = t || parts[2];
+      }
+    }
+
+    setVolP(p && !isNaN(Number(p)) && Number(p) > 0 ? String(p) : "");
+    setVolL(l && !isNaN(Number(l)) && Number(l) > 0 ? String(l) : "");
+    setVolT(t && !isNaN(Number(t)) && Number(t) > 0 ? String(t) : "");
+
+    // 7. Nilai Barang
+    const valBarang = [
+      draft.nilai_barang,
+      draft.nilaiBarang,
+      draft.harga_barang,
+      draft.nilai
+    ].find(v => v !== undefined && v !== null && v !== "" && !isNaN(Number(v)) && Number(v) > 0);
+
+    if (valBarang) {
+      setNilaiBarangRaw(Number(valBarang).toLocaleString("id-ID"));
     } else {
       setNilaiBarangRaw("");
     }
-    
-    setFotoPaketUrl(draft.foto_paket_url || "");
-    setFotoResiUrl(draft.foto_resi_url || "");
-    setCatatanAdmin(draft.catatan_admin || "");
+
+    // 8. Media & Notes
+    setFotoPaketUrl(draft.foto_paket_url || draft.foto_paket || "");
+    setFotoResiUrl(draft.foto_resi_url || draft.foto_resi || "");
+    setCatatanAdmin(draft.catatan_admin || draft.catatanAdmin || draft.catatan || "");
+
     setSubmittedTxId(null);
     setFormError(null);
   };
 
   // Click on a draft card to edit
-  const handleSelectDraftToEdit = (draft: any) => {
-    setEditingTxId(draft.transaksi_id);
-    localStorage.setItem("active_draft_tx_id", draft.transaksi_id);
+  const handleSelectDraftToEdit = async (draft: any) => {
+    if (!draft) return;
+    const txId = draft.transaksi_id;
+    setEditingTxId(txId);
+    localStorage.setItem("active_draft_tx_id", txId);
+
+    // Immediately populate from the clicked draft card object
     populateFormFromDraft(draft);
-    toast.info(`Mengedit draft: ${draft.transaksi_id}`);
-    namaInputRef.current?.focus();
+
+    // Fetch fresh full draft details from backend
+    try {
+      const res = await callBackend("getPreInput", { transaksi_id: txId });
+      if (res && res.status === "success" && res.data) {
+        populateFormFromDraft(res.data);
+      }
+    } catch (e) {
+      console.error("Gagal mengambil detail draft terbaru:", e);
+    }
+
+    toast.info(`Mengedit draft: ${txId}`);
+    if (namaInputRef.current) {
+      namaInputRef.current.focus();
+    }
   };
 
   // Continue Draft to Resi & Bayar page
@@ -688,20 +754,24 @@ Catatan : ${catatanAdmin || "-"}
             category: "FOTO_PAKET"
           });
 
-          if (response.status === "success" && response.data) {
-            setValidationPopupData({
-              type: "paket",
-              previewUrl: response.data,
-              detectedResiId: null
-            });
-            setShowValidationPopup(true);
-          } else {
-            setFormError(response.message || "Gagal mengunggah foto paket.");
-            toast.error(response.message || "Gagal mengunggah foto paket.");
-          }
+          const remoteUrl = (response && response.status === "success" && response.data) ? response.data : base64Str;
+
+          setValidationPopupData({
+            type: "paket",
+            previewUrl: base64Str, // Use base64Str so photo always displays clearly in modal preview
+            remoteUrl: remoteUrl,
+            detectedResiId: null
+          });
+          setShowValidationPopup(true);
         } catch (err: any) {
-          setFormError(err.message || "Terjadi kesalahan saat mengunggah foto.");
-          toast.error(err.message || "Terjadi kesalahan saat mengunggah foto.");
+          // Fallback to base64Str even if backend response failed
+          setValidationPopupData({
+            type: "paket",
+            previewUrl: base64Str,
+            remoteUrl: base64Str,
+            detectedResiId: null
+          });
+          setShowValidationPopup(true);
         } finally {
           setUploadingFotoPaket(false);
         }
@@ -721,6 +791,17 @@ Catatan : ${catatanAdmin || "-"}
       toast.success("Ringkasan Pre-Input berhasil disalin ke clipboard!");
       setTimeout(() => setCopiedNotification(false), 3000);
     }
+  };
+
+  const handleCopyValue = (val: string, key: string, label: string) => {
+    if (!val || val.trim() === "") {
+      toast.info(`Kolom ${label} kosong.`);
+      return;
+    }
+    navigator.clipboard.writeText(val);
+    setCopiedFieldKey(key);
+    toast.success(`"${label}" (${val}) berhasil disalin!`);
+    setTimeout(() => setCopiedFieldKey(null), 2000);
   };
 
   // Filtered Drafts for Workspace Area
@@ -863,35 +944,273 @@ Catatan : ${catatanAdmin || "-"}
 
       {/* RENDER CLEARING LAYAR / KOTAK KLIRING (IF SUCCESSFUL) */}
       {submittedTxId ? (
-        <div className="bg-white rounded-2xl shadow-lg border border-green-100 p-6 sm:p-8 text-center animate-fade-in max-w-3xl mx-auto">
-          <div className="mx-auto bg-green-50 text-green-600 rounded-full h-16 w-16 flex items-center justify-center mb-4">
-            <CheckCircle2 className="h-10 w-10 stroke-[2]" />
+        <div className="bg-white rounded-2xl shadow-lg border border-green-100 p-6 sm:p-8 animate-fade-in max-w-4xl mx-auto space-y-6">
+          <div className="text-center">
+            <div className="mx-auto bg-green-50 text-green-600 rounded-full h-16 w-16 flex items-center justify-center mb-4 shadow-sm">
+              <CheckCircle2 className="h-10 w-10 stroke-[2]" />
+            </div>
+            <h2 className="text-xl font-bold text-slate-800">
+              Pre-Input Berhasil Disimpan!
+            </h2>
+            <p className="text-xs text-green-600 font-mono font-bold mt-1">
+              KODE PRE-INPUT: {submittedTxId}
+            </p>
+            <p className="text-xs text-slate-500 max-w-lg mx-auto mt-1.5">
+              Klik tombol <strong className="text-slate-700">Salin</strong> pada setiap kolom di bawah untuk dimasukkan ke sistem <strong className="text-[#00A968]">YoYi!</strong>
+            </p>
           </div>
-          <h2 className="text-xl font-bold text-gray-800">
-            Pre-Input Berhasil Disimpan!
-          </h2>
-          <p className="text-xs text-green-600 font-mono font-bold mt-1">
-            KODE PRE-INPUT: {submittedTxId}
-          </p>
-          <p className="text-xs text-gray-500 max-w-md mx-auto mt-2">
-            Klik kotak kliring di bawah untuk menyalin otomatis seluruh ringkasan.
-          </p>
 
-          <div className="mt-6 relative max-w-lg mx-auto">
-            <textarea
-              ref={clearingTextRef}
-              readOnly
-              onClick={handleClearingBoxClick}
-              value={clearingText}
-              className="w-full h-48 bg-gray-50 hover:bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl p-4 font-mono text-xs text-gray-700 leading-relaxed cursor-pointer focus:outline-none resize-none shadow-inner transition-colors duration-200"
-            />
-            <div className="absolute bottom-3 right-3 bg-gray-900/80 text-white rounded-lg py-1 px-2.5 flex items-center gap-1.5 text-[10px] pointer-events-none">
-              <Clipboard className="h-3.5 w-3.5" />
-              <span>{copiedNotification ? "Tersalin!" : "Klik untuk Salin"}</span>
+          {/* YOYI FIELDS QUICK-COPY GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
+            {/* INFORMASI PENGIRIM */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3 shadow-2xs">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+                <User className="h-4 w-4 text-[#E4002B]" />
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Informasi Pengirim</h3>
+              </div>
+
+              <div className="space-y-2">
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-medium text-slate-400">Nama</span>
+                    <span className="block text-xs font-semibold text-slate-800 truncate">{namaPengirim || "-"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyValue(namaPengirim, "pengirim_nama", "Nama Pengirim")}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                      copiedFieldKey === "pengirim_nama"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {copiedFieldKey === "pengirim_nama" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                    <span>{copiedFieldKey === "pengirim_nama" ? "Disalin" : "Salin"}</span>
+                  </button>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-medium text-slate-400">Telepon</span>
+                    <span className="block text-xs font-semibold text-slate-800 truncate">{hpPengirim || "-"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyValue(hpPengirim, "pengirim_hp", "Telepon Pengirim")}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                      copiedFieldKey === "pengirim_hp"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {copiedFieldKey === "pengirim_hp" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                    <span>{copiedFieldKey === "pengirim_hp" ? "Disalin" : "Salin"}</span>
+                  </button>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-start justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-medium text-slate-400">Detail Alamat</span>
+                    <span className="block text-xs font-semibold text-slate-800 line-clamp-2">{alamatPengirim || "-"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyValue(alamatPengirim, "pengirim_alamat", "Alamat Pengirim")}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                      copiedFieldKey === "pengirim_alamat"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {copiedFieldKey === "pengirim_alamat" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                    <span>{copiedFieldKey === "pengirim_alamat" ? "Disalin" : "Salin"}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* INFORMASI PENERIMA */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3 shadow-2xs">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+                <MapPin className="h-4 w-4 text-[#E4002B]" />
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Informasi Penerima</h3>
+              </div>
+
+              <div className="space-y-2">
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-medium text-slate-400">Nama</span>
+                    <span className="block text-xs font-semibold text-slate-800 truncate">{namaPenerima || "-"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyValue(namaPenerima, "penerima_nama", "Nama Penerima")}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                      copiedFieldKey === "penerima_nama"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {copiedFieldKey === "penerima_nama" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                    <span>{copiedFieldKey === "penerima_nama" ? "Disalin" : "Salin"}</span>
+                  </button>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-medium text-slate-400">Telepon</span>
+                    <span className="block text-xs font-semibold text-slate-800 truncate">{hpPenerima || "-"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyValue(hpPenerima, "penerima_hp", "Telepon Penerima")}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                      copiedFieldKey === "penerima_hp"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {copiedFieldKey === "penerima_hp" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                    <span>{copiedFieldKey === "penerima_hp" ? "Disalin" : "Salin"}</span>
+                  </button>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-start justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-medium text-slate-400">Detail Alamat</span>
+                    <span className="block text-xs font-semibold text-slate-800 line-clamp-2">{alamatPenerima || "-"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyValue(alamatPenerima, "penerima_alamat", "Alamat Penerima")}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                      copiedFieldKey === "penerima_alamat"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {copiedFieldKey === "penerima_alamat" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                    <span>{copiedFieldKey === "penerima_alamat" ? "Disalin" : "Salin"}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* INFORMASI BARANG */}
+            <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3 shadow-2xs">
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-2.5">
+                <Layers className="h-4 w-4 text-[#E4002B]" />
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Informasi Barang</h3>
+              </div>
+
+              <div className="space-y-2">
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-medium text-slate-400">Nama Barang</span>
+                    <span className="block text-xs font-semibold text-slate-800 truncate">{namaBarang || "-"}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyValue(namaBarang, "barang_nama", "Nama Barang")}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                      copiedFieldKey === "barang_nama"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {copiedFieldKey === "barang_nama" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                    <span>{copiedFieldKey === "barang_nama" ? "Disalin" : "Salin"}</span>
+                  </button>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-medium text-slate-400">Berat Paket (KG)</span>
+                    <span className="block text-xs font-semibold text-slate-800 truncate">{calcWeight().berat_penagihan} KG</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyValue(calcWeight().berat_penagihan.toString(), "barang_berat", "Berat Paket")}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                      copiedFieldKey === "barang_berat"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {copiedFieldKey === "barang_berat" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                    <span>{copiedFieldKey === "barang_berat" ? "Disalin" : "Salin"}</span>
+                  </button>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-medium text-slate-400">Nilai Barang (IDR)</span>
+                    <span className="block text-xs font-semibold text-slate-800 truncate">
+                      {nilaiBarangRaw ? `Rp ${formatRupiahDisplay(nilaiBarangRaw)}` : "-"}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopyValue(getCleanNumberValue(nilaiBarangRaw || "").toString(), "barang_nilai", "Nilai Barang")}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                      copiedFieldKey === "barang_nilai"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {copiedFieldKey === "barang_nilai" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                    <span>{copiedFieldKey === "barang_nilai" ? "Disalin" : "Salin"}</span>
+                  </button>
+                </div>
+
+                {catatanAdmin && (
+                  <div className="bg-white p-2.5 rounded-xl border border-slate-200 flex items-center justify-between gap-2 shadow-2xs">
+                    <div className="min-w-0 flex-1">
+                      <span className="block text-[10px] font-medium text-slate-400">Catatan</span>
+                      <span className="block text-xs font-semibold text-slate-800 truncate">{catatanAdmin}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyValue(catatanAdmin, "barang_catatan", "Catatan")}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                        copiedFieldKey === "barang_catatan"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      {copiedFieldKey === "barang_catatan" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Clipboard className="h-3.5 w-3.5 text-slate-500" />}
+                      <span>{copiedFieldKey === "barang_catatan" ? "Disalin" : "Salin"}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          <div className="mt-8 flex flex-col sm:flex-row justify-center gap-4 max-w-lg mx-auto">
+          {/* KOTAK KLIRING TEKS LENGKAP */}
+          <div className="pt-2 border-t border-slate-100">
+            <details className="group">
+              <summary className="text-xs font-semibold text-slate-500 cursor-pointer flex items-center justify-center gap-2 py-2 select-none hover:text-slate-800 transition">
+                <span>Lihat Teks Ringkasan Pre-Input Lengkap (Kotak Kliring)</span>
+                <span className="text-[10px] font-bold text-slate-400 group-open:rotate-180 transition-transform duration-200">▼</span>
+              </summary>
+              <div className="mt-3 relative max-w-lg mx-auto">
+                <textarea
+                  ref={clearingTextRef}
+                  readOnly
+                  onClick={handleClearingBoxClick}
+                  value={clearingText}
+                  className="w-full h-40 bg-gray-50 hover:bg-gray-100 border-2 border-dashed border-gray-300 rounded-xl p-4 font-mono text-xs text-gray-700 leading-relaxed cursor-pointer focus:outline-none resize-none shadow-inner transition-colors duration-200"
+                />
+                <div className="absolute bottom-3 right-3 bg-gray-900/80 text-white rounded-lg py-1 px-2.5 flex items-center gap-1.5 text-[10px] pointer-events-none">
+                  <Clipboard className="h-3.5 w-3.5" />
+                  <span>{copiedNotification ? "Tersalin!" : "Klik untuk Salin Seluruh Ringkasan"}</span>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div className="pt-2 flex flex-col sm:flex-row justify-center gap-4 max-w-lg mx-auto">
             <button
               onClick={handleDraftBaru}
               className="flex-1 py-3 px-4 bg-gray-100 hover:bg-gray-200 font-semibold text-gray-700 rounded-xl transition duration-150 text-sm cursor-pointer"
@@ -1400,9 +1719,34 @@ Catatan : ${catatanAdmin || "-"}
                   />
 
                   {fotoPaketUrl && (
-                    <div className="p-1.5 bg-white border border-slate-200 rounded-lg flex items-center gap-2">
-                      <img src={fotoPaketUrl} alt="Foto Paket" className="h-8 w-8 object-cover rounded" />
-                      <span className="text-[10px] text-gray-500 truncate">{fotoPaketUrl}</span>
+                    <div className="p-2 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-2 shadow-sm">
+                      <div className="flex items-center gap-2.5 overflow-hidden">
+                        <img 
+                          src={getDisplayImageUrl(fotoPaketUrl)} 
+                          alt="Foto Paket" 
+                          className="h-10 w-10 object-cover rounded-lg border border-slate-200 shrink-0" 
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-xs font-semibold text-slate-800 truncate">Foto Paket Tersimpan</span>
+                          <span className="text-[10px] text-slate-400 truncate">{fotoPaketUrl}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setValidationPopupData({
+                            type: "paket",
+                            previewUrl: getDisplayImageUrl(fotoPaketUrl),
+                            remoteUrl: fotoPaketUrl,
+                            detectedResiId: null
+                          });
+                          setShowValidationPopup(true);
+                        }}
+                        className="px-2.5 py-1 text-[11px] font-semibold text-[#E4002B] hover:bg-red-50 rounded-lg transition shrink-0 cursor-pointer border border-red-100"
+                      >
+                        Lihat / Ubah
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1643,7 +1987,7 @@ Catatan : ${catatanAdmin || "-"}
             <div className="p-6 space-y-4">
               <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-slate-100 border border-slate-200 shadow-inner">
                 <img 
-                  src={validationPopupData.previewUrl} 
+                  src={getDisplayImageUrl(validationPopupData.previewUrl)} 
                   alt="Preview" 
                   className="h-full w-full object-contain"
                   referrerPolicy="no-referrer"
@@ -1674,7 +2018,7 @@ Catatan : ${catatanAdmin || "-"}
               <button
                 type="button"
                 onClick={() => {
-                  setFotoPaketUrl(validationPopupData.previewUrl);
+                  setFotoPaketUrl(validationPopupData.remoteUrl || validationPopupData.previewUrl);
                   toast.success("Foto Paket berhasil disimpan!");
                   setShowValidationPopup(false);
                   setValidationPopupData(null);
