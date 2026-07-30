@@ -116,7 +116,7 @@ export default function AddressBookDrawer({ isOpen, onClose, type, onSelect }: A
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
                         <User size={14} className="text-[#E4002B]" />
-                        <span className="font-bold text-gray-800 text-xs">{item.nama}</span>
+                        <span className="font-bold text-gray-800 text-xs">{item.nama || item.nama_pengirim || item.nama_penerima || "Tanpa Nama"}</span>
                       </div>
                       <span className="bg-red-50 text-[#E4002B] text-[10px] font-bold px-2 py-0.5 rounded-full">
                         {count || 0}x {type === "PENGIRIM" ? "Kirim" : "Terima"}
@@ -125,12 +125,12 @@ export default function AddressBookDrawer({ isOpen, onClose, type, onSelect }: A
 
                     <div className="flex items-center gap-2 text-xs text-gray-600 font-mono">
                       <Phone size={12} className="text-gray-400" />
-                      <span>{item.telepon}</span>
+                      <span>{item.telepon || item.no_hp || item.hp_pengirim || item.hp_penerima || "-"}</span>
                     </div>
 
                     <div className="flex items-start gap-2 text-xs text-gray-600 leading-relaxed">
                       <MapPin size={12} className="text-gray-400 mt-0.5 shrink-0" />
-                      <span className="line-clamp-2">{item.alamat}</span>
+                      <span className="line-clamp-2">{item.alamat || item.alamat_pengirim || item.alamat_penerima || "-"}</span>
                     </div>
                   </div>
 
@@ -141,9 +141,9 @@ export default function AddressBookDrawer({ isOpen, onClose, type, onSelect }: A
                     <button
                       onClick={() => {
                         onSelect({
-                          nama: item.nama,
-                          telepon: item.telepon,
-                          alamat: item.alamat
+                          nama: item.nama || item.nama_pengirim || item.nama_penerima || "",
+                          telepon: item.telepon || item.no_hp || item.hp_pengirim || item.hp_penerima || "",
+                          alamat: item.alamat || item.alamat_pengirim || item.alamat_penerima || ""
                         });
                         onClose();
                       }}

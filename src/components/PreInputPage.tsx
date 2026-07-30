@@ -203,7 +203,7 @@ export default function PreInputPage({
 
   // Debounced Customer Search on Sender Name
   useEffect(() => {
-    if (namaPengirim.trim().length < 2 || selectedCustomerId) {
+    if ((namaPengirim || "").trim().length < 2 || selectedCustomerId) {
       setCustomerSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -213,7 +213,7 @@ export default function PreInputPage({
     const delayDebounceFn = setTimeout(async () => {
       try {
         const response = await callBackend("searchCustomer", { query: namaPengirim });
-        if (response.status === "success" && response.data) {
+        if (response && response.status === "success" && response.data) {
           setCustomerSuggestions(response.data);
           setShowSuggestions(response.data.length > 0);
         }
@@ -249,7 +249,7 @@ export default function PreInputPage({
       setLoadingHistory(true);
       try {
         const response = await callBackend("getRiwayatPenerima", { customer_id: selectedCustomerId });
-        if (response.status === "success" && response.data) {
+        if (response && response.status === "success" && response.data) {
           setRiwayatPenerima(response.data);
         }
       } catch (err) {
@@ -264,8 +264,9 @@ export default function PreInputPage({
 
   // Duplicate Customer Detection
   useEffect(() => {
-    const normPhone = hpPengirim.replace(/\D/g, "");
-    if (!namaPengirim.trim() && !normPhone) {
+    const normPhone = (hpPengirim || "").replace(/\D/g, "");
+    const safeNama = (namaPengirim || "").trim();
+    if (!safeNama && !normPhone) {
       setDuplicateAlert(null);
       return;
     }
@@ -277,7 +278,7 @@ export default function PreInputPage({
       const dPhone = (d.hp_pengirim || "").replace(/\D/g, "");
       const dName = (d.nama_pengirim || "").trim().toLowerCase();
       
-      const matchName = dName && namaPengirim.trim().toLowerCase() === dName;
+      const matchName = dName && safeNama.toLowerCase() === dName;
       const matchPhone = normPhone && normPhone.length >= 8 && dPhone === normPhone;
       
       return matchName || matchPhone;
@@ -289,7 +290,7 @@ export default function PreInputPage({
   // Auto-Save Effect (Debounced 800ms)
   useEffect(() => {
     // Only auto-save if user has provided at least name, HP, or item name
-    const hasAnyContent = namaPengirim.trim() || hpPengirim.trim() || namaBarang.trim() || namaPenerima.trim();
+    const hasAnyContent = (namaPengirim || "").trim() || (hpPengirim || "").trim() || (namaBarang || "").trim() || (namaPenerima || "").trim();
     if (!hasAnyContent || submittedTxId) return;
 
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -305,15 +306,15 @@ export default function PreInputPage({
           status: "Draft",
           admin_id: session.user_id,
           outlet_id_tugas: activeOutletId,
-          nama_pengirim: namaPengirim.trim(),
-          hp_pengirim: hpPengirim.trim(),
-          alamat_pengirim: alamatPengirim.trim(),
-          nama_penerima: namaPenerima.trim(),
-          hp_penerima: hpPenerima.trim(),
-          alamat_penerima: alamatPenerima.trim(),
-          alamat_penerima_asli: alamatPenerimaAsli || alamatPenerima.trim(),
-          catatan_admin: catatanAdmin.trim(),
-          nama_barang: namaBarang.trim(),
+          nama_pengirim: (namaPengirim || "").trim(),
+          hp_pengirim: (hpPengirim || "").trim(),
+          alamat_pengirim: (alamatPengirim || "").trim(),
+          nama_penerima: (namaPenerima || "").trim(),
+          hp_penerima: (hpPenerima || "").trim(),
+          alamat_penerima: (alamatPenerima || "").trim(),
+          alamat_penerima_asli: alamatPenerimaAsli || (alamatPenerima || "").trim(),
+          catatan_admin: (catatanAdmin || "").trim(),
+          nama_barang: (namaBarang || "").trim(),
           ekspedisi,
           berat_timbangan: Number(beratKg) || 0,
           panjang_cm: Number(volP) || 0,
@@ -323,9 +324,9 @@ export default function PreInputPage({
           dasar_berat: calc.dasar_berat,
           berat_kg: calc.berat_penagihan,
           volume: `${volP || 0} x ${volL || 0} x ${volT || 0}`,
-          nilai_barang: getCleanNumberValue(nilaiBarangRaw),
-          foto_paket_url: fotoPaketUrl,
-          foto_resi_url: fotoResiUrl
+          nilai_barang: getCleanNumberValue(nilaiBarangRaw || ""),
+          foto_paket_url: fotoPaketUrl || "",
+          foto_resi_url: fotoResiUrl || ""
         };
 
         const res = await callBackend("saveDataPreInput", payload);
@@ -480,31 +481,31 @@ export default function PreInputPage({
   const handleSavePreInput = async (isDraftManual = false) => {
     setFormError(null);
 
-    if (!namaPengirim.trim()) {
+    if (!(namaPengirim || "").trim()) {
       setFormError("Nama pengirim wajib diisi!");
       return;
     }
-    if (!hpPengirim.trim()) {
+    if (!(hpPengirim || "").trim()) {
       setFormError("Nomor HP pengirim wajib diisi!");
       return;
     }
-    if (!alamatPengirim.trim()) {
+    if (!(alamatPengirim || "").trim()) {
       setFormError("Alamat pengirim wajib diisi!");
       return;
     }
-    if (!namaPenerima.trim()) {
+    if (!(namaPenerima || "").trim()) {
       setFormError("Nama penerima wajib diisi!");
       return;
     }
-    if (!hpPenerima.trim()) {
+    if (!(hpPenerima || "").trim()) {
       setFormError("Nomor HP penerima wajib diisi!");
       return;
     }
-    if (!alamatPenerima.trim()) {
+    if (!(alamatPenerima || "").trim()) {
       setFormError("Alamat penerima wajib diisi!");
       return;
     }
-    if (!namaBarang.trim()) {
+    if (!(namaBarang || "").trim()) {
       setFormError("Nama barang paket wajib diisi!");
       return;
     }
@@ -517,15 +518,15 @@ export default function PreInputPage({
         status: isDraftManual ? "Draft" : "Siap Dibayar",
         admin_id: session.user_id,
         outlet_id_tugas: activeOutletId,
-        nama_pengirim: namaPengirim.trim(),
-        hp_pengirim: hpPengirim.trim(),
-        alamat_pengirim: alamatPengirim.trim(),
-        nama_penerima: namaPenerima.trim(),
-        hp_penerima: hpPenerima.trim(),
-        alamat_penerima: alamatPenerima.trim(),
-        alamat_penerima_asli: alamatPenerimaAsli || alamatPenerima.trim(),
-        catatan_admin: catatanAdmin.trim(),
-        nama_barang: namaBarang.trim(),
+        nama_pengirim: (namaPengirim || "").trim(),
+        hp_pengirim: (hpPengirim || "").trim(),
+        alamat_pengirim: (alamatPengirim || "").trim(),
+        nama_penerima: (namaPenerima || "").trim(),
+        hp_penerima: (hpPenerima || "").trim(),
+        alamat_penerima: (alamatPenerima || "").trim(),
+        alamat_penerima_asli: alamatPenerimaAsli || (alamatPenerima || "").trim(),
+        catatan_admin: (catatanAdmin || "").trim(),
+        nama_barang: (namaBarang || "").trim(),
         ekspedisi,
         berat_timbangan: Number(beratKg) || 0,
         panjang_cm: Number(volP) || 0,
@@ -535,14 +536,14 @@ export default function PreInputPage({
         dasar_berat: calc.dasar_berat,
         berat_kg: calc.berat_penagihan,
         volume: `${volP || 0} x ${volL || 0} x ${volT || 0}`,
-        nilai_barang: getCleanNumberValue(nilaiBarangRaw),
-        foto_paket_url: fotoPaketUrl,
-        foto_resi_url: fotoResiUrl
+        nilai_barang: getCleanNumberValue(nilaiBarangRaw || ""),
+        foto_paket_url: fotoPaketUrl || "",
+        foto_resi_url: fotoResiUrl || ""
       };
 
       const response = await callBackend("saveDataPreInput", payload);
 
-      if (response.status === "success" && response.data) {
+      if (response && response.status === "success" && response.data) {
         const txId = response.data.transaksi_id;
         setSubmittedTxId(txId);
         setEditingTxId(null);
@@ -572,7 +573,7 @@ INFORMASI PAKET:
 Layanan : ${ekspedisi}
 Barang  : ${namaBarang}
 Berat   : ${calc.berat_penagihan} kg (${calc.dasar_berat})
-Nilai   : Rp ${getCleanNumberValue(nilaiBarangRaw).toLocaleString("id-ID")}
+Nilai   : Rp ${getCleanNumberValue(nilaiBarangRaw || "").toLocaleString("id-ID")}
 Catatan : ${catatanAdmin || "-"}
 ========================================`;
 
@@ -580,8 +581,8 @@ Catatan : ${catatanAdmin || "-"}
         toast.success(`Pre-Input ${txId} berhasil disimpan!`);
         fetchDrafts();
       } else {
-        setFormError(response.message || "Gagal menyimpan data pre-input.");
-        toast.error(response.message || "Gagal menyimpan data pre-input.");
+        setFormError(response?.message || "Gagal menyimpan data pre-input.");
+        toast.error(response?.message || "Gagal menyimpan data pre-input.");
       }
     } catch (err: any) {
       setFormError(err.message || "Terjadi kesalahan jaringan.");
@@ -591,7 +592,7 @@ Catatan : ${catatanAdmin || "-"}
 
   // Format Currency
   const formatRupiahDisplay = (valStr: string) => {
-    const cleaned = valStr.replace(/\D/g, "");
+    const cleaned = (valStr || "").replace(/\D/g, "");
     if (!cleaned) return "";
     return Number(cleaned).toLocaleString("id-ID");
   };
@@ -601,36 +602,39 @@ Catatan : ${catatanAdmin || "-"}
   };
 
   // Select Customer from suggestion
-  const selectCustomer = (cst: MasterCustomer) => {
-    setNamaPengirim(cst.nama_pengirim);
-    setHpPengirim(cst.no_hp);
-    setAlamatPengirim(cst.alamat_pengirim);
-    setSelectedCustomerId(cst.customer_id);
+  const selectCustomer = (cst: any) => {
+    if (!cst) return;
+    setNamaPengirim(cst.nama_pengirim || cst.nama || "");
+    setHpPengirim(cst.no_hp || cst.hp_pengirim || cst.telepon || "");
+    setAlamatPengirim(cst.alamat_pengirim || cst.alamat || "");
+    setSelectedCustomerId(cst.customer_id || null);
     setShowSuggestions(false);
   };
 
   const handleSenderChange = (val: string, type: "nama" | "hp" | "alamat") => {
+    const safeVal = val || "";
     if (type === "nama") {
-      setNamaPengirim(val);
+      setNamaPengirim(safeVal);
       setSelectedCustomerId(null);
     } else if (type === "hp") {
-      setHpPengirim(val.replace(/\D/g, ""));
+      setHpPengirim(safeVal.replace(/\D/g, ""));
       setSelectedCustomerId(null);
     } else if (type === "alamat") {
-      setAlamatPengirim(val);
+      setAlamatPengirim(safeVal);
     }
   };
 
   // Auto fill Recipient from history click
-  const selectRecipientFromHistory = (rec: RiwayatPenerima) => {
-    setNamaPenerima(rec.nama_penerima);
-    setHpPenerima(rec.no_hp_penerima);
-    setAlamatPenerima(rec.alamat_penerima);
+  const selectRecipientFromHistory = (rec: any) => {
+    if (!rec) return;
+    setNamaPenerima(rec.nama_penerima || rec.nama || "");
+    setHpPenerima(rec.no_hp_penerima || rec.no_hp || rec.telepon || "");
+    setAlamatPenerima(rec.alamat_penerima || rec.alamat || "");
   };
 
   // AI Address Optimizer
   const handleOptimizeAddress = async () => {
-    if (!alamatPenerima.trim()) {
+    if (!(alamatPenerima || "").trim()) {
       setAiNotice({ type: "error", text: "Alamat penerima kosong! Ketik alamat terlebih dahulu." });
       return;
     }
@@ -640,11 +644,11 @@ Catatan : ${catatanAdmin || "-"}
     setSuggestedAddress(null);
     try {
       const response = await callBackend("perbaikiAlamatAI", { alamat: alamatPenerima });
-      if (response.status === "success" && response.data) {
+      if (response && response.status === "success" && response.data) {
         setSuggestedAddress(response.data);
         setAiNotice({ type: "success", text: "Hasil perbaikan alamat oleh AI sudah siap! Tinjau di bawah." });
       } else {
-        setAiNotice({ type: "error", text: response.message || "Gagal merapikan alamat." });
+        setAiNotice({ type: "error", text: response?.message || "Gagal merapikan alamat." });
       }
     } catch (err: any) {
       setAiNotice({
@@ -1001,17 +1005,22 @@ Catatan : ${catatanAdmin || "-"}
                       <div className="p-2 bg-gray-50 text-[10px] text-gray-400 font-bold uppercase tracking-wider">
                         Pelanggan Tetap Terdaftar:
                       </div>
-                      {customerSuggestions.map((cst) => (
-                        <button
-                          key={cst.customer_id}
-                          type="button"
-                          onClick={() => selectCustomer(cst)}
-                          className="w-full text-left p-3 hover:bg-gray-50 text-xs transition-colors flex flex-col gap-0.5 cursor-pointer"
-                        >
-                          <span className="font-bold text-gray-800">{cst.nama_pengirim}</span>
-                          <span className="text-gray-500">{cst.no_hp} • {cst.alamat_pengirim.slice(0, 45)}...</span>
-                        </button>
-                      ))}
+                      {customerSuggestions.map((cst) => {
+                        const name = cst.nama || cst.nama_pengirim || "Pelanggan";
+                        const phone = cst.telepon || cst.no_hp || cst.hp_pengirim || "";
+                        const addr = cst.alamat_pengirim || cst.alamat || "";
+                        return (
+                          <button
+                            key={cst.customer_id}
+                            type="button"
+                            onClick={() => selectCustomer(cst)}
+                            className="w-full text-left p-3 hover:bg-gray-50 text-xs transition-colors flex flex-col gap-0.5 cursor-pointer"
+                          >
+                            <span className="font-bold text-gray-800">{name}</span>
+                            <span className="text-gray-500">{phone}{addr ? ` • ${addr.slice(0, 45)}...` : ""}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -1022,16 +1031,20 @@ Catatan : ${catatanAdmin || "-"}
                         Pelanggan Terakhir:
                       </span>
                       <div className="flex flex-wrap gap-1.5">
-                        {recentCustomers.map((cst) => (
-                          <button
-                            key={cst.customer_id}
-                            type="button"
-                            onClick={() => selectCustomer(cst)}
-                            className="px-2.5 py-1 bg-gray-100 hover:bg-red-50 hover:text-[#E4002B] text-gray-700 rounded-lg text-[11px] font-medium transition cursor-pointer"
-                          >
-                            + {cst.nama_pengirim} ({cst.no_hp})
-                          </button>
-                        ))}
+                        {recentCustomers.map((cst) => {
+                          const name = cst.nama || cst.nama_pengirim || "Pelanggan";
+                          const phone = cst.telepon || cst.no_hp || cst.hp_pengirim || "";
+                          return (
+                            <button
+                              key={cst.customer_id}
+                              type="button"
+                              onClick={() => selectCustomer(cst)}
+                              className="px-2.5 py-1 bg-gray-100 hover:bg-red-50 hover:text-[#E4002B] text-gray-700 rounded-lg text-[11px] font-medium transition cursor-pointer"
+                            >
+                              + {name} {phone ? `(${phone})` : ""}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

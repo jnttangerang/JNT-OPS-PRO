@@ -1184,10 +1184,21 @@ app.post("/api/getCustomersMaster", (req, res) => {
       (mr.text || "").toLowerCase().includes((c.nama || c.nama_pengirim || "").toLowerCase())
     );
 
+    const snd = (db.MASTER_PENGIRIM || []).find((p: any) => 
+      p.customer_id === c.customer_id || (hpNorm && normalizePhone(p.telepon || p.no_hp || "") === hpNorm)
+    );
+    const alamat = snd ? (snd.alamat || snd.alamat_pengirim || "") : (c.alamat || c.alamat_pengirim || "");
+    const namaName = c.nama || c.nama_pengirim || "Customer";
+
     return {
       customer_id: c.customer_id,
-      nama: c.nama || c.nama_pengirim || "Customer",
+      nama: namaName,
+      nama_pengirim: namaName,
       telepon: hp,
+      no_hp: hp,
+      hp_pengirim: hp,
+      alamat: alamat,
+      alamat_pengirim: alamat,
       created_at: c.created_at || st.first_date,
       updated_at: c.updated_at || st.last_date,
       status: c.status || "AKTIF",
@@ -1389,7 +1400,7 @@ app.post("/api/getCustomerDetailFull", (req, res) => {
 
 // 4. SEARCH CUSTOMER
 app.post("/api/searchCustomer", (req, res) => {
-  const { query, outlet_id } = req.body;
+  const { query } = req.body || {};
   const db = readDb();
   const searchQ = (query || "").toLowerCase().trim();
 
@@ -1397,12 +1408,31 @@ app.post("/api/searchCustomer", (req, res) => {
     return res.json({ status: "success", data: [] });
   }
 
-  // Filter customers by name or phone matching partial
-  const matching = db.Master_Customer.filter(
-    (c: any) =>
-      c.nama_pengirim.toLowerCase().includes(searchQ) ||
-      c.no_hp.includes(searchQ)
-  );
+  const list = (db.MASTER_CUSTOMER && db.MASTER_CUSTOMER.length > 0) ? db.MASTER_CUSTOMER : (db.Master_Customer || []);
+  const senders = db.MASTER_PENGIRIM || [];
+
+  const matching = list.filter((c: any) => {
+    const name = (c.nama || c.nama_pengirim || "").toLowerCase();
+    const phone = (c.telepon || c.no_hp || "").toLowerCase();
+    return name.includes(searchQ) || phone.includes(searchQ);
+  }).map((c: any) => {
+    const hp = c.telepon || c.no_hp || "";
+    const hpNorm = normalizePhone(hp);
+    const snd = senders.find((p: any) => p.customer_id === c.customer_id || (hpNorm && normalizePhone(p.telepon || p.no_hp || "") === hpNorm));
+    const alamat = snd ? (snd.alamat || snd.alamat_pengirim || "") : (c.alamat || c.alamat_pengirim || "");
+    const namaName = c.nama || c.nama_pengirim || "Customer";
+
+    return {
+      customer_id: c.customer_id,
+      nama: namaName,
+      nama_pengirim: namaName,
+      telepon: hp,
+      no_hp: hp,
+      hp_pengirim: hp,
+      alamat: alamat,
+      alamat_pengirim: alamat
+    };
+  });
 
   return res.json({ status: "success", data: matching });
 });
@@ -1580,9 +1610,32 @@ app.post("/api/getPreInput", (req, res) => {
   }
 
   const db = readDb();
-  const pre = db.PreInput_Backup.find((p: any) => p.transaksi_id === transaksi_id);
+  if (!db.PreInput_Backup) db.PreInput_Backup = [];
+  let pre = db.PreInput_Backup.find((p: any) => p.transaksi_id === transaksi_id);
+
   if (!pre) {
-    return res.status(404).json({ status: "error", message: "Transaksi Pre-Input tidak ditemukan" });
+    const exp = (db.EXP_Resi || []).find((e: any) => e.transaksi_id === transaksi_id);
+    const crg = (db.CRG_Resi || []).find((c: any) => c.transaksi_id === transaksi_id);
+    const resiObj = exp || crg;
+    if (resiObj) {
+      pre = {
+        transaksi_id: resiObj.transaksi_id,
+        nama_pengirim: resiObj.nama_pengirim || "",
+        hp_pengirim: resiObj.hp_pengirim || "",
+        alamat_pengirim: resiObj.alamat_pengirim || "",
+        nama_penerima: resiObj.nama_penerima || "",
+        hp_penerima: resiObj.hp_penerima || "",
+        alamat_penerima: resiObj.alamat_penerima || "",
+        nama_barang: resiObj.nama_barang || "",
+        ekspedisi: exp ? "Express" : "Cargo",
+        berat_kg: resiObj.berat_kg || 0,
+        status: resiObj.status || "SELESAI"
+      };
+    }
+  }
+
+  if (!pre) {
+    return res.json({ status: "success", data: null, message: "Transaksi Pre-Input tidak ditemukan" });
   }
 
   return res.json({ status: "success", data: pre });

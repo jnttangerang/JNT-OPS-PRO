@@ -188,7 +188,7 @@ export default function TransaksiPage({
     setLoadingPreInput(true);
     try {
       const response = await callBackend("getPreInput", { transaksi_id: txId });
-      if (response.status === "success" && response.data) {
+      if (response && response.status === "success" && response.data) {
         const data = response.data;
         setPreInputData(data);
         if (data.ekspedisi) setJenisLayanan(data.ekspedisi);
@@ -211,9 +211,16 @@ export default function TransaksiPage({
         if (response.data.foto_resi_url) {
           setFotoResiUrl(response.data.foto_resi_url);
         }
+      } else {
+        localStorage.removeItem("pending_transaksi_id");
+        setPendingTxId(null);
+        setPreInputData(null);
       }
     } catch (err) {
       console.error("Failed to load pre-input", err);
+      localStorage.removeItem("pending_transaksi_id");
+      setPendingTxId(null);
+      setPreInputData(null);
     } finally {
       setLoadingPreInput(false);
     }
@@ -356,7 +363,7 @@ export default function TransaksiPage({
 
   // Verify unique resi to prevent fraud / duplicate bookings
   const handleVerifyResi = async (idToCheck: string) => {
-    const id = idToCheck.trim().toUpperCase();
+    const id = (idToCheck || "").trim().toUpperCase();
     if (!id) return;
 
     setCheckingResi(true);
@@ -455,7 +462,7 @@ export default function TransaksiPage({
     if (!file) return;
 
     const formattedDate = new Date().toISOString().split("T")[0].replace(/-/g, ""); // YYYYMMDD
-    const finalResiStr = resiId.trim() || "MOCK_RESI";
+    const finalResiStr = (resiId || "").trim() || "MOCK_RESI";
 
     // Auto-name per instructions: BB-YoYi_[Tanggal]_[NoResi] or BB-JTC_[Tanggal]_[NoResi] or BB-ADD_[Tanggal]_[NoResi]
     let generatedFileName = "";
@@ -527,7 +534,7 @@ export default function TransaksiPage({
     setFormError(null);
 
     // Hard validations
-    if (!resiId.trim()) return setFormError("Nomor resi wajib diisi / discan terlebih dahulu!");
+    if (!(resiId || "").trim()) return setFormError("Nomor resi wajib diisi / discan terlebih dahulu!");
     if (resiDuplicateError) return setFormError("Resi sudah terdaftar! Masukkan resi lain.");
     if (ongkirDasar <= 0) return setFormError("Ongkir dasar wajib diisi!");
     if (totalUangDibayarCustomer <= 0) return setFormError("Total uang dibayar customer wajib diisi!");
@@ -543,15 +550,15 @@ export default function TransaksiPage({
 
     // Cargo Motor validation
     if (jenisLayanan === "Cargo" && tipeProdukCrg === "Motor") {
-      if (!merkMotor.trim()) return setFormError("Merk sepeda motor wajib diisi!");
+      if (!(merkMotor || "").trim()) return setFormError("Merk sepeda motor wajib diisi!");
     }
 
     // Assemble payload
     let finalKelengkapan = "";
     if (jenisLayanan === "Cargo" && tipeProdukCrg === "Motor") {
       let items = [...kelengkapanMotor];
-      if (kelengkapanMotor.includes("Lainnya") && kelengkapanLainnya.trim()) {
-        items = items.map((i) => i === "Lainnya" ? `Lainnya (${kelengkapanLainnya.trim()})` : i);
+      if (kelengkapanMotor.includes("Lainnya") && (kelengkapanLainnya || "").trim()) {
+        items = items.map((i) => i === "Lainnya" ? `Lainnya (${(kelengkapanLainnya || "").trim()})` : i);
       }
       finalKelengkapan = items.join(", ");
     }
@@ -562,7 +569,7 @@ export default function TransaksiPage({
 
     if (fotoPaketBlob || fotoResiBlob) {
       const formattedDate = new Date().toISOString().split("T")[0].replace(/-/g, "");
-      const resiPrefix = resiId.trim() || `TMP_${Date.now()}`;
+      const resiPrefix = (resiId || "").trim() || `TMP_${Date.now()}`;
 
       try {
         if (fotoPaketBlob) {
@@ -606,7 +613,7 @@ export default function TransaksiPage({
     }
 
     const transactionData = {
-      resi_id: resiId.trim().toUpperCase(),
+      resi_id: (resiId || "").trim().toUpperCase(),
       transaksi_id: pendingTxId || "",
       admin_id_pencatat: session.user_id,
       outlet_id_input: activeOutletId,
@@ -662,7 +669,7 @@ export default function TransaksiPage({
         localStorage.removeItem("pending_transaksi_id"); 
         
         // Show success sheet instead of immediate reset
-        setSuccessSheet({ resi: resiId.trim().toUpperCase(), total: grandTotal });
+        setSuccessSheet({ resi: (resiId || "").trim().toUpperCase(), total: grandTotal });
         setCountdown(5);
       } else {
         const msg = response.message || "Gagal menyimpan transaksi.";
@@ -946,7 +953,7 @@ export default function TransaksiPage({
                     </div>
                   )}
 
-                  {(!resiDuplicateError && resiId.trim() && !checkingResi) ? (
+                  {(!resiDuplicateError && (resiId || "").trim() && !checkingResi) ? (
                     <div className="mt-2 text-[10px] text-green-600 font-bold flex items-center gap-1 font-mono">
                       <ShieldCheck className="h-3.5 w-3.5 text-green-500" />
                       <span>Resi valid & siap diproses (Anti-Fraud Aman)</span>
