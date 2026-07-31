@@ -56,7 +56,7 @@ async function generateGeminiContentWithFallback(ai: GoogleGenAI, params: {
   contents: any;
   config?: any;
 }) {
-  const models = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"];
+  const models = ["gemini-3.6-flash", "gemini-flash-latest"];
   let lastError: any = null;
 
   for (const model of models) {
@@ -1626,7 +1626,7 @@ app.post("/api/getPreInputDrafts", (req, res) => {
 
 // 7.2 UPDATE PREINPUT STATUS
 app.post("/api/updatePreInputStatus", (req, res) => {
-  const { transaksi_id, status } = req.body || {};
+  const { transaksi_id, status, no_resi, admin_id } = req.body || {};
   if (!transaksi_id || !status) {
     return res.status(400).json({ status: "error", message: "transaksi_id dan status wajib!" });
   }
@@ -1637,7 +1637,23 @@ app.post("/api/updatePreInputStatus", (req, res) => {
     return res.status(404).json({ status: "error", message: "Draft pre-input tidak ditemukan" });
   }
   pre.status = status;
+  if (no_resi) {
+    pre.no_resi = no_resi;
+  }
+  if (admin_id) {
+    pre.admin_id = admin_id;
+  }
   pre.updated_at = new Date().toISOString();
+
+  if (!db.AuditLogs) db.AuditLogs = [];
+  db.AuditLogs.unshift({
+    id: "LOG-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user: admin_id || pre.admin_id || "SYSTEM",
+    action: `UPDATE_STATUS_${String(status).toUpperCase()}`,
+    detail: `Draft ${transaksi_id} status diubah menjadi ${status}${no_resi ? ` (Resi: ${no_resi})` : ""}`
+  });
+
   writeDb(db);
   return res.json({ status: "success", message: `Status draft berhasil diubah ke ${status}`, data: pre });
 });

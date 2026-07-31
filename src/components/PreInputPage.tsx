@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { 
   User, Phone, MapPin, Sparkles, Camera, Image as ImageIcon, 
   Save, ArrowLeft, CheckCircle2, Clipboard, ChevronRight, RefreshCw, AlertCircle, BookOpen,
-  PlusCircle, Search, Filter, XCircle, Clock, Play, Edit3, Trash2, Zap, Check, AlertTriangle, Layers
+  PlusCircle, Search, Filter, XCircle, Clock, Play, Edit3, Trash2, Zap, Check, AlertTriangle, Layers,
+  CreditCard, Hash, ArrowRight, Activity, Scale, DollarSign, Tag
 } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, MasterCustomer, RiwayatPenerima } from "../types";
@@ -71,13 +72,23 @@ export default function PreInputPage({
 
   const [sysConfig, setSysConfig] = useState<any>(null);
 
-  // Workspace States (Operational Board)
+  // Workspace States (Operational Board 4 Columns)
   const [drafts, setDrafts] = useState<any[]>([]);
   const [loadingDrafts, setLoadingDrafts] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("Semua");
   const [autoSaveStatus, setAutoSaveStatus] = useState<string | null>(null);
   const [duplicateAlert, setDuplicateAlert] = useState<any | null>(null);
+
+  // New Operational Workspace Filters
+  const [filterOutlet, setFilterOutlet] = useState<string>("ALL");
+  const [filterHari, setFilterHari] = useState<string>("ALL"); // ALL, TODAY, WEEK, MONTH
+  const [filterEkspedisi, setFilterEkspedisi] = useState<string>("ALL");
+  const [filterAdmin, setFilterAdmin] = useState<string>("ALL");
+
+  // Resi Modal State
+  const [resiModalData, setResiModalData] = useState<any | null>(null);
+  const [inputResiNumber, setInputResiNumber] = useState<string>("");
 
   // Recent Quick Fill lists
   const [recentCustomers, setRecentCustomers] = useState<MasterCustomer[]>([]);
@@ -133,9 +144,9 @@ export default function PreInputPage({
     fetchRecentMasterData();
   }, [callBackend]);
 
-  // Fetch Drafts from backend
-  const fetchDrafts = useCallback(async () => {
-    setLoadingDrafts(true);
+  // Fetch Drafts from backend (supports lightweight background polling)
+  const fetchDrafts = useCallback(async (isBackground = false) => {
+    if (!isBackground) setLoadingDrafts(true);
     try {
       const response = await callBackend("getPreInputDrafts");
       if (response && response.status === "success" && Array.isArray(response.data)) {
@@ -144,9 +155,17 @@ export default function PreInputPage({
     } catch (err) {
       console.error("Gagal memuat list draft workspace:", err);
     } finally {
-      setLoadingDrafts(false);
+      if (!isBackground) setLoadingDrafts(false);
     }
   }, [callBackend]);
+
+  // AUTO REFRESH: Polling ringan setiap 5 detik
+  useEffect(() => {
+    const timer = setInterval(() => {
+      fetchDrafts(true);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [fetchDrafts]);
 
   // Fetch recent customers (max 5) and addresses (max 5)
   const fetchRecentMasterData = useCallback(async () => {
@@ -521,6 +540,7 @@ export default function PreInputPage({
   // Continue Draft to Resi & Bayar page
   const handleLanjutkanDraft = (draft: any) => {
     localStorage.setItem("pending_transaksi_id", draft.transaksi_id);
+    if (draft.no_resi) localStorage.setItem("pending_no_resi", draft.no_resi);
     onNavigate("transaksi");
   };
 
@@ -529,7 +549,8 @@ export default function PreInputPage({
     try {
       const res = await callBackend("updatePreInputStatus", {
         transaksi_id: txId,
-        status: "Dibatalkan"
+        status: "Dibatalkan",
+        admin_id: session.username || session.user_id
       });
       if (res && res.status === "success") {
         toast.success(`Draft ${txId} dibatalkan.`);
@@ -541,6 +562,255 @@ export default function PreInputPage({
     } catch (err: any) {
       toast.error(err.message || "Gagal membatalkan draft.");
     }
+  };
+
+  // Change draft status directly
+  const handleMoveStatus = async (txId: string, newStatus: string, noResiVal?: string) => {
+    try {
+      const res = await callBackend("updatePreInputStatus", {
+        transaksi_id: txId,
+        status: newStatus,
+        no_resi: noResiVal || undefined,
+        admin_id: session.username || session.user_id
+      });
+      if (res && res.status === "success") {
+        toast.success(`Status ${txId} diubah ke ${newStatus}`);
+        fetchDrafts();
+      } else {
+        toast.error(res?.message || "Gagal mengubah status.");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Gagal mengubah status.");
+    }
+  };
+
+  // Submit Resi Number from Modal popup (Input YoYi -> Siap Dibayar)
+  const handleSaveResiNumber = async () => {
+    if (!resiModalData || !inputResiNumber.trim()) {
+      toast.error("Nomor Resi wajib diisi!");
+      return;
+    }
+    const cleanResi = inputResiNumber.trim().toUpperCase();
+    try {
+      const res = await callBackend("updatePreInputStatus", {
+        transaksi_id: resiModalData.transaksi_id,
+        status: "Siap Dibayar",
+        no_resi: cleanResi,
+        admin_id: session.username || session.user_id
+      });
+      if (res && res.status === "success") {
+        toast.success(`Resi ${cleanResi} berhasil disimpan! Status: SIAP DIBAYAR`);
+        setResiModalData(null);
+        setInputResiNumber("");
+        fetchDrafts();
+      } else {
+        toast.error(res?.message || "Gagal menyimpan nomor resi.");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Gagal menyimpan nomor resi.");
+    }
+  };
+
+  // Determine Column for Card
+  const getColumnForCard = useCallback((card: any) => {
+    const st = String(card.status || "").toUpperCase();
+    if (st === "SELESAI") return "SELESAI";
+    if (st === "SIAP DIBAYAR" || st === "SIAP_DIBAYAR" || (card.no_resi && st !== "DRAFT" && st !== "INPUT_YOYI")) {
+      return "SIAP_DIBAYAR";
+    }
+    if (st === "INPUT_YOYI" || st === "PROSES YOYI" || st === "INPUT YOYI") {
+      return "INPUT_YOYI";
+    }
+    return "DRAFT";
+  }, []);
+
+  // Filtered list of all active drafts based on search & filters
+  const filteredDraftsAll = useMemo(() => {
+    return drafts.filter((card) => {
+      // Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchName = (card.nama_pengirim || "").toLowerCase().includes(q) || (card.nama_penerima || "").toLowerCase().includes(q);
+        const matchPhone = (card.hp_pengirim || "").toLowerCase().includes(q) || (card.hp_penerima || "").toLowerCase().includes(q);
+        const matchAddr = (card.alamat_penerima || "").toLowerCase().includes(q) || (card.alamat_pengirim || "").toLowerCase().includes(q);
+        const matchItem = (card.nama_barang || "").toLowerCase().includes(q);
+        const matchResi = (card.no_resi || "").toLowerCase().includes(q);
+        const matchTx = (card.transaksi_id || "").toLowerCase().includes(q);
+        if (!matchName && !matchPhone && !matchAddr && !matchItem && !matchResi && !matchTx) {
+          return false;
+        }
+      }
+
+      // Outlet filter
+      if (filterOutlet !== "ALL" && card.outlet_id_tugas !== filterOutlet) {
+        return false;
+      }
+
+      // Ekspedisi filter
+      if (filterEkspedisi !== "ALL") {
+        const exp = (card.ekspedisi || "Express").toUpperCase();
+        if (!exp.includes(filterEkspedisi.toUpperCase())) return false;
+      }
+
+      // Admin filter
+      if (filterAdmin !== "ALL" && card.admin_id !== filterAdmin) {
+        return false;
+      }
+
+      // Hari filter
+      if (filterHari !== "ALL") {
+        const cardDate = new Date(card.timestamp || card.updated_at || Date.now());
+        const now = new Date();
+        if (filterHari === "TODAY") {
+          if (cardDate.toDateString() !== now.toDateString()) return false;
+        } else if (filterHari === "WEEK") {
+          const diffDays = (now.getTime() - cardDate.getTime()) / (1000 * 3600 * 24);
+          if (diffDays > 7) return false;
+        } else if (filterHari === "MONTH") {
+          if (cardDate.getMonth() !== now.getMonth() || cardDate.getFullYear() !== now.getFullYear()) return false;
+        }
+      }
+
+      if (card.status === "Dibatalkan" && !searchQuery) return false;
+
+      return true;
+    });
+  }, [drafts, searchQuery, filterOutlet, filterEkspedisi, filterAdmin, filterHari]);
+
+  // Distribute into 4 Column Lists (with 30-second auto-hide for SELESAI column)
+  const columnData = useMemo(() => {
+    const draftList: any[] = [];
+    const inputYoyiList: any[] = [];
+    const siapDibayarList: any[] = [];
+    const selesaiList: any[] = [];
+
+    const now = Date.now();
+
+    filteredDraftsAll.forEach((card) => {
+      const col = getColumnForCard(card);
+      if (col === "DRAFT") {
+        draftList.push(card);
+      } else if (col === "INPUT_YOYI") {
+        inputYoyiList.push(card);
+      } else if (col === "SIAP_DIBAYAR") {
+        siapDibayarList.push(card);
+      } else if (col === "SELESAI") {
+        // Auto-hide rule: card in SELESAI column auto disappears after 30 seconds
+        const completedTime = new Date(card.updated_at || card.timestamp || 0).getTime();
+        if (now - completedTime < 30000) {
+          selesaiList.push(card);
+        }
+      }
+    });
+
+    return {
+      DRAFT: draftList,
+      INPUT_YOYI: inputYoyiList,
+      SIAP_DIBAYAR: siapDibayarList,
+      SELESAI: selesaiList
+    };
+  }, [filteredDraftsAll, getColumnForCard]);
+
+  // Recent 5 activities
+  const recentActivities = useMemo(() => {
+    const sorted = [...drafts].sort((a, b) => {
+      const tA = new Date(a.updated_at || a.timestamp || 0).getTime();
+      const tB = new Date(b.updated_at || b.timestamp || 0).getTime();
+      return tB - tA;
+    });
+
+    return sorted.slice(0, 5).map((item) => {
+      const dt = new Date(item.updated_at || item.timestamp || Date.now());
+      const timeStr = dt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+      const user = item.admin_id || "Admin";
+      const st = String(item.status || "Draft").toUpperCase();
+
+      let actionDesc = "Draft dibuat";
+      if (st === "SELESAI") {
+        actionDesc = "Transaksi selesai & terbayar";
+      } else if (st === "SIAP_DIBAYAR" || st === "SIAP DIBAYAR" || item.no_resi) {
+        actionDesc = `Nomor Resi ditambahkan (${item.no_resi || "Tersimpan"})`;
+      } else if (st === "INPUT_YOYI" || st === "PROSES YOYI") {
+        actionDesc = "Masuk proses input YoYi/JTC";
+      } else if (st === "DIBATALKAN") {
+        actionDesc = "Draft dibatalkan";
+      }
+
+      return {
+        time: timeStr,
+        user,
+        action: actionDesc,
+        txId: item.transaksi_id,
+        resi: item.no_resi
+      };
+    });
+  }, [drafts]);
+
+  // Product Badge Renderer
+  const renderProductBadge = (ekspedisi?: string, namaBarang?: string) => {
+    const expUpper = (ekspedisi || "").toUpperCase();
+    const barangUpper = (namaBarang || "").toUpperCase();
+
+    let code = "EXPRESS";
+    let bgClass = "bg-red-50 text-[#E4002B] border-red-200";
+
+    if (expUpper.includes("CARGO")) {
+      code = "CARGO";
+      bgClass = "bg-purple-50 text-purple-700 border-purple-200";
+    } else if (expUpper.includes("DOC") || barangUpper.includes("DOKUMEN") || barangUpper.includes("DOC")) {
+      code = "DOC";
+      bgClass = "bg-teal-50 text-teal-700 border-teal-200";
+    } else if (expUpper.includes("EZ")) {
+      code = "EZ";
+      bgClass = "bg-blue-50 text-blue-700 border-blue-200";
+    } else if (expUpper.includes("HBO")) {
+      code = "HBO";
+      bgClass = "bg-orange-50 text-orange-700 border-orange-200";
+    } else if (expUpper.includes("VIP")) {
+      code = "VIP";
+      bgClass = "bg-yellow-50 text-yellow-800 border-yellow-200";
+    } else if (expUpper.includes("APP")) {
+      code = "APP";
+      bgClass = "bg-pink-50 text-pink-700 border-pink-200";
+    }
+
+    return (
+      <span className={`px-2 py-0.5 text-[10px] font-extrabold uppercase rounded-md border font-mono tracking-wide ${bgClass}`}>
+        {code}
+      </span>
+    );
+  };
+
+  // Priority Badges Renderer
+  const renderPriorityBadges = (card: any) => {
+    const nilai = Number(card.nilai_barang || 0);
+    const berat = Number(card.berat_kg || card.berat_timbangan || 0);
+
+    const badges = [];
+
+    if (nilai > 5000000) {
+      badges.push(
+        <span key="hv" className="px-2 py-0.5 text-[9px] font-black uppercase rounded bg-amber-500 text-white shadow-2xs tracking-wider animate-pulse">
+          💎 HIGH VALUE
+        </span>
+      );
+    }
+
+    if (berat > 20) {
+      badges.push(
+        <span key="heavy" className="px-2 py-0.5 text-[9px] font-black uppercase rounded bg-slate-800 text-white shadow-2xs tracking-wider">
+          ⚖️ HEAVY ({berat}kg)
+        </span>
+      );
+    }
+
+    if (badges.length === 0) return null;
+
+    return (
+      <div className="flex flex-wrap items-center gap-1 pt-1">
+        {badges}
+      </div>
+    );
   };
 
   // Manual Save Handler
@@ -849,7 +1119,7 @@ Catatan : ${catatanAdmin || "-"}
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div className="w-full max-w-[1800px] mx-auto px-3 sm:px-6 py-6 space-y-6">
       
       {/* HEADER SECTION & SHORTCUT TOOLBAR */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6">
@@ -1233,10 +1503,10 @@ Catatan : ${catatanAdmin || "-"}
         </div>
       ) : (
         /* MAIN WORKSPACE 2-AREA LAYOUT */
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-12 gap-6 items-start">
           
-          {/* AREA KIRI: FORM PRE-INPUT (7 COLS) */}
-          <div className="lg:col-span-7 space-y-6">
+          {/* AREA KIRI: FORM PRE-INPUT (40% Desktop / 45% Tablet / 100% Mobile) */}
+          <div className="md:col-span-5 lg:col-span-5 xl:col-span-4 2xl:col-span-4 space-y-6">
 
             {/* DUPLICATE CUSTOMER ALERT BANNER */}
             {duplicateAlert && (
@@ -1588,7 +1858,7 @@ Catatan : ${catatanAdmin || "-"}
                 </div>
 
                 {/* Berat & Volume Grid */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                       Berat Timbangan (KG)
@@ -1609,34 +1879,34 @@ Catatan : ${catatanAdmin || "-"}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 truncate" title="Volume (P x L x T cm)">
                       Volume (P x L x T cm)
                     </label>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 w-full">
                       <input
                         type="number"
                         min="0"
                         value={volP}
                         onChange={(e) => setVolP(e.target.value)}
-                        className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center focus:ring-1 focus:ring-[#E4002B]"
+                        className="flex-1 min-w-0 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center focus:ring-1 focus:ring-[#E4002B]"
                         placeholder="P"
                       />
-                      <span className="text-gray-400 text-xs">x</span>
+                      <span className="text-gray-400 text-xs shrink-0">x</span>
                       <input
                         type="number"
                         min="0"
                         value={volL}
                         onChange={(e) => setVolL(e.target.value)}
-                        className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center focus:ring-1 focus:ring-[#E4002B]"
+                        className="flex-1 min-w-0 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center focus:ring-1 focus:ring-[#E4002B]"
                         placeholder="L"
                       />
-                      <span className="text-gray-400 text-xs">x</span>
+                      <span className="text-gray-400 text-xs shrink-0">x</span>
                       <input
                         type="number"
                         min="0"
                         value={volT}
                         onChange={(e) => setVolT(e.target.value)}
-                        className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center focus:ring-1 focus:ring-[#E4002B]"
+                        className="flex-1 min-w-0 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center focus:ring-1 focus:ring-[#E4002B]"
                         placeholder="T"
                       />
                     </div>
@@ -1754,11 +2024,11 @@ Catatan : ${catatanAdmin || "-"}
               </div>
 
               {/* ACTION BUTTONS */}
-              <div className="pt-2 flex items-center gap-3">
+              <div className="pt-2 flex items-center gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={handleDraftBaru}
-                  className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                  className="py-3 px-3 sm:px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer shrink-0 whitespace-nowrap"
                 >
                   Reset Form
                 </button>
@@ -1766,17 +2036,17 @@ Catatan : ${catatanAdmin || "-"}
                   type="button"
                   onClick={() => handleSavePreInput(false)}
                   disabled={loading || uploadingFotoPaket}
-                  className="flex-1 py-3.5 bg-[#E4002B] hover:bg-[#c20023] disabled:bg-gray-400 text-white font-bold rounded-xl shadow-md flex items-center justify-center gap-2 transition cursor-pointer text-sm"
+                  className="flex-1 py-3 px-3 sm:px-4 bg-[#E4002B] hover:bg-[#c20023] disabled:bg-gray-400 text-white font-extrabold rounded-xl shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer text-xs sm:text-sm whitespace-nowrap min-w-0"
                 >
                   {loading ? (
                     <>
-                      <RefreshCw className="h-4 w-4 animate-spin" />
-                      <span>Menyimpan...</span>
+                      <RefreshCw className="h-4 w-4 animate-spin shrink-0" />
+                      <span className="truncate">Menyimpan...</span>
                     </>
                   ) : (
                     <>
-                      <Save className="h-4 w-4" />
-                      <span>Simpan Pre-Input (Siap Dibayar)</span>
+                      <Save className="h-4 w-4 shrink-0" />
+                      <span className="truncate">Simpan Pre-Input (Siap Dibayar)</span>
                     </>
                   )}
                 </button>
@@ -1785,191 +2055,508 @@ Catatan : ${catatanAdmin || "-"}
             </div>
           </div>
 
-          {/* AREA KANAN: OPERATIONAL WORKSPACE BOARD (5 COLS) */}
-          <div className="lg:col-span-5 space-y-4">
+          {/* AREA KANAN: OPERATIONAL WORKSPACE BOARD (60% Desktop / 55% Tablet / STICKY BOARD) */}
+          <div className="md:col-span-7 lg:col-span-7 xl:col-span-8 2xl:col-span-8 space-y-4 md:sticky md:top-6 lg:sticky lg:top-6 z-10 self-start">
             
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 space-y-4">
               
               {/* BOARD HEADER */}
-              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="bg-red-50 p-1.5 rounded-lg text-[#E4002B]">
-                    <Layers className="h-4 w-4" />
+                  <div className="bg-[#E4002B]/10 p-2 rounded-xl text-[#E4002B]">
+                    <Layers className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-800 text-sm">Workspace Active Drafts</h3>
-                    <p className="text-[10px] text-gray-400">Papan pantau transaksi sebelum selesai</p>
+                    <h3 className="font-bold text-gray-900 text-base">Operational Workspace Board</h3>
+                    <p className="text-xs text-gray-400">Papan pantau & alur otomatis admin outlet J&T</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="bg-red-50 text-[#E4002B] text-xs font-extrabold px-2 py-0.5 rounded-full font-mono">
-                    {filteredDrafts.length}
+                <div className="flex items-center gap-2">
+                  <span className="bg-red-50 text-[#E4002B] text-xs font-extrabold px-2.5 py-1 rounded-full font-mono border border-red-100">
+                    Total: {filteredDraftsAll.length} Draft
                   </span>
                   <button
                     type="button"
-                    onClick={fetchDrafts}
+                    onClick={() => fetchDrafts(false)}
                     disabled={loadingDrafts}
-                    className="p-1.5 bg-gray-50 hover:bg-gray-100 text-gray-500 rounded-lg transition cursor-pointer"
-                    title="Refresh Workspace"
+                    className="p-2 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-xl transition cursor-pointer border border-gray-200"
+                    title="Refresh Manual Board"
                   >
-                    <RefreshCw className={`h-3.5 w-3.5 ${loadingDrafts ? "animate-spin text-[#E4002B]" : ""}`} />
+                    <RefreshCw className={`h-4 w-4 ${loadingDrafts ? "animate-spin text-[#E4002B]" : ""}`} />
                   </button>
                 </div>
               </div>
 
-              {/* SEARCH BAR */}
-              <div className="relative">
-                <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Cari Nama, WA, Barang, Alamat..."
-                  className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery("")}
-                    className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600"
-                  >
-                    <XCircle className="h-3.5 w-3.5" />
-                  </button>
-                )}
+              {/* SUMMARY BAR */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
+                <div className="bg-white p-2.5 rounded-lg border border-blue-100 shadow-2xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">1. Draft</span>
+                    <span className="text-lg font-black text-slate-800 font-mono">{columnData.DRAFT.length}</span>
+                  </div>
+                  <div className="bg-blue-50 text-blue-600 p-1.5 rounded-lg text-xs font-bold">
+                    📋
+                  </div>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-lg border border-amber-100 shadow-2xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider block">2. Input YoYi</span>
+                    <span className="text-lg font-black text-slate-800 font-mono">{columnData.INPUT_YOYI.length}</span>
+                  </div>
+                  <div className="bg-amber-50 text-amber-600 p-1.5 rounded-lg text-xs font-bold">
+                    ⚡
+                  </div>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-lg border border-emerald-100 shadow-2xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">3. Siap Dibayar</span>
+                    <span className="text-lg font-black text-slate-800 font-mono">{columnData.SIAP_DIBAYAR.length}</span>
+                  </div>
+                  <div className="bg-emerald-50 text-emerald-600 p-1.5 rounded-lg text-xs font-bold">
+                    💳
+                  </div>
+                </div>
+
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200 shadow-2xs flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">4. Selesai</span>
+                    <span className="text-lg font-black text-slate-800 font-mono">{columnData.SELESAI.length}</span>
+                  </div>
+                  <div className="bg-slate-100 text-slate-600 p-1.5 rounded-lg text-xs font-bold">
+                    ✅
+                  </div>
+                </div>
               </div>
 
-              {/* FILTER TABS */}
-              <div className="flex items-center gap-1 overflow-x-auto pb-1 text-xs no-scrollbar">
-                {["Semua", "Draft", "Siap Dibayar", "Diproses"].map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setFilterStatus(tab)}
-                    className={`px-2.5 py-1 rounded-lg font-bold text-[11px] whitespace-nowrap transition cursor-pointer ${
-                      filterStatus === tab
-                        ? "bg-[#E4002B] text-white shadow-sm"
-                        : "bg-gray-50 text-gray-600 hover:bg-gray-100"
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
+              {/* SEARCH BAR & MULTI FILTERS */}
+              <div className="space-y-2">
+                <div className="relative">
+                  <Search className="h-4 w-4 absolute left-3 top-2.5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search realtime: Nama, WA, Alamat, Barang, Nomor Resi..."
+                    className="w-full pl-9 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#E4002B]/30"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600"
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* FILTER DROPDOWNS */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <select
+                      value={filterOutlet}
+                      onChange={(e) => setFilterOutlet(e.target.value)}
+                      className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
+                    >
+                      <option value="ALL">Semua Outlet</option>
+                      {outlets.map((o) => (
+                        <option key={o.outlet_id} value={o.outlet_id}>
+                          {o.nama_outlet} ({o.outlet_id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <select
+                      value={filterHari}
+                      onChange={(e) => setFilterHari(e.target.value)}
+                      className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
+                    >
+                      <option value="ALL">Semua Hari</option>
+                      <option value="TODAY">Hari Ini</option>
+                      <option value="WEEK">7 Hari Terakhir</option>
+                      <option value="MONTH">Bulan Ini</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <select
+                      value={filterEkspedisi}
+                      onChange={(e) => setFilterEkspedisi(e.target.value)}
+                      className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
+                    >
+                      <option value="ALL">Semua Ekspedisi</option>
+                      <option value="Express">Express</option>
+                      <option value="Cargo">Cargo</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <select
+                      value={filterAdmin}
+                      onChange={(e) => setFilterAdmin(e.target.value)}
+                      className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
+                    >
+                      <option value="ALL">Semua Admin</option>
+                      {Array.from(new Set(drafts.map((d) => d.admin_id).filter(Boolean))).map((adm) => (
+                        <option key={adm} value={adm}>
+                          {adm}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
 
-              {/* DRAFTS LIST CARDS */}
+              {/* 4 OPERATIONAL BOARD COLUMNS */}
               {loadingDrafts ? (
                 <div className="py-12 text-center text-xs text-gray-400 flex flex-col items-center gap-2">
-                  <RefreshCw className="h-5 w-5 animate-spin text-[#E4002B]" />
-                  <span>Memuat workspace draft...</span>
-                </div>
-              ) : filteredDrafts.length === 0 ? (
-                <div className="py-12 text-center text-xs text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200 space-y-1">
-                  <p className="font-semibold text-gray-600">Belum ada Draft di Workspace</p>
-                  <p className="text-[10px]">Isi form di sebelah kiri untuk membuat draft baru.</p>
+                  <RefreshCw className="h-6 w-6 animate-spin text-[#E4002B]" />
+                  <span>Memuat workspace operational board...</span>
                 </div>
               ) : (
-                <div className="space-y-3 max-h-[750px] overflow-y-auto pr-1">
-                  {filteredDrafts.map((card) => {
-                    const isCurrent = editingTxId === card.transaksi_id;
-                    const dateObj = card.timestamp ? new Date(card.timestamp) : new Date();
-                    const timeFormatted = dateObj.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-
-                    return (
-                      <div
-                        key={card.transaksi_id}
-                        className={`p-3.5 bg-white rounded-xl border transition space-y-2.5 shadow-sm ${
-                          isCurrent 
-                            ? "border-[#E4002B] ring-2 ring-red-100 bg-red-50/20" 
-                            : "border-gray-200 hover:border-gray-300"
-                        }`}
-                      >
-                        {/* CARD HEADER */}
-                        <div className="flex items-start justify-between gap-2 border-b border-gray-100 pb-2">
-                          <div>
-                            <div className="flex items-center gap-1.5">
-                              <h4 className="font-bold text-gray-900 text-xs">
-                                {card.nama_pengirim || "Customer Umum"}
-                              </h4>
-                              {card.hp_pengirim && (
-                                <span className="text-[10px] text-gray-500 font-mono">
-                                  ({card.hp_pengirim})
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-[9px] text-gray-400 font-mono">
-                              {card.transaksi_id} • {timeFormatted}
-                            </span>
-                          </div>
-
-                          <div className="shrink-0">
-                            {renderStatusBadge(card.status)}
-                          </div>
-                        </div>
-
-                        {/* CARD BODY */}
-                        <div className="text-xs space-y-1 text-gray-700">
-                          <div className="flex items-center gap-2">
-                            <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded uppercase font-mono ${
-                              card.ekspedisi === "Cargo" ? "bg-purple-100 text-purple-800" : "bg-[#E4002B]/10 text-[#E4002B]"
-                            }`}>
-                              {card.ekspedisi || "Express"}
-                            </span>
-                            <span className="font-bold text-gray-800 truncate">
-                              {card.nama_barang || "Tanpa Nama Barang"}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between text-[11px] text-gray-500 font-mono">
-                            <span>Berat Penagihan: <strong className="text-gray-800">{card.berat_kg || card.berat_timbangan || 0} kg</strong></span>
-                            <span>Kepada: <strong className="text-gray-800">{card.nama_penerima || "-"}</strong></span>
-                          </div>
-
-                          {card.alamat_penerima && (
-                            <p className="text-[10px] text-gray-400 truncate">
-                              📍 {card.alamat_penerima}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* CARD FOOTER OPERATIONS */}
-                        <div className="pt-2 border-t border-gray-100 flex items-center justify-between gap-1.5 text-[11px]">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleSelectDraftToEdit(card)}
-                              className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg transition flex items-center gap-1 cursor-pointer"
-                            >
-                              <Edit3 className="h-3 w-3" />
-                              <span>Edit</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleBatalkanDraft(card.transaksi_id)}
-                              className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-lg transition flex items-center gap-1 cursor-pointer"
-                            >
-                              <XCircle className="h-3 w-3" />
-                              <span>Batalkan</span>
-                            </button>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleLanjutkanDraft(card)}
-                            className="px-3 py-1 bg-[#E4002B] hover:bg-[#c20023] text-white font-bold rounded-lg transition flex items-center gap-1 shadow-sm cursor-pointer"
-                          >
-                            <span>Lanjutkan</span>
-                            <ChevronRight className="h-3 w-3" />
-                          </button>
-                        </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 pt-2">
+                  
+                  {/* KOLOM 1: DRAFT */}
+                  <div className="bg-blue-50/40 border border-blue-200/80 rounded-2xl p-3 flex flex-col space-y-3 min-h-[380px]">
+                    <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-blue-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded">1</span>
+                        <h4 className="font-extrabold text-blue-900 text-xs uppercase tracking-wide">DRAFT</h4>
                       </div>
-                    );
-                  })}
+                      <span className="bg-blue-100 text-blue-800 text-[10px] font-black px-2 py-0.5 rounded-full font-mono">
+                        {columnData.DRAFT.length}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+                      {columnData.DRAFT.length === 0 ? (
+                        <p className="text-[11px] text-blue-400 text-center py-8 italic">Tidak ada Draft baru</p>
+                      ) : (
+                        columnData.DRAFT.map((card) => {
+                          const isCurrent = editingTxId === card.transaksi_id;
+                          const dateObj = card.timestamp ? new Date(card.timestamp) : new Date();
+                          const timeFormatted = dateObj.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+
+                          return (
+                            <div
+                              key={card.transaksi_id}
+                              className={`p-3 bg-white rounded-xl border transition space-y-2.5 shadow-2xs min-h-[120px] flex flex-col justify-between ${
+                                isCurrent ? "border-[#E4002B] ring-2 ring-red-100" : "border-slate-200 hover:border-slate-300"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-1 border-b border-gray-100 pb-1.5">
+                                <div>
+                                  <h5 className="font-bold text-slate-900 text-xs">{card.nama_pengirim || "Customer Umum"}</h5>
+                                  <span className="text-[9px] text-gray-400 font-mono">{card.transaksi_id} • {timeFormatted}</span>
+                                </div>
+                                {renderProductBadge(card.ekspedisi, card.nama_barang)}
+                              </div>
+
+                              <div className="text-[11px] space-y-1 text-slate-700">
+                                <p className="font-semibold truncate text-slate-800">📦 {card.nama_barang || "Tanpa Nama Barang"}</p>
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                                  <span>1 Paket • {card.berat_kg || card.berat_timbangan || 0} kg</span>
+                                  <span>📞 {card.hp_pengirim || "-"}</span>
+                                </div>
+                                {renderPriorityBadges(card)}
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1 text-[10px]">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectDraftToEdit(card)}
+                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
+                                >
+                                  <Edit3 className="h-3 w-3 shrink-0" />
+                                  <span>Edit</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleBatalkanDraft(card.transaksi_id)}
+                                  className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
+                                >
+                                  <XCircle className="h-3 w-3 shrink-0" />
+                                  <span>Batal</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleMoveStatus(card.transaksi_id, "INPUT_YOYI")}
+                                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap"
+                                >
+                                  <span>Lanjutkan</span>
+                                  <ChevronRight className="h-3 w-3 shrink-0" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* KOLOM 2: INPUT YOYI / JTC */}
+                  <div className="bg-amber-50/40 border border-amber-200/80 rounded-2xl p-3 flex flex-col space-y-3 min-h-[380px]">
+                    <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-amber-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded">2</span>
+                        <h4 className="font-extrabold text-amber-900 text-xs uppercase tracking-wide">INPUT YOYI / JTC</h4>
+                      </div>
+                      <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-full font-mono">
+                        {columnData.INPUT_YOYI.length}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+                      {columnData.INPUT_YOYI.length === 0 ? (
+                        <p className="text-[11px] text-amber-500 text-center py-8 italic">Tidak ada antrean YoYi</p>
+                      ) : (
+                        columnData.INPUT_YOYI.map((card) => {
+                          const dateObj = card.timestamp ? new Date(card.timestamp) : new Date();
+                          const timeFormatted = dateObj.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+
+                          return (
+                            <div key={card.transaksi_id} className="p-3 bg-white rounded-xl border border-amber-200/80 transition space-y-2.5 shadow-2xs min-h-[120px] flex flex-col justify-between">
+                              <div className="flex items-start justify-between gap-1 border-b border-gray-100 pb-1.5">
+                                <div>
+                                  <h5 className="font-bold text-slate-900 text-xs">{card.nama_pengirim || "Customer Umum"}</h5>
+                                  <span className="text-[9px] text-amber-600 font-mono font-bold">Sedang Diketik di YoYi</span>
+                                </div>
+                                {renderProductBadge(card.ekspedisi, card.nama_barang)}
+                              </div>
+
+                              <div className="text-[11px] space-y-1 text-slate-700">
+                                <p className="font-semibold truncate text-slate-800">📦 {card.nama_barang || "Tanpa Nama Barang"}</p>
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                                  <span>{card.berat_kg || card.berat_timbangan || 0} kg</span>
+                                  <span>📍 {card.alamat_penerima ? card.alamat_penerima.slice(0, 18) + "..." : "-"}</span>
+                                </div>
+                                {renderPriorityBadges(card)}
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setResiModalData(card)}
+                                  className="w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg text-[11px] transition cursor-pointer flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap"
+                                >
+                                  <Hash className="h-3.5 w-3.5 shrink-0" />
+                                  <span>Nomor Resi Sudah Ada</span>
+                                </button>
+                                <div className="flex items-center justify-between gap-1 text-[10px]">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectDraftToEdit(card)}
+                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition shrink-0 whitespace-nowrap"
+                                  >
+                                    Buka Draft
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMoveStatus(card.transaksi_id, "Draft")}
+                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold rounded-lg transition shrink-0 whitespace-nowrap"
+                                  >
+                                    Kembali Draft
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* KOLOM 3: SIAP DIBAYAR */}
+                  <div className="bg-emerald-50/40 border border-emerald-200/80 rounded-2xl p-3 flex flex-col space-y-3 min-h-[380px]">
+                    <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-emerald-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded">3</span>
+                        <h4 className="font-extrabold text-emerald-900 text-xs uppercase tracking-wide">SIAP DIBAYAR</h4>
+                      </div>
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full font-mono">
+                        {columnData.SIAP_DIBAYAR.length}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+                      {columnData.SIAP_DIBAYAR.length === 0 ? (
+                        <p className="text-[11px] text-emerald-500 text-center py-8 italic">Belum ada transaksi siap bayar</p>
+                      ) : (
+                        columnData.SIAP_DIBAYAR.map((card) => {
+                          return (
+                            <div key={card.transaksi_id} className="p-3 bg-white rounded-xl border border-emerald-200 transition space-y-2.5 shadow-2xs min-h-[120px] flex flex-col justify-between">
+                              <div className="flex items-start justify-between gap-1 border-b border-gray-100 pb-1.5">
+                                <div>
+                                  <h5 className="font-bold text-slate-900 text-xs">{card.nama_pengirim || "Customer Umum"}</h5>
+                                  {card.no_resi && (
+                                    <span className="text-[10px] font-mono font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 block mt-0.5">
+                                      Resi: {card.no_resi}
+                                    </span>
+                                  )}
+                                </div>
+                                {renderProductBadge(card.ekspedisi, card.nama_barang)}
+                              </div>
+
+                              <div className="text-[11px] space-y-1 text-slate-700">
+                                <p className="font-semibold truncate text-slate-800">📦 {card.nama_barang || "Tanpa Nama Barang"}</p>
+                                <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
+                                  <span>{card.berat_kg || card.berat_timbangan || 0} kg</span>
+                                  <span>Ke: {card.nama_penerima || "-"}</span>
+                                </div>
+                                {renderPriorityBadges(card)}
+                              </div>
+
+                              <div className="pt-2 border-t border-slate-100">
+                                <button
+                                  type="button"
+                                  onClick={() => handleLanjutkanDraft(card)}
+                                  className="w-full py-2 px-2.5 bg-[#E4002B] hover:bg-[#c20023] text-white font-extrabold rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap"
+                                >
+                                  <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                                  <span>Masuk Resi & Bayar</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
+                  {/* KOLOM 4: SELESAI */}
+                  <div className="bg-slate-100/60 border border-slate-200 rounded-2xl p-3 flex flex-col space-y-3 min-h-[380px]">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                      <div className="flex items-center gap-1.5">
+                        <span className="bg-slate-700 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded">4</span>
+                        <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wide">SELESAI</h4>
+                      </div>
+                      <span className="bg-slate-200 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-full font-mono">
+                        {columnData.SELESAI.length}
+                      </span>
+                    </div>
+
+                    <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+                      {columnData.SELESAI.length === 0 ? (
+                        <p className="text-[11px] text-slate-400 text-center py-8 italic">Tidak ada transaksi baru selesai</p>
+                      ) : (
+                        columnData.SELESAI.map((card) => {
+                          return (
+                            <div key={card.transaksi_id} className="p-3 bg-white/90 rounded-xl border border-slate-200 text-slate-600 space-y-1.5 shadow-2xs opacity-90 min-h-[120px] flex flex-col justify-between">
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-1">
+                                <span className="font-bold text-xs text-slate-800 truncate">{card.nama_pengirim || "Customer"}</span>
+                                <span className="bg-emerald-100 text-emerald-800 text-[9px] font-black px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                  <Check className="h-3 w-3" /> SELESAI
+                                </span>
+                              </div>
+                              <p className="text-[11px] font-mono font-bold text-slate-700">Resi: {card.no_resi || card.transaksi_id}</p>
+                              <p className="text-[10px] text-slate-400">Card otomatis hilang dlm 30s</p>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+
                 </div>
               )}
+
+              {/* RECENT ACTIVITY LOG SECTION */}
+              <div className="pt-3 border-t border-gray-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-gray-500" />
+                    <h4 className="font-bold text-gray-800 text-xs uppercase tracking-wider">Recent Activity (5 Terakhir)</h4>
+                  </div>
+                  <span className="text-[9px] text-gray-400 font-mono">Audit Operasional</span>
+                </div>
+
+                <div className="bg-gray-50/80 rounded-xl p-2.5 border border-gray-200/80 space-y-1.5 text-xs">
+                  {recentActivities.length === 0 ? (
+                    <p className="text-[11px] text-gray-400 text-center py-1">Belum ada log aktivitas.</p>
+                  ) : (
+                    recentActivities.map((act, i) => (
+                      <div key={i} className="flex items-center justify-between text-[11px] py-0.5 border-b border-gray-200/40 last:border-0">
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <span className="font-mono text-[10px] font-bold text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-200 shrink-0">
+                            {act.time}
+                          </span>
+                          <span className="font-bold text-gray-800 shrink-0">{act.user}</span>
+                          <span className="text-gray-300">↓</span>
+                          <span className="text-gray-600 truncate">{act.action}</span>
+                        </div>
+                        <span className="font-mono text-[10px] text-red-600 font-semibold shrink-0">
+                          {act.txId}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
 
             </div>
 
           </div>
 
+        </div>
+      )}
+
+      {/* MODAL INPUT NOMOR RESI YOYI / JTC */}
+      {resiModalData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100 animate-in fade-in zoom-in duration-150">
+            <div className="bg-[#E4002B] px-5 py-4 text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-base">Input Nomor Resi (YoYi / JTC)</h3>
+                <p className="text-xs text-red-100 font-mono mt-0.5">{resiModalData.transaksi_id} • {resiModalData.nama_pengirim || "Customer"}</p>
+              </div>
+              <button 
+                onClick={() => { setResiModalData(null); setInputResiNumber(""); }}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10"
+              >
+                <XCircle className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Nomor Resi J&T / JTC <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={inputResiNumber}
+                  onChange={(e) => setInputResiNumber(e.target.value.toUpperCase())}
+                  placeholder="Contoh: JX1234567890"
+                  className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#E4002B]"
+                  autoFocus
+                />
+                <p className="text-[10px] text-gray-400 mt-1">
+                  Setelah disimpan, status otomatis berpindah ke <strong className="text-emerald-600">SIAP DIBAYAR</strong>.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => { setResiModalData(null); setInputResiNumber(""); }}
+                  className="w-1/3 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveResiNumber}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-sm transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Simpan & Pindah</span>
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

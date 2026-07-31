@@ -71,6 +71,10 @@ function handleRouting(action, params) {
       return apiGetRiwayatPenerima(params);
     case "getPreInput":
       return apiGetPreInput(params);
+    case "getPreInputDrafts":
+      return apiGetPreInputDrafts(params);
+    case "updatePreInputStatus":
+      return apiUpdatePreInputStatus(params);
     case "checkDuplicateResi":
       return apiCheckDuplicateResi(params);
     case "saveDataPreInput":
@@ -299,6 +303,49 @@ function apiGetPreInput(params) {
 }
 
 /**
+ * Ambil semua Draft Pre-Input untuk workspace
+ */
+function apiGetPreInputDrafts(params) {
+  try {
+    var data = DatabaseService.getSheetData("PreInput_Backup");
+    var headers = data ? data[0] : [];
+    var drafts = [];
+    if (data && data.length > 1) {
+      for (var i = 1; i < data.length; i++) {
+        var rowObj = rowToObject_(headers, data[i]);
+        if (rowObj) {
+          drafts.push(rowObj);
+        }
+      }
+    }
+    return { status: "success", data: drafts };
+  } catch (err) {
+    return { status: "error", message: err.message };
+  }
+}
+
+/**
+ * Update Status Pre-Input
+ */
+function apiUpdatePreInputStatus(params) {
+  try {
+    var txId = params.transaksi_id;
+    var status = params.status;
+    if (!txId || !status) {
+      return { status: "error", message: "transaksi_id dan status wajib!" };
+    }
+    var updateObj = { status: status };
+    if (params.no_resi) {
+      updateObj.no_resi = params.no_resi;
+    }
+    DatabaseService.updateRowByColumn("PreInput_Backup", "transaksi_id", txId, updateObj);
+    return { status: "success", message: "Status Pre-Input berhasil diperbarui!" };
+  } catch (err) {
+    return { status: "error", message: err.message };
+  }
+}
+
+/**
  * 4. Cek Duplikat Resi
  */
 function apiCheckDuplicateResi(params) {
@@ -360,7 +407,7 @@ function apiPerbaikiAlamatAI(params) {
     };
   }
 
-  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=" + apiKey;
+  var url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=" + apiKey;
 
   var payload = {
     contents: [{

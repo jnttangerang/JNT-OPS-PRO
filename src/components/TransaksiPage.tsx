@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { 
   Scan, AlertTriangle, ShieldCheck, HelpCircle, FileText, Landmark, Wallet, 
-  ToggleLeft, ToggleRight, ArrowRight, CheckCircle, RefreshCw, Upload, Camera
+  ToggleLeft, ToggleRight, ArrowRight, CheckCircle, RefreshCw, Upload, Camera,
+  Lock, ArrowLeft, ChevronLeft, ChevronRight, Layers, CornerDownLeft, Check
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import useAppsScript from "../hooks/useAppsScript";
@@ -32,6 +33,10 @@ export default function TransaksiPage({
   const [pendingTxId, setPendingTxId] = useState<string | null>(null);
   const [preInputData, setPreInputData] = useState<PreInputBackup | null>(null);
   const [loadingPreInput, setLoadingPreInput] = useState(false);
+
+  // Draft Queue State
+  const [draftQueue, setDraftQueue] = useState<PreInputBackup[]>([]);
+  const [activeDraftIndex, setActiveDraftIndex] = useState<number>(0);
 
   // Layout switcher
   const [jenisLayanan, setJenisLayanan] = useState<"Express" | "Cargo">("Express");
@@ -135,6 +140,34 @@ export default function TransaksiPage({
   const fileInputRef2 = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
+  // Fetch Queue of Drafts
+  const fetchQueue = useCallback(async () => {
+    try {
+      const res = await callBackend("getPreInputDrafts", { outlet_id: activeOutletId });
+      if (res && res.status === "success" && Array.isArray(res.data)) {
+        const pendingList = res.data.filter((d: any) => 
+          (d.status === "SIAP_DIBAYAR" || d.status === "PENDING" || d.status === "INPUT_YOYI" || d.status === "INPUT_JTC") &&
+          d.status !== "SELESAI" && d.status !== "Dibatalkan"
+        );
+        setDraftQueue(pendingList);
+
+        const pId = localStorage.getItem("pending_transaksi_id");
+        if (pId) {
+          const idx = pendingList.findIndex((d: any) => d.transaksi_id === pId);
+          if (idx !== -1) {
+            setActiveDraftIndex(idx);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Gagal mengambil antrean draft:", err);
+    }
+  }, [callBackend, activeOutletId]);
+
+  useEffect(() => {
+    fetchQueue();
+  }, [fetchQueue]);
+
   useEffect(() => {
     if (successSheet) {
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -202,9 +235,17 @@ export default function TransaksiPage({
 
         // Pre-fill fields where possible
         if (data.nilai_barang > 0) {
-          // Auto estimate insurance (usually 0.2% of value, but we let user input, we can pre-seed with a simple calc)
           const insEstimate = Math.ceil(data.nilai_barang * 0.002);
           setBiayaAsuransiInput(insEstimate.toLocaleString("id-ID"));
+        }
+        if (data.no_resi) {
+          setResiId(data.no_resi);
+        } else {
+          const storedResi = localStorage.getItem("pending_no_resi");
+          if (storedResi) {
+            setResiId(storedResi);
+            localStorage.removeItem("pending_no_resi");
+          }
         }
         if (data.foto_paket_url) {
           setFotoPaketUrl(data.foto_paket_url);
@@ -224,6 +265,35 @@ export default function TransaksiPage({
       setPreInputData(null);
     } finally {
       setLoadingPreInput(false);
+    }
+  };
+
+  // Select a draft index in the queue
+  const handleSelectDraftIndex = (index: number) => {
+    if (index < 0 || index >= draftQueue.length) return;
+    const target = draftQueue[index];
+    if (!target) return;
+
+    setActiveDraftIndex(index);
+    setPendingTxId(target.transaksi_id);
+    localStorage.setItem("pending_transaksi_id", target.transaksi_id);
+    loadPreInputDetails(target.transaksi_id);
+    toast.info(`Membuka Draft (${index + 1}/${draftQueue.length}): ${target.transaksi_id}`);
+  };
+
+  const handleGoToNextDraft = () => {
+    if (activeDraftIndex < draftQueue.length - 1) {
+      handleSelectDraftIndex(activeDraftIndex + 1);
+    } else {
+      toast.info("Sudah berada di draft paling akhir dalam antrean.");
+    }
+  };
+
+  const handleGoToPrevDraft = () => {
+    if (activeDraftIndex > 0) {
+      handleSelectDraftIndex(activeDraftIndex - 1);
+    } else {
+      toast.info("Sudah berada di draft pertama dalam antrean.");
     }
   };
 
@@ -457,6 +527,23 @@ export default function TransaksiPage({
   const setoranKeOwner = biayaDasarLayanan + pembulatan;
   const kasOperasional = biayaTambahan;
 
+  // Phase 15.2 - Lock Field & Step Validations
+  const isLockedFromDraft = Boolean(pendingTxId && preInputData);
+
+  const stepFotoPaket = Boolean(fotoPaketUrl || fotoPaketPreview);
+  const stepFotoResi = Boolean(fotoResiUrl || fotoResiPreview);
+  const stepBarcode = Boolean(resiId && resiId.trim() && !resiDuplicateError);
+  const stepProdukYoYi = Boolean(
+    (jenisLayanan === "Express" ? tipeProdukExp : tipeProdukCrg) && ongkirDasar > 0
+  );
+  const stepPembayaran = Boolean(
+    totalUangDibayarCustomer >= biayaDasarLayanan &&
+    totalUangDibayarCustomer > 0 &&
+    (metodeBayar === "Tunai" || Boolean(buktiBayarUrl || fotoResiUrl || fotoResiPreview))
+  );
+
+  const isAllStepsValid = stepFotoPaket && stepFotoResi && stepBarcode && stepProdukYoYi && stepPembayaran;
+
   // Auto file-name generation and upload helper
   const handleUploadProof = async (e: React.ChangeEvent<HTMLInputElement>, isSurchargeProof: boolean) => {
     const file = e.target.files?.[0];
@@ -535,6 +622,8 @@ export default function TransaksiPage({
     setFormError(null);
 
     // Hard validations
+    if (!stepFotoPaket) return setFormError("Foto Paket wajib ada sebelum menyimpan transaksi!");
+    if (!stepFotoResi) return setFormError("Foto Resi wajib ada sebelum menyimpan transaksi!");
     if (!(resiId || "").trim()) return setFormError("Nomor resi wajib diisi / discan terlebih dahulu!");
     if (resiDuplicateError) return setFormError("Resi sudah terdaftar! Masukkan resi lain.");
     if (ongkirDasar <= 0) return setFormError("Ongkir dasar wajib diisi!");
@@ -684,13 +773,15 @@ export default function TransaksiPage({
     }
   };
 
-  // Reset page to receive another
+  // Reset page to receive another / auto open next draft
   const handleNextTransaction = () => {
+    const completedTxId = pendingTxId;
+    const remainingQueue = draftQueue.filter((d) => d.transaksi_id !== completedTxId);
+    setDraftQueue(remainingQueue);
+
     setTransactionSuccess(false);
     setSavedResiSummary(null);
     setResiId("");
-    setPreInputData(null);
-    setPendingTxId(null);
     setBiayaLainInput("");
     setBiayaAsuransiInput("");
     setOngkirDasarInput("");
@@ -718,10 +809,74 @@ export default function TransaksiPage({
     setKelengkapanLainnya("");
     setResiDuplicateError(false);
     setFormError(null);
+
+    // Auto open next draft if available
+    if (completedTxId && remainingQueue.length > 0) {
+      const nextDraft = remainingQueue[0];
+      toast.info(`🎉 Selesai! Otomatis membuka Draft berikutnya: ${nextDraft.transaksi_id}`);
+      setActiveDraftIndex(0);
+      setPendingTxId(nextDraft.transaksi_id);
+      localStorage.setItem("pending_transaksi_id", nextDraft.transaksi_id);
+      loadPreInputDetails(nextDraft.transaksi_id);
+      setTimeout(() => {
+        resiInputRef.current?.focus();
+      }, 100);
+      return;
+    }
+
+    if (completedTxId) {
+      toast.info("✅ Seluruh antrean draft telah selesai diproses!");
+    }
+    setPreInputData(null);
+    setPendingTxId(null);
+    localStorage.removeItem("pending_transaksi_id");
     setTimeout(() => {
       resiInputRef.current?.focus();
     }, 100);
   };
+
+  // Keyboard Shortcuts Listener (Phase 15.2 - Requirement #8)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (successSheet) {
+          setSuccessSheet(null);
+          handleNextTransaction();
+          return;
+        }
+        onNavigate("pre-input");
+        return;
+      }
+
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          if (isAllStepsValid && !loading && !successSheet) {
+            handleSaveTransaksi();
+          } else {
+            toast.error("Harap lengkapi semua langkah sebelum menyimpan.");
+          }
+        } else if (e.key === "ArrowRight") {
+          const activeEl = document.activeElement;
+          const isInputActive = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.tagName === "SELECT");
+          if (!isInputActive) {
+            e.preventDefault();
+            handleGoToNextDraft();
+          }
+        } else if (e.key === "ArrowLeft") {
+          const activeEl = document.activeElement;
+          const isInputActive = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.tagName === "SELECT");
+          if (!isInputActive) {
+            e.preventDefault();
+            handleGoToPrevDraft();
+          }
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isAllStepsValid, loading, successSheet, activeDraftIndex, draftQueue, onNavigate, fotoPaketUrl, fotoPaketPreview, fotoResiUrl, fotoResiPreview, resiId, resiDuplicateError, ongkirDasar, totalUangDibayarCustomer, biayaDasarLayanan, metodeBayar, buktiBayarUrl]);
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
@@ -774,49 +929,149 @@ export default function TransaksiPage({
       {/* RENDER TRANSACTION CALCULATOR FORM */}
       <div className="space-y-6">
 
-        {/* 1. DETEKSI PRE-INPUT COMPONENT CARD */}
-          {pendingTxId && preInputData ? (
-            <div className="bg-red-50/50 rounded-2xl border border-red-100 p-4 sm:p-5">
-              <div className="flex justify-between items-start mb-3">
-                <div className="flex items-center gap-2">
-                  <span className="animate-ping h-2.5 w-2.5 bg-[#E4002B] rounded-full inline-block shrink-0"></span>
-                  <p className="text-xs font-bold text-[#E4002B] uppercase font-mono tracking-wider">
-                    Terhubung Pre-Input Aktif: {pendingTxId}
-                  </p>
+        {/* PHASE 15.2 - PROGRESS INDICATOR OPERASIONAL */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center justify-between gap-1 sm:gap-2 text-center overflow-x-auto pb-2">
+            {[
+              { label: "Draft", done: true, active: false },
+              { label: "Foto Paket", done: stepFotoPaket, active: !stepFotoPaket },
+              { label: "Foto Resi", done: stepFotoResi, active: stepFotoPaket && !stepFotoResi },
+              { label: "Barcode", done: stepBarcode, active: stepFotoPaket && stepFotoResi && !stepBarcode },
+              { label: "Produk YoYi", done: stepProdukYoYi, active: stepFotoPaket && stepFotoResi && stepBarcode && !stepProdukYoYi },
+              { label: "Pembayaran", done: stepPembayaran, active: stepFotoPaket && stepFotoResi && stepBarcode && stepProdukYoYi && !stepPembayaran },
+              { label: "Selesai", done: isAllStepsValid, active: isAllStepsValid }
+            ].map((item, idx, arr) => (
+              <React.Fragment key={item.label}>
+                <div className="flex flex-col items-center min-w-[70px]">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                    item.done
+                      ? "bg-green-600 text-white shadow-sm"
+                      : item.active
+                      ? "bg-[#E4002B] text-white animate-pulse"
+                      : "bg-gray-100 text-gray-400"
+                  }`}>
+                    {item.done ? "✓" : idx + 1}
+                  </div>
+                  <span className={`text-[10px] font-bold mt-1.5 whitespace-nowrap ${
+                    item.done ? "text-green-700" : item.active ? "text-[#E4002B]" : "text-gray-400"
+                  }`}>
+                    {item.label}
+                  </span>
                 </div>
-                <button
-                  onClick={handleClearPreInputRef}
-                  className="text-[10px] font-bold text-gray-400 hover:text-red-700 uppercase tracking-widest bg-white py-1 px-2.5 rounded-lg border border-gray-200 cursor-pointer"
-                >
-                  Lepas Filter Pre-Input
-                </button>
+                {idx < arr.length - 1 && (
+                  <div className={`h-0.5 flex-1 min-w-[12px] my-auto ${
+                    item.done ? "bg-green-500" : "bg-gray-200"
+                  }`} />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+
+        {/* 1. DETEKSI PRE-INPUT COMPONENT CARD / FINALIZATION HEADER */}
+          {pendingTxId && preInputData ? (
+            <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 p-4 sm:p-5 shadow-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <span className="animate-ping h-2.5 w-2.5 bg-[#E4002B] rounded-full inline-block shrink-0"></span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <Lock className="h-3.5 w-3.5 text-amber-400" />
+                      <p className="text-xs font-bold text-amber-400 uppercase font-mono tracking-wider">
+                        FINALISASI TRANSAKSI READ-ONLY — {pendingTxId}
+                      </p>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Identitas Pelanggan & Paket Terkunci dari Draft Workspace
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {draftQueue.length > 1 && (
+                    <div className="flex items-center gap-1 mr-1">
+                      <button
+                        type="button"
+                        onClick={handleGoToPrevDraft}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                        title="Draft Sebelumnya (Ctrl+←)"
+                      >
+                        <ChevronLeft className="h-3 w-3" />
+                        Prev
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleGoToNextDraft}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                        title="Draft Berikutnya (Ctrl+→)"
+                      >
+                        Next
+                        <ChevronRight className="h-3 w-3" />
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onNavigate("pre-input")}
+                    className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-white/10 cursor-pointer"
+                    title="Kembali ke Workspace (Esc)"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    Kembali ke Workspace (Esc)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearPreInputRef}
+                    className="text-[10px] font-bold text-slate-400 hover:text-white uppercase tracking-wider bg-slate-800 py-1.5 px-2.5 rounded-lg border border-slate-700 cursor-pointer"
+                  >
+                    Lepas Draft
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-gray-700 bg-white p-3 rounded-xl border border-gray-100">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs bg-slate-800/80 p-3.5 rounded-xl border border-slate-700/80">
                 <div>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Pengirim</p>
-                  <p className="font-bold text-gray-800 mt-0.5">{preInputData.nama_pengirim}</p>
-                  <p className="text-gray-500 text-[11px]">{preInputData.hp_pengirim}</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold flex items-center gap-1">
+                    <Lock className="h-2.5 w-2.5 text-amber-400" /> Pengirim (Read-Only)
+                  </p>
+                  <p className="font-bold text-white mt-1 text-sm">{preInputData.nama_pengirim}</p>
+                  <p className="text-slate-300 text-[11px] mt-0.5">{preInputData.hp_pengirim}</p>
+                  <p className="text-slate-400 text-[11px] truncate mt-0.5" title={preInputData.alamat_pengirim}>
+                    {preInputData.alamat_pengirim || "-"}
+                  </p>
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Penerima</p>
-                  <p className="font-bold text-gray-800 mt-0.5">{preInputData.nama_penerima}</p>
-                  <p className="text-gray-500 text-[11px] truncate" title={preInputData.alamat_penerima}>{preInputData.alamat_penerima}</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold flex items-center gap-1">
+                    <Lock className="h-2.5 w-2.5 text-amber-400" /> Penerima (Read-Only)
+                  </p>
+                  <p className="font-bold text-white mt-1 text-sm">{preInputData.nama_penerima}</p>
+                  <p className="text-slate-300 text-[11px] mt-0.5">{preInputData.hp_penerima}</p>
+                  <p className="text-slate-400 text-[11px] truncate mt-0.5" title={preInputData.alamat_penerima}>
+                    {preInputData.alamat_penerima || "-"}
+                  </p>
                   {preInputData.alamat_penerima_asli && (
-                    <p className="text-[9px] text-amber-600 italic truncate mt-0.5" title={`Alamat Asli: ${preInputData.alamat_penerima_asli}`}>
+                    <p className="text-[10px] text-amber-400 italic truncate mt-0.5" title={`Alamat Asli: ${preInputData.alamat_penerima_asli}`}>
                       Asli: {preInputData.alamat_penerima_asli}
                     </p>
                   )}
                 </div>
                 <div>
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold">Paket</p>
-                  <p className="font-bold text-gray-800 mt-0.5 truncate">{preInputData.nama_barang}</p>
-                  <p className="text-gray-500 text-[11px] font-mono">{preInputData.berat_kg} KG | {preInputData.volume} cm</p>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold flex items-center gap-1">
+                    <Lock className="h-2.5 w-2.5 text-amber-400" /> Paket ({preInputData.ekspedisi})
+                  </p>
+                  <p className="font-bold text-white mt-1 text-sm truncate">{preInputData.nama_barang || "Barang Paket"}</p>
+                  <p className="text-slate-300 text-[11px] font-mono mt-0.5">
+                    Berat: {preInputData.berat_kg} KG | Dimensi: {preInputData.volume}
+                  </p>
+                  {preInputData.nilai_barang > 0 && (
+                    <p className="text-amber-300 text-[11px] font-mono mt-0.5">
+                      Nilai: Rp {preInputData.nilai_barang.toLocaleString("id-ID")}
+                    </p>
+                  )}
                 </div>
               </div>
               {preInputData.catatan_admin && (
-                <div className="mt-2.5 p-3 bg-blue-50 border border-blue-100 rounded-xl text-xs text-blue-800 flex items-start gap-2">
-                  <div className="font-bold uppercase tracking-wider text-[9px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-mono shrink-0 mt-0.5">
+                <div className="mt-3 p-3 bg-slate-800 border border-slate-700 rounded-xl text-xs text-slate-200 flex items-start gap-2">
+                  <div className="font-bold uppercase tracking-wider text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded font-mono shrink-0 mt-0.5">
                     Catatan Admin
                   </div>
                   <div className="font-medium">{preInputData.catatan_admin}</div>
@@ -1026,14 +1281,24 @@ export default function TransaksiPage({
                 {/* Switcher & Tugas Dropdown */}
                 <div className="flex gap-4 items-center border-b border-gray-100 pb-3 mb-2">
                   <div className="flex-1">
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                      Jenis Layanan
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        Jenis Layanan
+                      </label>
+                      {isLockedFromDraft && (
+                        <span className="text-[10px] text-amber-600 font-bold flex items-center gap-1">
+                          <Lock className="h-3 w-3" /> Terkunci dari Workspace
+                        </span>
+                      )}
+                    </div>
                     <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
                       <button
                         type="button"
+                        disabled={isLockedFromDraft}
                         onClick={() => setJenisLayanan("Express")}
-                        className={`flex-1 text-center py-1.5 px-2 text-xs font-semibold rounded-lg cursor-pointer transition-all duration-150 ${
+                        className={`flex-1 text-center py-1.5 px-2 text-xs font-semibold rounded-lg transition-all duration-150 ${
+                          isLockedFromDraft ? "cursor-not-allowed opacity-80 " : "cursor-pointer "
+                        }${
                           jenisLayanan === "Express" ? "bg-[#E4002B] text-white shadow" : "text-gray-600 hover:bg-gray-200"
                         }`}
                       >
@@ -1041,8 +1306,11 @@ export default function TransaksiPage({
                       </button>
                       <button
                         type="button"
+                        disabled={isLockedFromDraft}
                         onClick={() => setJenisLayanan("Cargo")}
-                        className={`flex-1 text-center py-1.5 px-2 text-xs font-semibold rounded-lg cursor-pointer transition-all duration-150 ${
+                        className={`flex-1 text-center py-1.5 px-2 text-xs font-semibold rounded-lg transition-all duration-150 ${
+                          isLockedFromDraft ? "cursor-not-allowed opacity-80 " : "cursor-pointer "
+                        }${
                           jenisLayanan === "Cargo" ? "bg-[#E4002B] text-white shadow" : "text-gray-600 hover:bg-gray-200"
                         }`}
                       >
@@ -1053,19 +1321,27 @@ export default function TransaksiPage({
                 </div>
 
                 {/* Berat & Volume Grid */}
-                <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-4">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                      Berat Timbangan (KG)
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        Berat Timbangan (KG)
+                      </label>
+                      {isLockedFromDraft && <Lock className="h-3 w-3 text-amber-500" />}
+                    </div>
                     <div className="relative">
                       <input
                         type="number"
                         step="0.1"
                         min="0"
+                        disabled={isLockedFromDraft}
                         value={beratKg}
                         onChange={(e) => setBeratKg(e.target.value)}
-                        className="w-full pl-3 pr-10 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
+                        className={`w-full pl-3 pr-10 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-1 ${
+                          isLockedFromDraft
+                            ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed font-bold"
+                            : "bg-gray-50 border-gray-200 text-gray-800 focus:ring-[#E4002B] focus:border-[#E4002B]"
+                        }`}
                         placeholder="0.0"
                       />
                       <div className="absolute right-3 inset-y-0 flex items-center text-xs text-gray-400 font-bold">
@@ -1075,37 +1351,54 @@ export default function TransaksiPage({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
-                      Volume Paket (P x L x T)
-                    </label>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider truncate" title="Volume Paket (P x L x T cm)">
+                        Volume Paket (P x L x T cm)
+                      </label>
+                      {isLockedFromDraft && <Lock className="h-3 w-3 text-amber-500 shrink-0" />}
+                    </div>
+                    <div className="flex items-center gap-1 w-full">
                       <input
                         type="number"
                         min="0"
+                        disabled={isLockedFromDraft}
                         value={volP}
                         onChange={(e) => setVolP(e.target.value)}
-                        className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center text-gray-800 focus:ring-1 focus:ring-[#E4002B] focus:outline-none"
+                        className={`flex-1 min-w-0 p-2 border rounded-lg text-xs text-center focus:ring-1 focus:outline-none ${
+                          isLockedFromDraft
+                            ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed font-bold"
+                            : "bg-gray-50 border-gray-200 text-gray-800 focus:ring-[#E4002B]"
+                        }`}
                         placeholder="P"
                       />
-                      <span className="text-gray-400 text-xs">x</span>
+                      <span className="text-gray-400 text-xs shrink-0">x</span>
                       <input
                         type="number"
                         min="0"
+                        disabled={isLockedFromDraft}
                         value={volL}
                         onChange={(e) => setVolL(e.target.value)}
-                        className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center text-gray-800 focus:ring-1 focus:ring-[#E4002B] focus:outline-none"
+                        className={`flex-1 min-w-0 p-2 border rounded-lg text-xs text-center focus:ring-1 focus:outline-none ${
+                          isLockedFromDraft
+                            ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed font-bold"
+                            : "bg-gray-50 border-gray-200 text-gray-800 focus:ring-[#E4002B]"
+                        }`}
                         placeholder="L"
                       />
-                      <span className="text-gray-400 text-xs">x</span>
+                      <span className="text-gray-400 text-xs shrink-0">x</span>
                       <input
                         type="number"
                         min="0"
+                        disabled={isLockedFromDraft}
                         value={volT}
                         onChange={(e) => setVolT(e.target.value)}
-                        className="w-12 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-center text-gray-800 focus:ring-1 focus:ring-[#E4002B] focus:outline-none"
+                        className={`flex-1 min-w-0 p-2 border rounded-lg text-xs text-center focus:ring-1 focus:outline-none ${
+                          isLockedFromDraft
+                            ? "bg-gray-100 text-gray-500 border-gray-200 cursor-not-allowed font-bold"
+                            : "bg-gray-50 border-gray-200 text-gray-800 focus:ring-[#E4002B]"
+                        }`}
                         placeholder="T"
                       />
-                      <span className="text-[10px] text-gray-400 font-bold ml-1">cm</span>
                     </div>
                   </div>
                 </div>
@@ -1542,10 +1835,41 @@ export default function TransaksiPage({
                   </div>
                 </div>
 
+                {/* VALIDATION CHECKLIST FOR FINALIZATION MODE */}
+                {!isAllStepsValid && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 space-y-2">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+                      <span>Langkah Finalisasi Belum Selesai (Simpan Aktif Jika Semua ✓):</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${stepFotoPaket ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
+                        {stepFotoPaket ? "✓" : "⏳"} Foto Paket
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${stepFotoResi ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
+                        {stepFotoResi ? "✓" : "⏳"} Foto Resi
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${stepBarcode ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
+                        {stepBarcode ? "✓" : "⏳"} Scan Barcode
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${stepProdukYoYi ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
+                        {stepProdukYoYi ? "✓" : "⏳"} Layanan YoYi
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${stepPembayaran ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
+                        {stepPembayaran ? "✓" : "⏳"} Pembayaran
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <button
                   onClick={handleSaveTransaksi}
-                  disabled={loading || checkingResi || resiDuplicateError}
-                  className="w-full py-4 bg-[#E4002B] hover:bg-[#c20023] disabled:bg-gray-400 text-white font-bold rounded-xl shadow-lg shadow-red-500/10 flex items-center justify-center gap-2 transition duration-150 cursor-pointer text-sm"
+                  disabled={!isAllStepsValid || loading || checkingResi || resiDuplicateError}
+                  className={`w-full py-4 font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition duration-150 text-sm ${
+                    !isAllStepsValid || loading || checkingResi || resiDuplicateError
+                      ? "bg-gray-200 text-gray-500 cursor-not-allowed shadow-none"
+                      : "bg-[#E4002B] hover:bg-[#c20023] text-white cursor-pointer shadow-red-500/10"
+                  }`}
                 >
                   {loading ? (
                     <>
@@ -1555,6 +1879,7 @@ export default function TransaksiPage({
                   ) : (
                     <>
                       <span>Simpan & Selesaikan Transaksi</span>
+                      <span className="text-[11px] bg-white/20 px-1.5 py-0.5 rounded font-mono ml-1">Ctrl + Enter</span>
                       <ArrowRight className="h-5 w-5" />
                     </>
                   )}
@@ -1563,6 +1888,26 @@ export default function TransaksiPage({
 
             </div>
 
+          </div>
+
+          {/* PHASE 15.2 SHORTCUT INFO BAR */}
+          <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-3 flex flex-wrap items-center justify-center gap-4 text-[11px] text-gray-600 font-medium">
+            <span className="flex items-center gap-1.5">
+              <kbd className="bg-white border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono shadow-sm">Ctrl + Enter</kbd>
+              <span>Simpan Transaksi</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="bg-white border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono shadow-sm">Ctrl + →</kbd>
+              <span>Draft Berikutnya</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="bg-white border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono shadow-sm">Ctrl + ←</kbd>
+              <span>Draft Sebelumnya</span>
+            </span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="bg-white border border-gray-300 px-1.5 py-0.5 rounded text-[10px] font-mono shadow-sm">Esc</kbd>
+              <span>Kembali ke Workspace</span>
+            </span>
           </div>
 
         </div>
