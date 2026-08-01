@@ -174,6 +174,8 @@ function handleRouting(action, params) {
       return apiGetDashboardData(params);
     case "ping":
       return { status: "success", message: "PONG" };
+    case "debugLoginVersion":
+      return apiDebugLoginVersion();
     default:
       return { status: "error", message: "Aksi tidak dikenali: " + action };
   }
@@ -3828,4 +3830,14 @@ function apiChangePassword(params) {
   } catch (err) {
     return { status: "error", message: err.message };
   }
+}
+
+function apiDebugLoginVersion() {
+  return {
+    status: "success",
+    version: "v1.0-debug",
+    loginFunction: apiLogin.toString(),
+    hasMockHash: typeof mockHashPassword_,
+    timestamp: new Date().toISOString()
+  };
 }
