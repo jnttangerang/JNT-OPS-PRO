@@ -195,17 +195,12 @@ function execAction(action, params) {
  * Pakai rowToObject_ (bukan row[N] hardcoded) & mengembalikan role apa adanya
  * (termasuk role "PICKUP" yang ada di Users, bukan cuma ADMIN/OWNER).
  */
-function mockHashPassword_(input) {
-  if (!input) return "";
-  return "hash_" + input;
-}
-
 function apiLogin(params) {
   var username = (params.username || "").trim();
   var password = (params.password || "").trim();
   var usersData = DatabaseService.getSheetData("Users");
   var headers = usersData[0];
-  var inputHash = mockHashPassword_(password);
+  var inputHash = password ? "hash_" + password : "";
   
   for (var i = 1; i < usersData.length; i++) {
     var row = usersData[i];

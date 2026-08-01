@@ -13,7 +13,8 @@ code = code.replace(/function apiLogin\(params\) \{[\s\S]*?return \{ status: "er
     var row = usersData[i];
     var userData = rowToObject_(headers, row);
     
-    if (userData.username === username && userData.password_hash === mockHashPassword_(password)) {
+    var inputHash = password ? "hash_" + password : "";
+    if (userData.username === username && (userData.password_hash === inputHash || userData.password_hash === password)) {
       if (userData.status_aktif !== "Aktif") {
         return { status: "error", message: "Akun ini sudah tidak aktif." };
       }
