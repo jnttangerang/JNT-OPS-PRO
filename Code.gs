@@ -176,6 +176,8 @@ function handleRouting(action, params) {
       return { status: "success", message: "PONG" };
     case "debugLoginVersion":
       return apiDebugLoginVersion();
+    case "debugSpreadsheet":
+      return apiDebugSpreadsheet();
     default:
       return { status: "error", message: "Aksi tidak dikenali: " + action };
   }
@@ -3922,4 +3924,42 @@ function apiDebugLoginVersion() {
     hasMockHash: typeof mockHashPassword_,
     timestamp: new Date().toISOString()
   };
+}
+
+function apiDebugSpreadsheet() {
+  try {
+    var ss = getSpreadsheet_();
+    var sheets = ss.getSheets();
+    var sheetsInfo = [];
+    
+    for (var i = 0; i < sheets.length; i++) {
+      var sheet = sheets[i];
+      var name = sheet.getName();
+      var lastRow = sheet.getLastRow();
+      var lastColumn = sheet.getLastColumn();
+      var data = [];
+      
+      if (lastRow > 0 && lastColumn > 0) {
+        data = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
+      }
+      
+      sheetsInfo.push({
+        sheetName: name,
+        lastRow: lastRow,
+        lastColumn: lastColumn,
+        jumlahData: data.length,
+        first5Rows: data.slice(0, 5)
+      });
+    }
+
+    return {
+      status: "success",
+      spreadsheetId: ss.getId(),
+      spreadsheetName: ss.getName(),
+      spreadsheetUrl: ss.getUrl(),
+      sheetsInfo: sheetsInfo
+    };
+  } catch (err) {
+    return { status: "error", message: err.message || err.toString() };
+  }
 }
