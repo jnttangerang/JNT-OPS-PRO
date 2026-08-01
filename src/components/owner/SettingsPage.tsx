@@ -71,13 +71,44 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
       if (response.status === "success" && response.data) {
         setOutletList(response.data.outlets || []);
         setUserList(response.data.users || []);
-        setSystemSettings(response.data.systemSettings || null);
+        const sys = response.data.systemSettings || ({ id: "SYS-001" } as SystemSettings);
+        if (!sys.apps_script_url && typeof window !== "undefined") {
+          sys.apps_script_url = localStorage.getItem("APPS_SCRIPT_URL") || (import.meta as any).env?.VITE_APPS_SCRIPT_URL || "";
+        }
+        setSystemSettings(sys);
       }
     } catch (e) {
       console.error(e);
       toast.error("Gagal memuat pengaturan.");
     } finally {
       setFetching(false);
+    }
+  };
+
+  const handleTestAppsScript = async () => {
+    const url = systemSettings?.apps_script_url || (typeof window !== "undefined" ? localStorage.getItem("APPS_SCRIPT_URL") : "") || "";
+    if (!url) {
+      toast.error("URL Google Apps Script belum diisi!");
+      return;
+    }
+    setDriveValidation(prev => ({ ...prev, apps_script_url: "loading" }));
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "getOutlets", data: {} })
+      });
+      const json = await res.json();
+      if (json && (json.status === "success" || json.data || json.message?.includes("PONG") || json.status === "ok")) {
+        setDriveValidation(prev => ({ ...prev, apps_script_url: "success" }));
+        toast.success("✅ Koneksi Google Apps Script Web App Berhasil!");
+      } else {
+        setDriveValidation(prev => ({ ...prev, apps_script_url: "error" }));
+        toast.error("Gagal terhubung: " + (json.message || "Respons tidak valid"));
+      }
+    } catch (err: any) {
+      setDriveValidation(prev => ({ ...prev, apps_script_url: "error" }));
+      toast.error("Gagal terhubung ke URL Google Apps Script: " + (err.message || "Error jaringan / CORS"));
     }
   };
 
@@ -746,11 +777,99 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
               <div className="bg-white border-2 border-blue-100 rounded-2xl p-5 shadow-sm space-y-4">
                 <h3 className="font-bold text-gray-800 text-base flex items-center gap-2 border-b border-gray-100 pb-2">
                   <HardDrive className="text-blue-600" size={18} />
-                  Integrasi Database
+                  Integrasi Database & Google Apps Script
                 </h3>
-                <p className="text-sm text-gray-500">
-                  Sistem database sekarang menggunakan local JSON file dan backend Node.js.
+                <p className="text-sm text-gray-600">
+                  Masukkan URL Eksekusi Web App Google Apps Script (https://script.google.com/macros/s/.../exec) untuk menghubungkan aplikasi secara langsung ke Google Sheets & Google Drive Anda.
                 </p>
+
+                {/* APPS SCRIPT URL */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                  <div>
+                    <label className="block font-bold text-gray-800 text-sm mb-1">
+                      URL Web App Google Apps Script (<code className="text-[#E4002B]">APPS_SCRIPT_URL</code>)
+                    </label>
+                    <p className="text-xs text-gray-500">
+                      URL Web App dari deployment Google Apps Script Anda.
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <input 
+                      type="text" 
+                      value={(systemSettings as any).apps_script_url || ""} 
+                      onChange={(e) => handleChangeDrive("apps_script_url", e.target.value)} 
+                      placeholder="https://script.google.com/macros/s/AKfycby.../exec"
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#E4002B] outline-none font-mono min-w-0 bg-white"
+                    />
+                    <div className="flex gap-2 shrink-0">
+                      <button 
+                        onClick={handleTestAppsScript}
+                        className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex items-center gap-1.5"
+                      >
+                        {driveValidation["apps_script_url"] === "loading" ? (
+                          <span className="w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin"></span>
+                        ) : (
+                          <Search size={14} />
+                        )}
+                        Tes Koneksi
+                      </button>
+                      <button 
+                        onClick={() => saveDriveItem("apps_script_url")}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-colors min-w-[100px] ${savedStatus["drive_apps_script_url"] ? "bg-green-100 text-green-700" : "bg-[#E4002B] hover:bg-red-700 text-white"}`}
+                      >
+                        {savedStatus["drive_apps_script_url"] ? (
+                          <><Check size={14} /> Oke</>
+                        ) : (
+                          <><Save size={14} /> Simpan URL</>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                  {driveValidation["apps_script_url"] === "success" && (
+                    <div className="text-xs font-bold text-green-600 flex items-center gap-1.5 animate-fade-in">
+                      <CheckCircle size={14} /> ✅ Web App Google Apps Script Terhubung Sangat Baik
+                    </div>
+                  )}
+                  {driveValidation["apps_script_url"] === "error" && (
+                    <div className="text-xs font-bold text-red-600 flex items-center gap-1.5 animate-fade-in">
+                      <XCircle size={14} /> ❌ Gagal terhubung ke Web App. Pastikan URL dan izin akses "Anyone" pada Web App sudah benar.
+                    </div>
+                  )}
+                </div>
+
+                {/* SPREADSHEET ID */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                  <div>
+                    <label className="block font-bold text-gray-800 text-sm mb-1">
+                      Spreadsheet ID (<code className="text-blue-600">SPREADSHEET_ID</code>)
+                    </label>
+                    <p className="text-xs text-gray-500">
+                      ID file Google Sheets utama (karakter acak di URL antara /d/ dan /edit).
+                    </p>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <input 
+                      type="text" 
+                      value={(systemSettings as any).spreadsheet_id || ""} 
+                      onChange={(e) => handleChangeDrive("spreadsheet_id", e.target.value)} 
+                      placeholder="1ABCdefGHIjkLMNopqrSTUvwxYZ..."
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#E4002B] outline-none font-mono min-w-0 bg-white"
+                    />
+                    <div className="flex gap-2 shrink-0">
+                      <button 
+                        onClick={() => saveDriveItem("spreadsheet_id")}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-colors min-w-[100px] ${savedStatus["drive_spreadsheet_id"] ? "bg-green-100 text-green-700" : "bg-[#E4002B] hover:bg-red-700 text-white"}`}
+                      >
+                        {savedStatus["drive_spreadsheet_id"] ? (
+                          <><Check size={14} /> Oke</>
+                        ) : (
+                          <><Save size={14} /> Simpan ID</>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
               {/* FOLDER DRIVE OPERASIONAL */}

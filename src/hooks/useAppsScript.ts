@@ -20,25 +20,42 @@ declare global {
 export function useAppsScript() {
   const [loading, setLoading] = useState(false);
 
+  const callLocalApi = async <T = any>(action: string, params: any = {}): Promise<T> => {
+    let url = `/api/${action}`;
+    let method = "POST";
+    let body: any = params;
+
+    if (action === "getOutlets" || action === "getUsers") {
+      url = `/api/${action}`;
+      method = "GET";
+      body = undefined;
+    }
+
+    const response = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const json = await response.json();
+    setLoading(false);
+
+    if (response.status !== 200 || json.status === "error") {
+      throw new Error(json.message || `HTTP ${response.status} Error`);
+    }
+
+    return json as T;
+  };
+
   const callBackend = useCallback(
     async <T = any>(action: string, params: any = {}): Promise<T> => {
       setLoading(true);
 
-      // Certain actions should always run locally to utilize the updated node/Express server (e.g. Gemini 3.5 AI endpoints)
-      const localActions = [
-        "perbaikiAlamatAI", "analyzeResiPhoto", "getAdminDashboardData", 
-        "getSetoranList", "getSetoranDetail", "createSetoran", "approveSetoran", "rejectSetoran", 
-        "getAuditData", "updateAuditDecision", "validateClosing", "executeClosing",
-        "getReportingSummary", "getReportingTransactions", "getReportingSettlement", "getReportingAudit",
-        "apiAskAssistant", "apiDailySummary", "apiDetectAnomalies", "askAssistant", "dailySummary", "detectAnomalies",
-        "getKategoriKeuangan", "saveKategoriKeuangan", "updateKategoriKeuangan", "setKategoriAktif",
-        "getKeuanganOutlet", "saveKeuanganOutlet", "updateKeuanganOutlet", "deleteKeuanganOutlet",
-        "getAllSettings", "saveAllSettings",
-        "getCustomers", "getCustomerHistory", "getBukuPengirim", "getBukuPenerima", "getCustomersMaster", "getCustomerDetailFull",
-        "saveDataPreInput", "getPreInputDrafts", "updatePreInputStatus", "getPreInput",
-        "ping", "testConnection"
-      ];
-      const isLocalAction = localActions.includes(action);
+      // Utility actions that are handled locally on Node/Express server (AI processing, photo OCR, file uploads)
+      const nodeOnlyActions = ["analyzeResiPhoto", "perbaikiAlamatAI", "ping", "testConnection", "uploadFile"];
+      const isNodeOnlyAction = nodeOnlyActions.includes(action);
 
       // Check if we are running in the Google Sheets Apps Script environment
       const isGoogleScript =
@@ -46,7 +63,7 @@ export function useAppsScript() {
         window.google &&
         window.google.script &&
         window.google.script.run &&
-        !isLocalAction;
+        !isNodeOnlyAction;
 
       if (isGoogleScript) {
         return new Promise<T>((resolve, reject) => {
@@ -70,64 +87,50 @@ export function useAppsScript() {
             reject(e);
           }
         });
-      } else {
-        // Fallback for Vercel (using VITE_APPS_SCRIPT_URL) or Local Vite + Express server
-        try {
-          const customUrl = typeof window !== "undefined" ? localStorage.getItem("APPS_SCRIPT_URL") : null;
-          const appsScriptUrl = !isLocalAction ? (customUrl || (import.meta as any).env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbzIkjUdMpZDvcsCVpOUaCK-tJH5R9W2ztxooPOhIvZeib7uBoxaAoMn49uQwVqUfe_XaQ/exec") : null;
+      }
 
-          if (appsScriptUrl) {
-            // External call to Google Apps Script Web App deployed on Vercel
-            const response = await fetch(appsScriptUrl, {
+      // External call to Google Apps Script Web App or Express Proxy
+      try {
+        const customUrl = typeof window !== "undefined" ? localStorage.getItem("APPS_SCRIPT_URL") : null;
+        const envUrl = (import.meta as any).env?.VITE_APPS_SCRIPT_URL;
+        const appsScriptUrl = !isNodeOnlyAction && (customUrl || (envUrl && envUrl.trim() !== "")) ? (customUrl || envUrl) : null;
+
+        if (appsScriptUrl) {
+          console.log("==================================");
+          console.log("APPS SCRIPT URL:", appsScriptUrl);
+          console.log("ACTION:", action);
+          console.log("==================================");
+          let response: Response;
+          try {
+            response = await fetch(appsScriptUrl, {
               method: "POST",
               headers: {
                 "Content-Type": "text/plain;charset=utf-8",
               },
               body: JSON.stringify({ action, data: params }),
             });
-            
-            const json = await response.json();
+          } catch (netErr: any) {
+            console.error(`External Apps Script network fetch failed for '${action}':`, netErr);
             setLoading(false);
-            
-            if (json && json.status === "error") {
-              throw new Error(json.message || "Terjadi kesalahan backend.");
-            }
-            return json as T;
-          } else {
-            // Local Express Server Call
-            let url = `/api/${action}`;
-            let method = "POST";
-            let body: any = params;
-
-            // Some endpoints might be GET
-            if (action === "getOutlets" || action === "getUsers") {
-              url = `/api/${action}`;
-              method = "GET";
-              body = undefined;
-            }
-
-            const response = await fetch(url, {
-              method,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: body ? JSON.stringify(body) : undefined,
-            });
-
-            const json = await response.json();
-            setLoading(false);
-
-            if (response.status !== 200 || json.status === "error") {
-              throw new Error(json.message || `HTTP ${response.status} Error`);
-            }
-
-            return json as T;
+            throw new Error(`Gagal terhubung ke Google Apps Script Web App (${netErr.message}). Silakan periksa koneksi internet atau APPS_SCRIPT_URL.`);
           }
-        } catch (error: any) {
+
+          const json = await response.json();
+
+          if (json && json.status === "error") {
+            const errMsg = json.message || "";
+            setLoading(false);
+            throw new Error(errMsg || "Terjadi kesalahan backend Google Apps Script.");
+          }
           setLoading(false);
-          console.error(`Local/External API Fallback Error [${action}]:`, error);
-          throw error;
+          return json as T;
+        } else {
+          return await callLocalApi(action, params);
         }
+      } catch (error: any) {
+        setLoading(false);
+        console.error(`API Error [${action}]:`, error);
+        throw error;
       }
     },
     []

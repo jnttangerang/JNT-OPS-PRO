@@ -154,6 +154,26 @@ function handleRouting(action, params) {
       return testSchemaIntegrity();
     case "testDriveConnection":
       return apiTestDriveConnection(params);
+    case "getUsers":
+      return apiGetUsers();
+    case "getCustomers":
+    case "getCustomersMaster":
+    case "getBukuPengirim":
+    case "getBukuPenerima":
+      return apiGetCustomers(params);
+    case "getCustomerHistory":
+    case "getCustomerDetailFull":
+      return apiGetCustomerHistory(params);
+    case "getAllSettings":
+      return apiGetAllSettings();
+    case "saveAllSettings":
+      return apiSaveAllSettings(params);
+    case "changePassword":
+      return apiChangePassword(params);
+    case "getAdminDashboardData":
+      return apiGetDashboardData(params);
+    case "ping":
+      return { status: "success", message: "PONG" };
     default:
       return { status: "error", message: "Aksi tidak dikenali: " + action };
   }
@@ -175,31 +195,41 @@ function execAction(action, params) {
  * Pakai rowToObject_ (bukan row[N] hardcoded) & mengembalikan role apa adanya
  * (termasuk role "PICKUP" yang ada di Users, bukan cuma ADMIN/OWNER).
  */
+function mockHashPassword_(input) {
+  if (!input) return "";
+  return "hash_" + input;
+}
+
 function apiLogin(params) {
   var username = (params.username || "").trim();
   var password = (params.password || "").trim();
   var usersData = DatabaseService.getSheetData("Users");
   var headers = usersData[0];
+  var inputHash = mockHashPassword_(password);
   
   for (var i = 1; i < usersData.length; i++) {
     var row = usersData[i];
     var userData = rowToObject_(headers, row);
     
-    if (userData.username === username && userData.password_hash === mockHashPassword_(password)) {
-      if (userData.status_aktif !== "Aktif") {
-        return { status: "error", message: "Akun ini sudah tidak aktif." };
-      }
-      writeAuditLog(userData.user_id, "LOGIN", "Pengguna '" + userData.nama_lengkap + "' berhasil login.", userData.outlet_id_home);
-      return {
-        status: "success",
-        data: {
-          user_id: userData.user_id,
-          username: userData.username,
-          role: userData.role,
-          outlet_id_home: userData.outlet_id_home,
-          nama_lengkap: userData.nama_lengkap
+    if (userData.username && userData.username.toString().toLowerCase() === username.toLowerCase()) {
+      var passMatch = (userData.password_hash === inputHash || userData.password_hash === password);
+      if (passMatch) {
+        var statusStr = (userData.status_aktif || "").toString().toUpperCase();
+        if (statusStr !== "AKTIF") {
+          return { status: "error", message: "Akun ini sudah tidak aktif." };
         }
-      };
+        writeAuditLog(userData.user_id, "LOGIN", "Pengguna '" + userData.nama_lengkap + "' berhasil login.", userData.outlet_id_home);
+        return {
+          status: "success",
+          data: {
+            user_id: userData.user_id,
+            username: userData.username,
+            role: userData.role,
+            outlet_id_home: userData.outlet_id_home,
+            nama_lengkap: userData.nama_lengkap
+          }
+        };
+      }
     }
   }
   return { status: "error", message: "Username atau password salah!" };
@@ -299,7 +329,7 @@ function apiGetPreInput(params) {
     tx.nilai_barang = Number(tx.nilai_barang) || 0;
     return { status: "success", data: tx };
   }
-  return { status: "error", message: "Transaksi Pre-Input tidak ditemukan" };
+  return { status: "success", data: null, message: "Transaksi Pre-Input tidak ditemukan" };
 }
 
 /**
@@ -1616,15 +1646,62 @@ function apiGetReportingAudit(params) {
 // UTILITIES & SYSTEM FUNCTIONS
 // ==========================================
 
+function findSheetCaseInsensitive_(ss, name) {
+  if (!ss || !name) return null;
+  var exactSheet = ss.getSheetByName(name);
+  if (exactSheet) return exactSheet;
+
+  var targetLower = name.toString().trim().toLowerCase();
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var sName = sheets[i].getName().toString().trim().toLowerCase();
+    if (sName === targetLower) {
+      try {
+        sheets[i].setName(name);
+      } catch (e) {
+        Logger.log("Rename sheet error: " + e.toString());
+      }
+      return sheets[i];
+    }
+  }
+  return null;
+}
+
+function getSpreadsheet_() {
+  var ss = null;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  } catch (e) {
+    Logger.log("getActiveSpreadsheet error: " + e.toString());
+  }
+  if (!ss) {
+    try {
+      var propId = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
+      if (propId && propId.trim() !== "") {
+        ss = SpreadsheetApp.openById(propId.trim());
+      }
+    } catch (e) {
+      Logger.log("openById error: " + e.toString());
+    }
+  }
+  if (!ss) {
+    throw new Error(
+      "Spreadsheet tidak terhubung! Pastikan Anda membuka Apps Script melalui menu Ekstensi > Apps Script di Google Sheets Anda. " +
+      "Atau jika menggunakan Standalone Script (script.google.com), tambahkan 'SPREADSHEET_ID' di Project Settings > Script Properties."
+    );
+  }
+  return ss;
+}
+
 /**
  * Mendapatkan sheet berdasarkan nama atau melempar error jika tidak ditemukan
  */
 function getSheetByName(name) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(name);
+  var ss = getSpreadsheet_();
+  var sheet = findSheetCaseInsensitive_(ss, name);
   if (!sheet) {
     initDatabaseSheets();
-    sheet = ss.getSheetByName(name);
+    sheet = findSheetCaseInsensitive_(ss, name);
     if (!sheet) {
       throw new Error("Gagal menemukan atau membuat sheet: " + name);
     }
@@ -1665,29 +1742,54 @@ function simulateSha256(input) {
 // Jangan hapus/reorder kolom existing di sini — itu mengubah posisi index yang
 // sudah dipakai kode lain (mis. getRange(row, N)).
 // ==========================================
-var DB_SCHEMA_VERSION = 4; // v4: tambah KEUANGAN_OUTLET
+var DB_SCHEMA_VERSION = 5; // v5: tambah MASTER_PENGIRIM, MASTER_PENERIMA, SystemSettings + fix kolom weight/ekspedisi
 
 var DB_SCHEMA = {
-  Users: ["user_id", "username", "password_hash", "role", "outlet_id_home", "nama_lengkap", "status_aktif"],
-  Outlets: ["outlet_id", "nama_outlet", "alamat_outlet", "target_resi_harian", "target_resi_bulanan"],
-  Master_Customer: ["customer_id", "nama_pengirim", "no_hp", "alamat_pengirim", "outlet_id", "last_updated"],
+  // Kolom lama TIDAK BOLEH dihapus/direorder — hanya tambah di ujung kanan.
+  Users: ["user_id", "username", "password_hash", "role", "outlet_id_home", "nama_lengkap", "status_aktif",
+    "no_wa"],
+  Outlets: ["outlet_id", "nama_outlet", "alamat_outlet", "target_resi_harian", "target_resi_bulanan",
+    "kode_outlet", "no_wa_outlet", "latitude", "longitude", "radius_operasional", "status_aktif",
+    "target_express", "target_cargo"],
+  // Master_Customer: kolom lama dipertahankan (legacy fallback), kolom baru ditambah di kanan.
+  Master_Customer: ["customer_id", "nama_pengirim", "no_hp", "alamat_pengirim", "outlet_id", "last_updated",
+    "nama", "telepon", "created_at", "updated_at", "status"],
   Riwayat_Penerima: ["id", "customer_id", "nama_penerima", "no_hp_penerima", "alamat_penerima", "tanggal_terakhir_kirim"],
   PreInput_Backup: ["transaksi_id", "timestamp", "admin_id", "outlet_id_tugas", "nama_pengirim", "hp_pengirim",
     "alamat_pengirim", "nama_penerima", "hp_penerima", "alamat_penerima", "nama_barang", "berat_kg", "volume",
-    "nilai_barang", "foto_paket_url", "status", "catatan_admin"],
+    "nilai_barang", "foto_paket_url", "status", "catatan_admin",
+    "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat",
+    "foto_resi_url", "alamat_penerima_asli", "alamat_asli"],
   EXP_Resi: ["resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
     "biaya_lain", "biaya_asuransi", "ongkir_dasar", "biaya_yoyi", "total_dibayar_customer", "pembulatan",
     "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing", "metode_bayar_tambahan",
-    "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi", "owner_audit_status", "owner_audit_note", "owner_audited_by", "owner_audited_at"],
+    "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi",
+    "owner_audit_status", "owner_audit_note", "owner_audited_by", "owner_audited_at",
+    "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat", "berat_kg"],
   CRG_Resi: ["resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
     "merk_motor", "cc_motor", "tahun_motor", "kelengkapan_motor", "biaya_asuransi", "ongkir_dasar", "biaya_jtc",
     "total_dibayar_customer", "pembulatan", "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing",
-    "metode_bayar_tambahan", "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi", "owner_audit_status", "owner_audit_note", "owner_audited_by", "owner_audited_at"],
+    "metode_bayar_tambahan", "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional",
+    "status_resi", "owner_audit_status", "owner_audit_note", "owner_audited_by", "owner_audited_at",
+    "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat", "berat_kg"],
   AuditLogs: ["log_id", "timestamp", "user_id", "aksi", "detail", "outlet_id"],
   MapsReviews: ["id", "outlet_id", "nama_outlet", "reviewer", "stars", "text", "timestamp", "status_analisis", "analisis"],
-  Master_Setoran: ["setoran_id", "tanggal", "outlet_id", "outlet_name", "admin_pembuat", "jumlah_resi", "total_setoran_owner", "total_kas_outlet", "status", "created_at", "approved_at", "approved_by", "catatan_owner", "closing_status", "closing_at", "closing_by"],
+  Master_Setoran: ["setoran_id", "tanggal", "outlet_id", "outlet_name", "admin_pembuat", "jumlah_resi",
+    "total_setoran_owner", "total_kas_outlet", "status", "created_at", "approved_at", "approved_by",
+    "catatan_owner", "closing_status", "closing_at", "closing_by"],
   MASTER_KATEGORI_KEUANGAN: ["id", "jenis", "nama", "aktif", "urutan", "created_at", "updated_at", "created_by"],
-  KEUANGAN_OUTLET: ["id", "tanggal", "outlet_id", "jenis", "kategori_id", "nominal", "deskripsi", "bukti_url", "dibuat_oleh", "created_at", "aktif"]
+  KEUANGAN_OUTLET: ["id", "tanggal", "outlet_id", "jenis", "kategori_id", "nominal", "deskripsi", "bukti_url",
+    "dibuat_oleh", "created_at", "aktif"],
+  // Sheet baru — belum ada di spreadsheet, akan dibuat oleh initializeDatabase().
+  MASTER_PENGIRIM: ["id", "customer_id", "nama", "telepon", "provinsi", "kabupaten", "kecamatan", "kelurahan",
+    "kode_pos", "alamat", "jumlah_pengiriman", "tanggal_pertama", "tanggal_terakhir", "status",
+    "created_at", "updated_at"],
+  MASTER_PENERIMA: ["id", "customer_id", "nama", "telepon", "provinsi", "kabupaten", "kecamatan", "kelurahan",
+    "kode_pos", "alamat", "jumlah_diterima", "tanggal_pertama", "tanggal_terakhir", "status",
+    "created_at", "updated_at"],
+  SystemSettings: ["id", "apps_script_url", "spreadsheet_id", "divisor_express", "divisor_cargo",
+    "folder_bukti_bayar_customer", "folder_foto_paket", "folder_foto_resi", "folder_bukti_kas_masuk",
+    "folder_bukti_kas_keluar", "folder_bukti_transfer_admin_owner", "folder_bukti_transfer_owner_dp"]
 };
 
 
@@ -1700,15 +1802,28 @@ var DB_SCHEMA = {
  * JALANKAN FUNGSI INI SEKALI dari editor Apps Script setelah deploy/update schema.
  */
 function initializeDatabase() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var versionSheet = getOrCreateVersionSheet_(ss);
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    Logger.log("initializeDatabase lock wait failed: " + e.toString());
+  }
 
-  Object.keys(DB_SCHEMA).forEach(function (name) {
-    syncSheetSchema_(ss, name, DB_SCHEMA[name]);
-  });
+  try {
+    var ss = getSpreadsheet_();
+    var versionSheet = getOrCreateVersionSheet_(ss);
 
-  versionSheet.getRange(2, 1, 1, 2).setValues([[DB_SCHEMA_VERSION, new Date().toISOString()]]);
-  Logger.log("initializeDatabase selesai. Schema version: " + DB_SCHEMA_VERSION);
+    Object.keys(DB_SCHEMA).forEach(function (name) {
+      syncSheetSchema_(ss, name, DB_SCHEMA[name]);
+    });
+
+    versionSheet.getRange(2, 1, 1, 2).setValues([[DB_SCHEMA_VERSION, new Date().toISOString()]]);
+    Logger.log("initializeDatabase selesai. Schema version: " + DB_SCHEMA_VERSION);
+  } finally {
+    try {
+      lock.releaseLock();
+    } catch (e) {}
+  }
 }
 
 // Alias supaya kode lama (getSheetByName -> initDatabaseSheets()) tetap jalan tanpa diubah.
@@ -1717,23 +1832,34 @@ function initDatabaseSheets() {
 }
 
 function getOrCreateVersionSheet_(ss) {
-  var sheet = ss.getSheetByName("_SchemaVersion");
+  var sheet = findSheetCaseInsensitive_(ss, "_SchemaVersion");
   if (!sheet) {
-    sheet = ss.insertSheet("_SchemaVersion");
-    sheet.appendRow(["schema_version", "last_migrated_at"]);
-    sheet.appendRow([0, ""]);
-    formatHeader_(sheet, 2);
+    try {
+      sheet = ss.insertSheet("_SchemaVersion");
+      sheet.appendRow(["schema_version", "last_migrated_at"]);
+      sheet.appendRow([0, ""]);
+      formatHeader_(sheet, 2);
+    } catch (e) {
+      sheet = findSheetCaseInsensitive_(ss, "_SchemaVersion");
+      if (!sheet) throw e;
+    }
   }
   return sheet;
 }
 
 function syncSheetSchema_(ss, name, headers) {
-  var sheet = ss.getSheetByName(name);
+  var sheet = findSheetCaseInsensitive_(ss, name);
   if (!sheet) {
-    sheet = ss.insertSheet(name);
-    sheet.appendRow(headers);
-    formatHeader_(sheet, headers.length);
-    return;
+    try {
+      sheet = ss.insertSheet(name);
+      sheet.appendRow(headers);
+      formatHeader_(sheet, headers.length);
+      return;
+    } catch (e) {
+      Logger.log("syncSheetSchema_ insertSheet error for " + name + ": " + e.toString());
+      sheet = findSheetCaseInsensitive_(ss, name);
+      if (!sheet) return;
+    }
   }
 
   var lastCol = sheet.getLastColumn();
@@ -1768,11 +1894,11 @@ function rowToObject_(headers, row) {
  * Jalankan dari editor Apps Script, cek hasil di Logger.log / return value.
  */
 function testSchemaIntegrity() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet_();
   var pass = true;
 
   for (var key in DB_SCHEMA) {
-    var sheet = ss.getSheetByName(key);
+    var sheet = findSheetCaseInsensitive_(ss, key);
     if (!sheet) {
       Logger.log("FAIL: Sheet '" + key + "' tidak ditemukan.");
       pass = false;
@@ -2371,54 +2497,56 @@ var TransactionService = {
     };
     DatabaseService.insertRow("PreInput_Backup", backupObj);
     
-    var existingCst = DatabaseService.findRowByColumn("Master_Customer", "hp_customer", params.hp_pengirim);
+    var existingCst = params.hp_pengirim ? DatabaseService.findRowByColumn("Master_Customer", "no_hp", params.hp_pengirim) : null;
     var cstId = existingCst ? existingCst.customer_id : "CST-" + new Date().getTime().toString().slice(-5);
     
-    if (existingCst) {
-      DatabaseService.updateRowByColumn("Master_Customer", "hp_customer", params.hp_pengirim, {
-        nama_customer: params.nama_pengirim,
-        alamat_customer: params.alamat_pengirim,
-        outlet_id_terakhir: params.outlet_id_tugas,
-        last_transaction: nowStr
-      });
-    } else {
-      DatabaseService.appendRow("Master_Customer", {
-        customer_id: cstId,
-        nama_customer: params.nama_pengirim,
-        hp_customer: params.hp_pengirim,
-        alamat_customer: params.alamat_pengirim,
-        outlet_id_terakhir: params.outlet_id_tugas,
-        last_transaction: nowStr
-      });
-    }
-    
-    var existingRecRow = -1;
-    var recData = DatabaseService.getSheetData("Riwayat_Penerima");
-    for (var k = 1; k < recData.length; k++) {
-      if (recData[k][1].toString() === cstId && recData[k][3].toString() === params.hp_penerima) {
-         existingRecRow = k + 1;
-         break;
+    if (params.hp_pengirim) {
+      if (existingCst) {
+        DatabaseService.updateRowByColumn("Master_Customer", "no_hp", params.hp_pengirim, {
+          nama_pengirim: params.nama_pengirim,
+          alamat_pengirim: params.alamat_pengirim,
+          outlet_id: params.outlet_id_tugas,
+          last_updated: nowStr,
+          nama: params.nama_pengirim,
+          telepon: params.hp_pengirim,
+          updated_at: nowStr
+        });
+      } else {
+        DatabaseService.appendRow("Master_Customer", {
+          customer_id: cstId,
+          nama_pengirim: params.nama_pengirim,
+          no_hp: params.hp_pengirim,
+          alamat_pengirim: params.alamat_pengirim,
+          outlet_id: params.outlet_id_tugas,
+          last_updated: nowStr,
+          nama: params.nama_pengirim,
+          telepon: params.hp_pengirim,
+          created_at: nowStr,
+          updated_at: nowStr,
+          status: "AKTIF"
+        });
       }
     }
     
-    if (existingRecRow !== -1) {
-       DatabaseService.updateRowByColumn("Riwayat_Penerima", "hp_penerima", params.hp_penerima, { // note: better matched by both, but simple for now
+    if (params.hp_penerima) {
+      var existingRec = DatabaseService.findRowByColumn("Riwayat_Penerima", "no_hp_penerima", params.hp_penerima);
+      if (existingRec) {
+        DatabaseService.updateRowByColumn("Riwayat_Penerima", "no_hp_penerima", params.hp_penerima, {
           nama_penerima: params.nama_penerima,
           alamat_penerima: params.alamat_penerima,
-          last_transaction: nowStr
-       }); 
-       // Wait, this updateRowByColumn uses searchColName. It will just find the first hp_penerima.
-       // This was a bug in original code too, but original used row index.
-    } else {
-       var recId = "REC-" + new Date().getTime().toString().slice(-5) + Math.floor(Math.random() * 10);
-       DatabaseService.appendRow("Riwayat_Penerima", {
-          penerima_id: recId,
+          tanggal_terakhir_kirim: nowStr
+        });
+      } else {
+        var recId = "REC-" + new Date().getTime().toString().slice(-5) + Math.floor(Math.random() * 10);
+        DatabaseService.appendRow("Riwayat_Penerima", {
+          id: recId,
           customer_id: cstId,
           nama_penerima: params.nama_penerima,
-          hp_penerima: params.hp_penerima,
+          no_hp_penerima: params.hp_penerima,
           alamat_penerima: params.alamat_penerima,
-          last_transaction: nowStr
-       });
+          tanggal_terakhir_kirim: nowStr
+        });
+      }
     }
     
     DatabaseService.appendAudit(params.admin_id, "PREINPUT_SIMPAN", "Mencatat pre-input '" + params.nama_pengirim + "' ke '" + params.nama_penerima + "' (" + txId + ")", params.outlet_id_tugas);
@@ -3120,12 +3248,16 @@ function apiGetKategoriKeuangan() {
     }
     var headers = rows[0];
     var list = [];
+    var seenIds = {};
     for (var i = 1; i < rows.length; i++) {
       var obj = rowToObject_(headers, rows[i]);
       if (!obj.id) continue;
+      var idStr = obj.id.toString().trim();
+      if (seenIds[idStr]) continue;
+      seenIds[idStr] = true;
       var isAktif = obj.aktif === true || obj.aktif === "TRUE" || obj.aktif === "true" || obj.aktif === "Aktif";
       list.push({
-        id: obj.id.toString(),
+        id: idStr,
         jenis: obj.jenis.toString(),
         nama: obj.nama.toString(),
         aktif: isAktif,
@@ -3387,7 +3519,7 @@ function apiGetKeuanganOutlet(params) {
 function isOutletDateClosed_(outletId, tanggal) {
   if (!outletId || !tanggal) return false;
   try {
-    var rows = DatabaseService.getSheetData("MASTER_SETORAN");
+    var rows = DatabaseService.getSheetData("Master_Setoran");
     if (!rows || rows.length < 2) return false;
     var headers = rows[0];
     for (var i = 1; i < rows.length; i++) {
@@ -3571,5 +3703,134 @@ function apiTestDriveConnection(params) {
     return { status: "success", message: "Folder ditemukan: " + name };
   } catch(e) {
     return { status: "error", message: "Folder tidak ditemukan atau akses ditolak" };
+  }
+}
+
+function apiGetUsers() {
+  try {
+    var rows = DatabaseService.getSheetData("Users");
+    if (!rows || rows.length < 2) return { status: "success", data: [] };
+    var headers = rows[0];
+    var list = [];
+    for (var i = 1; i < rows.length; i++) {
+      var obj = rowToObject_(headers, rows[i]);
+      if (obj.user_id || obj.username) list.push(obj);
+    }
+    return { status: "success", data: list };
+  } catch(e) {
+    return { status: "error", message: e.message };
+  }
+}
+
+function apiGetCustomers(params) {
+  try {
+    params = params || {};
+    var query = (params.query || params.keyword || "").toString().toLowerCase().trim();
+    var rows = DatabaseService.getSheetData("MASTER_PENGIRIM");
+    if (!rows || rows.length < 2) return { status: "success", data: [] };
+    var headers = rows[0];
+    var list = [];
+    for (var i = 1; i < rows.length; i++) {
+      var obj = rowToObject_(headers, rows[i]);
+      if (!obj.id && !obj.telepon && !obj.nama) continue;
+      if (query) {
+        var str = ((obj.nama || "") + " " + (obj.telepon || "") + " " + (obj.alamat || "") + " " + (obj.id || "")).toLowerCase();
+        if (str.indexOf(query) === -1) continue;
+      }
+      list.push(obj);
+    }
+    return { status: "success", data: list };
+  } catch(e) {
+    return { status: "error", message: e.message };
+  }
+}
+
+function apiGetCustomerHistory(params) {
+  try {
+    params = params || {};
+    var customerId = (params.customer_id || params.id || params.telepon || "").toString();
+    var txRows = DatabaseService.getSheetData("Transaksi");
+    if (!txRows || txRows.length < 2) return { status: "success", data: [] };
+    var headers = txRows[0];
+    var list = [];
+    for (var i = 1; i < txRows.length; i++) {
+      var obj = rowToObject_(headers, txRows[i]);
+      if (customerId && obj.pengirim_telepon !== customerId && obj.pengirim_nama !== customerId && obj.transaksi_id !== customerId) {
+        continue;
+      }
+      list.push(obj);
+    }
+    return { status: "success", data: list };
+  } catch(e) {
+    return { status: "error", message: e.message };
+  }
+}
+
+function apiGetAllSettings() {
+  try {
+    var sysRows = DatabaseService.getSheetData("SystemSettings");
+    var sysObj = {};
+    if (sysRows && sysRows.length >= 2) {
+      sysObj = rowToObject_(sysRows[0], sysRows[1]);
+    }
+    var outletsRes = apiGetOutlets();
+    var usersRes = apiGetUsers();
+    return {
+      status: "success",
+      data: {
+        outlets: outletsRes.data || [],
+        users: usersRes.data || [],
+        systemSettings: sysObj
+      }
+    };
+  } catch(e) {
+    return { status: "error", message: e.message };
+  }
+}
+
+function apiSaveAllSettings(params) {
+  try {
+    params = params || {};
+    if (params.systemSettings) {
+      var sysObj = params.systemSettings;
+      var sysRows = DatabaseService.getSheetData("SystemSettings");
+      if (sysRows && sysRows.length >= 2) {
+        DatabaseService.updateRowByColumn("SystemSettings", "id", sysObj.id || sysRows[1][0], sysObj);
+      } else {
+        DatabaseService.appendRow("SystemSettings", sysObj);
+      }
+    }
+    return { status: "success", message: "Pengaturan berhasil disimpan." };
+  } catch(e) {
+    return { status: "error", message: e.message };
+  }
+}
+
+function apiChangePassword(params) {
+  try {
+    params = params || {};
+    var userId = (params.user_id || "").toString();
+    var oldPass = (params.old_password || "").toString();
+    var newPass = (params.new_password || "").toString();
+
+    if (!userId || !oldPass || !newPass) {
+      return { status: "error", message: "Parameter user_id, old_password, dan new_password wajib diisi." };
+    }
+
+    var user = DatabaseService.findRowByColumn("Users", "user_id", userId);
+    if (!user) {
+      return { status: "error", message: "User tidak ditemukan" };
+    }
+
+    var oldHash = oldPass.indexOf("hash_") === 0 ? oldPass : "hash_" + oldPass;
+    if (user.password_hash !== oldHash && user.password_hash !== oldPass) {
+      return { status: "error", message: "Kata sandi lama salah" };
+    }
+
+    var newHash = "hash_" + newPass;
+    DatabaseService.updateRowByColumn("Users", "user_id", userId, { password_hash: newHash });
+    return { status: "success", message: "Kata sandi berhasil diubah" };
+  } catch (err) {
+    return { status: "error", message: err.message };
   }
 }

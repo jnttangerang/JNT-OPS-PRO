@@ -839,6 +839,62 @@ function addAuditLog(userId: string, action: string, detail: string, outletId: s
 
 // === API ROUTES ===
 
+// === PRODUCTION LOCKDOWN & PROXY MIDDLEWARE ===
+const PRODUCTION_MODE = true;
+
+const UTILITY_ACTIONS = new Set([
+  "ping",
+  "testConnection",
+  "perbaikiAlamatAI",
+  "analyzeResiPhoto",
+  "uploadFile",
+  "syncGoogleReviews",
+  "addReview",
+  "deleteReview",
+  "analyzeReview"
+]);
+
+app.use("/api/:action", async (req, res, next) => {
+  const action = req.params.action;
+
+  // Utility actions run locally on Node/Express server without database dependency
+  if (UTILITY_ACTIONS.has(action)) {
+    return next();
+  }
+
+  const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
+
+  if (appsScriptUrl && appsScriptUrl.trim()) {
+    try {
+      const response = await fetch(appsScriptUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action, data: req.body || {} })
+      });
+      const json = await response.json();
+      return res.json(json);
+    } catch (err: any) {
+      console.error(`Apps Script proxy error for ${action}:`, err.message);
+      if (PRODUCTION_MODE) {
+        return res.status(503).json({
+          status: "error",
+          message: `Gagal terhubung ke Google Apps Script (${err.message}). Silakan periksa koneksi atau APPS_SCRIPT_URL.`
+        });
+      }
+      return next();
+    }
+  }
+
+  if (PRODUCTION_MODE) {
+    return res.status(503).json({
+      status: "error",
+      message: "SISTEM BELUM DIKONFIGURASI\nGoogle Apps Script URL belum tersedia. Silakan hubungi Super Owner."
+    });
+  }
+
+  next();
+});
+
 app.post("/api/ping", (req, res) => {
   return res.json({ status: "success", message: "pong" });
 });
@@ -860,7 +916,8 @@ app.post("/api/login", (req, res) => {
     (u: any) => u.username.toLowerCase() === username.toLowerCase()
   );
 
-  if (!user || user.password_hash !== simulateHash(password)) {
+  const isPassValid = user && (user.password_hash === simulateHash(password) || user.password_hash === password);
+  if (!user || !isPassValid) {
     return res.status(401).json({ status: "error", message: "Username atau Password salah" });
   }
 
@@ -1013,6 +1070,10 @@ app.get("/api/getOutlets", (req, res) => {
   const db = readDb();
   res.json({ status: "success", data: db.Outlets });
 });
+app.post("/api/getOutlets", (req, res) => {
+  const db = readDb();
+  res.json({ status: "success", data: db.Outlets });
+});
 app.get("/api/outlets", (req, res) => {
   const db = readDb();
   res.json({ status: "success", data: db.Outlets });
@@ -1020,6 +1081,10 @@ app.get("/api/outlets", (req, res) => {
 
 // 3. GET ACTIVE USERS API
 app.get("/api/getUsers", (req, res) => {
+  const db = readDb();
+  res.json({ status: "success", data: db.Users.filter((u: any) => u.status_aktif === "AKTIF") });
+});
+app.post("/api/getUsers", (req, res) => {
   const db = readDb();
   res.json({ status: "success", data: db.Users.filter((u: any) => u.status_aktif === "AKTIF") });
 });
@@ -3992,16 +4057,23 @@ const handleAskAssistantRequest = async (req: any, res: any) => {
 const handleGetKategoriKeuangan = (req: any, res: any) => {
   const db = readDb();
   const list = db.MasterKategoriKeuangan || [];
-  const formatted = list.map((item: any) => ({
-    id: String(item.id),
-    jenis: String(item.jenis),
-    nama: String(item.nama),
-    aktif: Boolean(item.aktif),
-    urutan: Number(item.urutan) || 0,
-    created_at: item.created_at || "",
-    updated_at: item.updated_at || "",
-    created_by: item.created_by || ""
-  }));
+  const seen = new Set<string>();
+  const formatted: any[] = [];
+  for (const item of list) {
+    const idStr = String(item.id || "").trim();
+    if (!idStr || seen.has(idStr)) continue;
+    seen.add(idStr);
+    formatted.push({
+      id: idStr,
+      jenis: String(item.jenis),
+      nama: String(item.nama),
+      aktif: Boolean(item.aktif),
+      urutan: Number(item.urutan) || 0,
+      created_at: item.created_at || "",
+      updated_at: item.updated_at || "",
+      created_by: item.created_by || ""
+    });
+  }
   formatted.sort((a: any, b: any) => a.urutan - b.urutan);
   return res.json({ status: "success", data: formatted });
 };

@@ -55,7 +55,8 @@ export default function KeuanganOutletPage({ session, outlets }: KeuanganOutletP
     try {
       const res = await callBackend("getKategoriKeuangan");
       if (res.status === "success" && Array.isArray(res.data)) {
-        setCategories(res.data);
+        const unique = Array.from(new Map(res.data.map((x: KategoriKeuangan) => [x.id, x])).values());
+        setCategories(unique);
       }
     } catch (err) {
       console.error("Fetch categories error", err);
@@ -238,7 +239,7 @@ export default function KeuanganOutletPage({ session, outlets }: KeuanganOutletP
           nominal: Number(formNominal),
           deskripsi: formDeskripsi.trim(),
           bukti_url: formBuktiUrl,
-          dibuat_oleh: session.username || session.role || "SYSTEM",
+          dibuat_oleh: session.nama_lengkap || session.username || session.role || "SYSTEM",
           user_role: session.role,
           user_id: session.user_id
         });
@@ -476,8 +477,8 @@ export default function KeuanganOutletPage({ session, outlets }: KeuanganOutletP
               className="bg-transparent font-bold text-gray-800 focus:outline-none cursor-pointer max-w-[160px]"
             >
               <option value="ALL">Semua Kategori</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
+              {categories.map((c, idx) => (
+                <option key={`${c.id}-${idx}`} value={c.id}>
                   {c.jenis === "PEMASUKAN" ? "[+] " : "[-] "}{c.nama}
                 </option>
               ))}
@@ -758,8 +759,8 @@ export default function KeuanganOutletPage({ session, outlets }: KeuanganOutletP
                     onChange={(e) => setFormKategoriId(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 cursor-pointer"
                   >
-                    {activeCategoriesForJenis.map((c) => (
-                      <option key={c.id} value={c.id}>
+                    {activeCategoriesForJenis.map((c, idx) => (
+                      <option key={`${c.id}-${idx}`} value={c.id}>
                         {c.nama}
                       </option>
                     ))}

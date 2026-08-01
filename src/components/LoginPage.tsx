@@ -28,7 +28,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       // callBackend handles local / api fallback transparently
       const response = await callBackend("login", { username, password });
       if (response.status === "success" && response.data) {
-        toast.success(`Selamat datang, ${response.data.username}!`);
+        toast.success(`Selamat datang, ${response.data.nama_lengkap || response.data.username}!`);
         onLoginSuccess(response.data);
       } else {
         const msg = response.message || "Gagal masuk. Username atau password salah.";

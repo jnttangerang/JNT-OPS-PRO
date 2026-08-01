@@ -36,7 +36,8 @@ export default function MasterKategoriKeuanganPage({ session }: MasterKategoriKe
     try {
       const response = await callBackend("getKategoriKeuangan");
       if (response.status === "success" && Array.isArray(response.data)) {
-        setKategoriList(response.data);
+        const unique = Array.from(new Map(response.data.map((x: KategoriKeuangan) => [x.id, x])).values());
+        setKategoriList(unique);
       } else {
         toast.error(response.message || "Gagal memuat data kategori keuangan.");
       }
@@ -124,7 +125,7 @@ export default function MasterKategoriKeuanganPage({ session }: MasterKategoriKe
           jenis: activeTab,
           nama: formNama.trim(),
           urutan: formUrutan,
-          created_by: session.username || "OWNER"
+          created_by: session.nama_lengkap || session.username || "OWNER"
         });
         if (response.status === "success") {
           toast.success(response.message || "Kategori berhasil ditambahkan!");
@@ -326,8 +327,8 @@ export default function MasterKategoriKeuanganPage({ session }: MasterKategoriKe
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-xs text-gray-700">
-                {filteredList.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50/80 transition-colors">
+                {filteredList.map((item, idx) => (
+                  <tr key={`${item.id}-${idx}`} className="hover:bg-gray-50/80 transition-colors">
                     {/* Urutan */}
                     <td className="py-3.5 px-4 text-center">
                       <span className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-gray-100 font-mono font-bold text-gray-700 text-[11px]">

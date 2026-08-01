@@ -279,7 +279,9 @@ export default function App() {
                   <User className="h-4 w-4" />
                 </div>
                 <div className="overflow-hidden">
-                  <p className="text-xs font-bold text-gray-800 truncate">{session.username}</p>
+                  <p className="text-xs font-bold text-gray-800 truncate" title={session.nama_lengkap || session.username}>
+                    {session.nama_lengkap || session.username}
+                  </p>
                   <span className="inline-block mt-0.5 bg-[#E4002B]/10 text-[#E4002B] text-[8px] font-extrabold font-mono px-1.5 py-0.5 rounded uppercase tracking-wider">
                     {session.role}
                   </span>
@@ -395,7 +397,7 @@ export default function App() {
                   <User className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="text-xs font-bold text-gray-800">{session.username}</p>
+                  <p className="text-xs font-bold text-gray-800">{session.nama_lengkap || session.username}</p>
                   <span className="bg-gray-150 text-gray-600 text-[8px] font-extrabold font-mono px-1 py-0.5 rounded uppercase tracking-wider">
                     {session.role}
                   </span>

@@ -197,6 +197,8 @@ export default function PreInputPage({
             populateFormFromDraft(res.data);
             setEditingTxId(savedDraftId);
             toast.info(`Draft ${savedDraftId} dipulihkan dari sesi sebelumnya.`);
+          } else {
+            localStorage.removeItem("active_draft_tx_id");
           }
         })
         .catch(() => {
@@ -550,7 +552,7 @@ export default function PreInputPage({
       const res = await callBackend("updatePreInputStatus", {
         transaksi_id: txId,
         status: "Dibatalkan",
-        admin_id: session.username || session.user_id
+        admin_id: session.nama_lengkap || session.username || session.user_id
       });
       if (res && res.status === "success") {
         toast.success(`Draft ${txId} dibatalkan.`);
@@ -571,7 +573,7 @@ export default function PreInputPage({
         transaksi_id: txId,
         status: newStatus,
         no_resi: noResiVal || undefined,
-        admin_id: session.username || session.user_id
+        admin_id: session.nama_lengkap || session.username || session.user_id
       });
       if (res && res.status === "success") {
         toast.success(`Status ${txId} diubah ke ${newStatus}`);
@@ -596,7 +598,7 @@ export default function PreInputPage({
         transaksi_id: resiModalData.transaksi_id,
         status: "Siap Dibayar",
         no_resi: cleanResi,
-        admin_id: session.username || session.user_id
+        admin_id: session.nama_lengkap || session.username || session.user_id
       });
       if (res && res.status === "success") {
         toast.success(`Resi ${cleanResi} berhasil disimpan! Status: SIAP DIBAYAR`);
