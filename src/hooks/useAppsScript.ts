@@ -110,9 +110,33 @@ export function useAppsScript() {
               body: JSON.stringify({ action, data: params }),
             });
           } catch (netErr: any) {
-            console.error(`External Apps Script network fetch failed for '${action}':`, netErr);
-            setLoading(false);
-            throw new Error(`Gagal terhubung ke Google Apps Script Web App (${netErr.message}). Silakan periksa koneksi internet atau APPS_SCRIPT_URL.`);
+            console.warn(`Direct browser fetch to Apps Script failed for '${action}' (${netErr.message}), trying server proxy...`);
+            try {
+              response = await fetch("/api/apps-script", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ action, data: params, appsScriptUrl }),
+              });
+            } catch (proxyErr: any) {
+              console.error(`Proxy fetch also failed for '${action}':`, proxyErr);
+              try {
+                return await callLocalApi(action, params);
+              } catch {
+                setLoading(false);
+                throw new Error(`Gagal terhubung ke Google Apps Script Web App (${netErr.message}). Silakan periksa koneksi internet atau APPS_SCRIPT_URL.`);
+              }
+            }
+          }
+
+          if (!response.ok) {
+            try {
+              return await callLocalApi(action, params);
+            } catch {
+              setLoading(false);
+              throw new Error(`HTTP ${response.status} Error dari Google Apps Script.`);
+            }
           }
 
           const json = await response.json();

@@ -799,6 +799,20 @@ function readDb() {
     if (!parsed.MasterKategoriKeuangan || !Array.isArray(parsed.MasterKategoriKeuangan) || parsed.MasterKategoriKeuangan.length === 0) {
       parsed.MasterKategoriKeuangan = defaultKategoriKeuangan;
       updated = true;
+    } else {
+      const seenIds = new Set<string>();
+      const cleanList: any[] = [];
+      for (const item of parsed.MasterKategoriKeuangan) {
+        const idStr = String(item.id || "").trim();
+        if (idStr && !seenIds.has(idStr)) {
+          seenIds.add(idStr);
+          cleanList.push(item);
+        }
+      }
+      if (cleanList.length !== parsed.MasterKategoriKeuangan.length) {
+        parsed.MasterKategoriKeuangan = cleanList;
+        updated = true;
+      }
     }
     if (!parsed.MASTER_CUSTOMER || !Array.isArray(parsed.MASTER_CUSTOMER) || parsed.MASTER_CUSTOMER.length === 0) {
       syncExistingDataToThreeLayers(parsed);
@@ -851,7 +865,8 @@ const UTILITY_ACTIONS = new Set([
   "syncGoogleReviews",
   "addReview",
   "deleteReview",
-  "analyzeReview"
+  "analyzeReview",
+  "apps-script"
 ]);
 
 app.use("/api/:action", async (req, res, next) => {
@@ -866,30 +881,23 @@ app.use("/api/:action", async (req, res, next) => {
 
   if (appsScriptUrl && appsScriptUrl.trim()) {
     try {
+      const targetAction = action === "getDashboardData" ? "getAdminDashboardData" : action;
       const response = await fetch(appsScriptUrl.trim(), {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action, data: req.body || {} })
+        body: JSON.stringify({ action: targetAction, data: req.body || {} })
       });
       const json = await response.json();
+      if (json && json.status === "error" && json.message && json.message.includes("Aksi tidak dikenali")) {
+        console.warn(`Apps Script returned unrecognized action for ${action}, falling back to local route handler...`);
+        return next();
+      }
       return res.json(json);
     } catch (err: any) {
       console.error(`Apps Script proxy error for ${action}:`, err.message);
-      if (PRODUCTION_MODE) {
-        return res.status(503).json({
-          status: "error",
-          message: `Gagal terhubung ke Google Apps Script (${err.message}). Silakan periksa koneksi atau APPS_SCRIPT_URL.`
-        });
-      }
+      console.warn(`Falling back to local route handler for ${action}...`);
       return next();
     }
-  }
-
-  if (PRODUCTION_MODE) {
-    return res.status(503).json({
-      status: "error",
-      message: "SISTEM BELUM DIKONFIGURASI\nGoogle Apps Script URL belum tersedia. Silakan hubungi Super Owner."
-    });
   }
 
   next();
@@ -4130,7 +4138,7 @@ const handleSaveKategoriKeuangan = (req: any, res: any) => {
 
 const handleUpdateKategoriKeuangan = (req: any, res: any) => {
   const db = readDb();
-  const { id, nama, urutan, aktif } = req.body || {};
+  const { id, nama, urutan, aktif, jenis } = req.body || {};
   const trimmedId = (id || "").trim();
   const trimmedNama = (nama || "").trim();
 
@@ -4147,18 +4155,33 @@ const handleUpdateKategoriKeuangan = (req: any, res: any) => {
     return res.json({ status: "error", message: "Kategori tidak ditemukan." });
   }
 
-  if (target.jenis.toUpperCase() === "PEMASUKAN" && (trimmedNama.toLowerCase() === "packing" || trimmedNama.toLowerCase() === "amplop")) {
+  let targetJenis = (jenis || target.jenis || "").toString().toUpperCase();
+
+  // If updating an existing category named Packing or Amplop, preserve its original jenis if targetJenis would become PEMASUKAN
+  if ((trimmedNama.toLowerCase() === "packing" || trimmedNama.toLowerCase() === "amplop") && target.jenis) {
+    if (target.jenis.toString().toUpperCase() === "PENGELUARAN") {
+      targetJenis = "PENGELUARAN";
+    }
+  }
+
+  const isChangingToRestrictedPemasukan = 
+    targetJenis === "PEMASUKAN" &&
+    (trimmedNama.toLowerCase() === "packing" || trimmedNama.toLowerCase() === "amplop") &&
+    target.nama.toLowerCase() !== trimmedNama.toLowerCase();
+
+  if (isChangingToRestrictedPemasukan) {
     return res.json({ status: "error", message: "Kategori 'Packing' & 'Amplop' berasal dari transaksi paket dan tidak boleh dijadikan Pemasukan manual." });
   }
 
   const isDuplicate = list.some((item: any) => 
-    item.id !== trimmedId && item.jenis.toUpperCase() === target.jenis.toUpperCase() && item.nama.toLowerCase() === trimmedNama.toLowerCase()
+    item.id !== trimmedId && item.jenis.toUpperCase() === targetJenis && item.nama.toLowerCase() === trimmedNama.toLowerCase()
   );
   if (isDuplicate) {
-    return res.json({ status: "error", message: `Kategori '${trimmedNama}' sudah ada untuk ${target.jenis}.` });
+    return res.json({ status: "error", message: `Kategori '${trimmedNama}' sudah ada untuk ${targetJenis}.` });
   }
 
   target.nama = trimmedNama;
+  target.jenis = targetJenis;
   if (!isNaN(parseInt(urutan, 10))) {
     target.urutan = parseInt(urutan, 10);
   }
@@ -4411,6 +4434,42 @@ app.post("/api/getKeuanganOutlet", handleGetKeuanganOutlet);
 app.post("/api/saveKeuanganOutlet", handleSaveKeuanganOutlet);
 app.post("/api/updateKeuanganOutlet", handleUpdateKeuanganOutlet);
 app.post("/api/deleteKeuanganOutlet", handleDeleteKeuanganOutlet);
+
+app.post("/api/apps-script", async (req, res) => {
+  try {
+    const { action, data, appsScriptUrl } = req.body || {};
+    const targetUrl =
+      appsScriptUrl ||
+      process.env.VITE_APPS_SCRIPT_URL ||
+      "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body: JSON.stringify({ action, data: data || {} }),
+    });
+
+    const text = await response.text();
+    try {
+      const json = JSON.parse(text);
+      return res.json(json);
+    } catch {
+      return res.status(502).json({
+        status: "error",
+        message: "Respons dari Google Apps Script bukan JSON yang valid.",
+        raw: text.slice(0, 300),
+      });
+    }
+  } catch (err: any) {
+    console.error("Proxy error calling Apps Script:", err);
+    return res.status(500).json({
+      status: "error",
+      message: err.message || "Gagal menghubungi Google Apps Script via proxy server.",
+    });
+  }
+});
 
 
 

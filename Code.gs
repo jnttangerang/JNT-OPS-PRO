@@ -170,6 +170,7 @@ function handleRouting(action, params) {
       return apiSaveAllSettings(params);
     case "changePassword":
       return apiChangePassword(params);
+    case "getDashboardData":
     case "getAdminDashboardData":
       return apiGetDashboardData(params);
     case "ping":
@@ -598,7 +599,8 @@ function apiUploadFile(params) {
  * 9. Mengambil data ringkasan dashboard OWNER
  */
 function apiGetDashboardData(params) {
-  var role = params.role;
+  params = params || {};
+  var role = (params.role || params.user_role || "").toString().toUpperCase();
   var filterOutlet = params.filterOutlet || "ALL";
   var filterTipeLayanan = params.filterTipeLayanan || "ALL";
   var dateStart = params.dateStart;
@@ -1842,9 +1844,7 @@ var DB_SCHEMA = {
   MASTER_PENERIMA: ["id", "customer_id", "nama", "telepon", "provinsi", "kabupaten", "kecamatan", "kelurahan",
     "kode_pos", "alamat", "jumlah_diterima", "tanggal_pertama", "tanggal_terakhir", "status",
     "created_at", "updated_at"],
-  SystemSettings: ["id", "apps_script_url", "spreadsheet_id", "divisor_express", "divisor_cargo",
-    "folder_bukti_bayar_customer", "folder_foto_paket", "folder_foto_resi", "folder_bukti_kas_masuk",
-    "folder_bukti_kas_keluar", "folder_bukti_transfer_admin_owner", "folder_bukti_transfer_owner_dp"]
+  SystemSettings: ["key", "value"]
 };
 
 
@@ -3398,20 +3398,34 @@ function apiUpdateKategoriKeuangan(params) {
 
     if (!target) return { status: "error", message: "Kategori tidak ditemukan." };
 
-    if (target.jenis.toUpperCase() === "PEMASUKAN" && (nama.toLowerCase() === "packing" || nama.toLowerCase() === "amplop")) {
+    var targetJenis = (params.jenis || target.jenis || "").toString().toUpperCase();
+
+    if ((nama.toLowerCase() === "packing" || nama.toLowerCase() === "amplop") && target.jenis) {
+      if (target.jenis.toString().toUpperCase() === "PENGELUARAN") {
+        targetJenis = "PENGELUARAN";
+      }
+    }
+
+    var isChangingToRestrictedPemasukan = 
+      targetJenis === "PEMASUKAN" &&
+      (nama.toLowerCase() === "packing" || nama.toLowerCase() === "amplop") &&
+      target.nama.toLowerCase() !== nama.toLowerCase();
+
+    if (isChangingToRestrictedPemasukan) {
       return { status: "error", message: "Kategori 'Packing' & 'Amplop' berasal dari transaksi paket dan tidak boleh dijadikan Pemasukan manual." };
     }
 
     var isDuplicate = existingList.some(function(item) {
-      return item.id !== id && item.jenis.toUpperCase() === target.jenis.toUpperCase() && item.nama.toLowerCase() === nama.toLowerCase();
+      return item.id !== id && item.jenis.toUpperCase() === targetJenis && item.nama.toLowerCase() === nama.toLowerCase();
     });
     if (isDuplicate) {
-      return { status: "error", message: "Kategori '" + nama + "' sudah ada untuk " + target.jenis + "." };
+      return { status: "error", message: "Kategori '" + nama + "' sudah ada untuk " + targetJenis + "." };
     }
 
     var isAktif = aktifVal === true || aktifVal === "TRUE" || aktifVal === "true" || aktifVal === "Aktif";
     var updateData = {
       nama: nama,
+      jenis: targetJenis,
       urutan: isNaN(urutan) ? target.urutan : urutan,
       aktif: isAktif ? "TRUE" : "FALSE",
       updated_at: new Date().toISOString()
@@ -3450,36 +3464,99 @@ function apiSetKategoriAktif(params) {
   }
 }
 
-function ensureDefaultKategoriKeuangan_() {
+function deduplicateMasterKategoriKeuangan_() {
   try {
     var sheet = getSheetByName("MASTER_KATEGORI_KEUANGAN");
     var data = sheet.getDataRange().getValues();
-    if (data.length <= 1) {
-      var defaultData = [
-        // PENGELUARAN
-        { id: "KAT-101", jenis: "PENGELUARAN", nama: "ATK", aktif: "TRUE", urutan: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-102", jenis: "PENGELUARAN", nama: "Packing", aktif: "TRUE", urutan: 2, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-103", jenis: "PENGELUARAN", nama: "BBM", aktif: "TRUE", urutan: 3, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-104", jenis: "PENGELUARAN", nama: "Transport", aktif: "TRUE", urutan: 4, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-105", jenis: "PENGELUARAN", nama: "Parkir", aktif: "TRUE", urutan: 5, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-106", jenis: "PENGELUARAN", nama: "Listrik", aktif: "TRUE", urutan: 6, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-107", jenis: "PENGELUARAN", nama: "Internet", aktif: "TRUE", urutan: 7, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-108", jenis: "PENGELUARAN", nama: "Air Minum", aktif: "TRUE", urutan: 8, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-109", jenis: "PENGELUARAN", nama: "Konsumsi", aktif: "TRUE", urutan: 9, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-110", jenis: "PENGELUARAN", nama: "Maintenance", aktif: "TRUE", urutan: 10, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-111", jenis: "PENGELUARAN", nama: "Lainnya", aktif: "TRUE", urutan: 11, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        // PEMASUKAN
-        { id: "KAT-201", jenis: "PEMASUKAN", nama: "Modal Owner", aktif: "TRUE", urutan: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-202", jenis: "PEMASUKAN", nama: "Reward Pusat", aktif: "TRUE", urutan: 2, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-203", jenis: "PEMASUKAN", nama: "Insentif", aktif: "TRUE", urutan: 3, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-204", jenis: "PEMASUKAN", nama: "Cashback", aktif: "TRUE", urutan: 4, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-205", jenis: "PEMASUKAN", nama: "Pendapatan Lain", aktif: "TRUE", urutan: 5, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-        { id: "KAT-206", jenis: "PEMASUKAN", nama: "Lainnya", aktif: "TRUE", urutan: 6, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" }
-      ];
-      defaultData.forEach(function(item) {
-        DatabaseService.appendRow("MASTER_KATEGORI_KEUANGAN", item);
-      });
+    if (!data || data.length <= 1) return;
+
+    var headers = data[0];
+    var idColIdx = -1;
+    for (var c = 0; c < headers.length; c++) {
+      if (headers[c].toString().trim().toLowerCase() === "id") {
+        idColIdx = c;
+        break;
+      }
     }
+    if (idColIdx === -1) idColIdx = 0;
+
+    var seenIds = {};
+    var uniqueRows = [headers];
+    var hasDuplicate = false;
+
+    for (var i = 1; i < data.length; i++) {
+      var row = data[i];
+      var idVal = (row[idColIdx] || "").toString().trim();
+      if (!idVal) continue;
+
+      if (seenIds[idVal]) {
+        hasDuplicate = true;
+      } else {
+        seenIds[idVal] = true;
+        uniqueRows.push(row);
+      }
+    }
+
+    if (hasDuplicate) {
+      sheet.clearContents();
+      sheet.getRange(1, 1, uniqueRows.length, headers.length).setValues(uniqueRows);
+    }
+  } catch (e) {
+    Logger.log("deduplicateMasterKategoriKeuangan_ error: " + e.toString());
+  }
+}
+
+function ensureDefaultKategoriKeuangan_() {
+  try {
+    deduplicateMasterKategoriKeuangan_();
+    var sheet = getSheetByName("MASTER_KATEGORI_KEUANGAN");
+    var data = sheet.getDataRange().getValues();
+    var headers = (data && data.length > 0) ? data[0] : ["id", "jenis", "nama", "aktif", "urutan", "created_at", "updated_at", "created_by"];
+    
+    var existingIds = {};
+    if (data && data.length > 1) {
+      var idIdx = -1;
+      for (var c = 0; c < headers.length; c++) {
+        if (headers[c].toString().trim().toLowerCase() === "id") {
+          idIdx = c;
+          break;
+        }
+      }
+      if (idIdx === -1) idIdx = 0;
+      for (var i = 1; i < data.length; i++) {
+        var val = (data[i][idIdx] || "").toString().trim();
+        if (val) existingIds[val] = true;
+      }
+    }
+
+    var defaultData = [
+      // PENGELUARAN
+      { id: "KAT-101", jenis: "PENGELUARAN", nama: "ATK", aktif: "TRUE", urutan: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-102", jenis: "PENGELUARAN", nama: "Packing", aktif: "TRUE", urutan: 2, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-103", jenis: "PENGELUARAN", nama: "BBM", aktif: "TRUE", urutan: 3, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-104", jenis: "PENGELUARAN", nama: "Transport", aktif: "TRUE", urutan: 4, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-105", jenis: "PENGELUARAN", nama: "Parkir", aktif: "TRUE", urutan: 5, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-106", jenis: "PENGELUARAN", nama: "Listrik", aktif: "TRUE", urutan: 6, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-107", jenis: "PENGELUARAN", nama: "Internet", aktif: "TRUE", urutan: 7, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-108", jenis: "PENGELUARAN", nama: "Air Minum", aktif: "TRUE", urutan: 8, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-109", jenis: "PENGELUARAN", nama: "Konsumsi", aktif: "TRUE", urutan: 9, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-110", jenis: "PENGELUARAN", nama: "Maintenance", aktif: "TRUE", urutan: 10, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-111", jenis: "PENGELUARAN", nama: "Lainnya", aktif: "TRUE", urutan: 11, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      // PEMASUKAN
+      { id: "KAT-201", jenis: "PEMASUKAN", nama: "Modal Owner", aktif: "TRUE", urutan: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-202", jenis: "PEMASUKAN", nama: "Reward Pusat", aktif: "TRUE", urutan: 2, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-203", jenis: "PEMASUKAN", nama: "Insentif", aktif: "TRUE", urutan: 3, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-204", jenis: "PEMASUKAN", nama: "Cashback", aktif: "TRUE", urutan: 4, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-205", jenis: "PEMASUKAN", nama: "Pendapatan Lain", aktif: "TRUE", urutan: 5, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-206", jenis: "PEMASUKAN", nama: "Lainnya", aktif: "TRUE", urutan: 6, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" }
+    ];
+
+    defaultData.forEach(function(item) {
+      if (!existingIds[item.id]) {
+        DatabaseService.appendRow("MASTER_KATEGORI_KEUANGAN", item);
+        existingIds[item.id] = true;
+      }
+    });
   } catch (e) {
     Logger.log("ensureDefaultKategoriKeuangan_ error: " + e.toString());
   }
@@ -3821,13 +3898,164 @@ function apiGetCustomerHistory(params) {
   }
 }
 
+function convertSystemSettingsToVertical_() {
+  try {
+    var sheet = getSheetByName("SystemSettings");
+    if (!sheet) return;
+    var data = sheet.getDataRange().getValues();
+    if (!data || data.length < 1) return;
+
+    if (data[0].length > 2) {
+      var headers = data[0];
+      var values = data[1] || [];
+      var verticalRows = [["key", "value"]];
+
+      for (var c = 0; c < headers.length; c++) {
+        var k = (headers[c] || "").toString().trim();
+        if (k) {
+          var v = values[c] !== undefined ? values[c] : "";
+          verticalRows.push([k, v]);
+        }
+      }
+
+      sheet.clearContents();
+      sheet.getRange(1, 1, verticalRows.length, 2).setValues(verticalRows);
+      formatHeader_(sheet, 2);
+      sheet.setColumnWidth(1, 280);
+      sheet.setColumnWidth(2, 500);
+    }
+  } catch (e) {
+    Logger.log("convertSystemSettingsToVertical_ error: " + e.toString());
+  }
+}
+
+function convertSystemSettingsToVertical() {
+  convertSystemSettingsToVertical_();
+  ensureDefaultSystemSettings_();
+  Logger.log("Penyimpanan SystemSettings berhasil diubah menjadi format vertikal (2 kolom: key & value).");
+  return "SystemSettings berhasil dikonversi ke format vertikal.";
+}
+
+function ensureDefaultSystemSettings_() {
+  try {
+    convertSystemSettingsToVertical_();
+    var sheet = getSheetByName("SystemSettings");
+    if (!sheet) return;
+    var data = sheet.getDataRange().getValues();
+
+    if (!data || data.length <= 1) {
+      var defaultSettings = [
+        ["key", "value"],
+        ["id", "SYS-1"],
+        ["apps_script_url", ""],
+        ["spreadsheet_id", ""],
+        ["divisor_express", 6000],
+        ["divisor_cargo", 4000],
+        ["folder_bukti_bayar_customer", ""],
+        ["folder_foto_paket", ""],
+        ["folder_foto_resi", ""],
+        ["folder_bukti_kas_masuk", ""],
+        ["folder_bukti_kas_keluar", ""],
+        ["folder_bukti_transfer_admin_owner", ""],
+        ["folder_bukti_transfer_owner_dp", ""]
+      ];
+      sheet.clearContents();
+      sheet.getRange(1, 1, defaultSettings.length, 2).setValues(defaultSettings);
+      formatHeader_(sheet, 2);
+      sheet.setColumnWidth(1, 280);
+      sheet.setColumnWidth(2, 500);
+    }
+  } catch (e) {
+    Logger.log("ensureDefaultSystemSettings_ error: " + e.toString());
+  }
+}
+
+function getSystemSettingsObject_() {
+  ensureDefaultSystemSettings_();
+  var sysRows = DatabaseService.getSheetData("SystemSettings");
+  var sysObj = {};
+  if (!sysRows || sysRows.length === 0) return sysObj;
+
+  var isVertical = false;
+  if (sysRows[0].length <= 2) {
+    isVertical = true;
+  } else {
+    var firstColLower = (sysRows[0][0] || "").toString().toLowerCase();
+    if (firstColLower === "key" || firstColLower === "parameter" || firstColLower === "setting") {
+      isVertical = true;
+    }
+  }
+
+  if (isVertical) {
+    for (var i = 0; i < sysRows.length; i++) {
+      var k = (sysRows[i][0] || "").toString().trim();
+      var v = sysRows[i][1] !== undefined ? sysRows[i][1] : "";
+      if (!k) continue;
+      var kLower = k.toLowerCase();
+      if (kLower === "key" || kLower === "setting" || kLower === "parameter" || kLower === "nama_setting" || kLower === "setting_key" || kLower === "property") {
+        continue;
+      }
+      sysObj[k] = v;
+    }
+  } else if (sysRows.length >= 2) {
+    sysObj = rowToObject_(sysRows[0], sysRows[1]);
+  }
+  return sysObj;
+}
+
+function saveSystemSettings_(sysObj) {
+  if (!sysObj || typeof sysObj !== "object") return;
+  var sheet = getSheetByName("SystemSettings");
+  if (!sheet) return;
+  var data = sheet.getDataRange().getValues();
+
+  var isVertical = false;
+  if (!data || data.length === 0 || data[0].length <= 2) {
+    isVertical = true;
+  } else {
+    var firstColLower = (data[0][0] || "").toString().toLowerCase();
+    if (firstColLower === "key" || firstColLower === "parameter" || firstColLower === "setting") {
+      isVertical = true;
+    }
+  }
+
+  if (isVertical) {
+    var existingKeysMap = {};
+    if (data && data.length > 0) {
+      for (var r = 0; r < data.length; r++) {
+        var k = (data[r][0] || "").toString().trim();
+        if (k) existingKeysMap[k] = r + 1; // 1-based row index
+      }
+    } else {
+      sheet.appendRow(["key", "value"]);
+      formatHeader_(sheet, 2);
+      existingKeysMap["key"] = 1;
+    }
+
+    var keysToSave = Object.keys(sysObj);
+    keysToSave.forEach(function(keyName) {
+      var val = sysObj[keyName];
+      if (val === undefined || val === null) val = "";
+      if (existingKeysMap[keyName]) {
+        var rowIdx = existingKeysMap[keyName];
+        sheet.getRange(rowIdx, 2).setValue(val);
+      } else {
+        sheet.appendRow([keyName, val]);
+        existingKeysMap[keyName] = sheet.getLastRow();
+      }
+    });
+  } else {
+    if (data && data.length >= 2) {
+      DatabaseService.updateRowByColumn("SystemSettings", "id", sysObj.id || data[1][0], sysObj);
+    } else {
+      DatabaseService.appendRow("SystemSettings", sysObj);
+    }
+  }
+}
+
 function apiGetAllSettings() {
   try {
-    var sysRows = DatabaseService.getSheetData("SystemSettings");
-    var sysObj = {};
-    if (sysRows && sysRows.length >= 2) {
-      sysObj = rowToObject_(sysRows[0], sysRows[1]);
-    }
+    var sysObj = getSystemSettingsObject_();
     var outletsRes = apiGetOutlets();
     var usersRes = apiGetUsers();
     return {
@@ -3872,13 +4100,7 @@ function apiSaveAllSettings(params) {
     }
 
     if (params.systemSettings) {
-      var sysObj = params.systemSettings;
-      var sysRows = DatabaseService.getSheetData("SystemSettings");
-      if (sysRows && sysRows.length >= 2) {
-        DatabaseService.updateRowByColumn("SystemSettings", "id", sysObj.id || sysRows[1][0], sysObj);
-      } else {
-        DatabaseService.appendRow("SystemSettings", sysObj);
-      }
+      saveSystemSettings_(params.systemSettings);
     }
 
     return { status: "success", message: "Pengaturan berhasil disimpan." };

@@ -108,6 +108,7 @@ export default function MasterKategoriKeuanganPage({ session }: MasterKategoriKe
         // Update
         const response = await callBackend("updateKategoriKeuangan", {
           id: editingItem.id,
+          jenis: editingItem.jenis || activeTab,
           nama: formNama.trim(),
           urutan: formUrutan,
           aktif: formAktif
