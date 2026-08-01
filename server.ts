@@ -887,7 +887,14 @@ app.use("/api/:action", async (req, res, next) => {
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: targetAction, data: req.body || {} })
       });
-      const json = await response.json();
+      const text = await response.text();
+      let json: any;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        console.warn(`Apps Script response for ${action} was not valid JSON (HTML received), falling back to local route handler...`);
+        return next();
+      }
       if (json && json.status === "error" && json.message && json.message.includes("Aksi tidak dikenali")) {
         console.warn(`Apps Script returned unrecognized action for ${action}, falling back to local route handler...`);
         return next();
@@ -2352,7 +2359,7 @@ app.post("/api/getAdminDashboardData", (req, res) => {
 app.post("/api/getDashboardData", (req, res) => {
   const { user_id, role, filterOutlet, filterTipeLayanan, dateStart, dateEnd } = req.body;
 
-  if (role !== "OWNER") {
+  if ((role || "").toString().toUpperCase() !== "OWNER") {
     return res.status(403).json({ status: "error", message: "Akses ditolak. Hanya untuk OWNER." });
   }
 

@@ -39,7 +39,14 @@ export function useAppsScript() {
       body: body ? JSON.stringify(body) : undefined,
     });
 
-    const json = await response.json();
+    const text = await response.text();
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      setLoading(false);
+      throw new Error(`Respons dari server lokal bukan JSON yang valid (HTTP ${response.status}).`);
+    }
     setLoading(false);
 
     if (response.status !== 200 || json.status === "error") {
@@ -96,11 +103,7 @@ export function useAppsScript() {
         const appsScriptUrl = !isNodeOnlyAction && (customUrl || (envUrl && envUrl.trim() !== "")) ? (customUrl || envUrl) : null;
 
         if (appsScriptUrl) {
-          console.log("==================================");
-          console.log("APPS SCRIPT URL:", appsScriptUrl);
-          console.log("ACTION:", action);
-          console.log("==================================");
-          let response: Response;
+          let response: Response | null = null;
           try {
             response = await fetch(appsScriptUrl, {
               method: "POST",
@@ -120,34 +123,36 @@ export function useAppsScript() {
                 body: JSON.stringify({ action, data: params, appsScriptUrl }),
               });
             } catch (proxyErr: any) {
-              console.error(`Proxy fetch also failed for '${action}':`, proxyErr);
-              try {
-                return await callLocalApi(action, params);
-              } catch {
-                setLoading(false);
-                throw new Error(`Gagal terhubung ke Google Apps Script Web App (${netErr.message}). Silakan periksa koneksi internet atau APPS_SCRIPT_URL.`);
-              }
-            }
-          }
-
-          if (!response.ok) {
-            try {
+              console.warn(`Proxy fetch also failed for '${action}':`, proxyErr);
               return await callLocalApi(action, params);
-            } catch {
-              setLoading(false);
-              throw new Error(`HTTP ${response.status} Error dari Google Apps Script.`);
             }
           }
 
-          const json = await response.json();
+          if (response && response.ok) {
+            const text = await response.text();
+            let json: any = null;
+            try {
+              json = JSON.parse(text);
+            } catch {
+              console.warn(`Response from Apps Script for '${action}' was not valid JSON (HTML received). Falling back to local Express API...`);
+              return await callLocalApi(action, params);
+            }
 
-          if (json && json.status === "error") {
-            const errMsg = json.message || "";
+            if (json && json.status === "error") {
+              const errMsg = json.message || "";
+              if (errMsg.includes("Aksi tidak dikenali") || errMsg.includes("unrecognized")) {
+                console.warn(`Apps Script returned unrecognized action '${action}', falling back to local Express API...`);
+                return await callLocalApi(action, params);
+              }
+              setLoading(false);
+              throw new Error(errMsg || "Terjadi kesalahan backend Google Apps Script.");
+            }
             setLoading(false);
-            throw new Error(errMsg || "Terjadi kesalahan backend Google Apps Script.");
+            return json as T;
+          } else {
+            console.warn(`Apps Script HTTP status ${response?.status}, falling back to local Express API...`);
+            return await callLocalApi(action, params);
           }
-          setLoading(false);
-          return json as T;
         } else {
           return await callLocalApi(action, params);
         }
