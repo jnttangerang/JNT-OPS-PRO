@@ -235,16 +235,72 @@ function apiLogin(params) {
 /**
  * Ambil Daftar Outlet — sekarang ikut kembalikan target_resi_harian & target_resi_bulanan
  */
+function ensureDefaultOutlets_() {
+  try {
+    var sheet = getSheetByName("Outlets");
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) {
+      var defaultOutlets = [
+        {
+          outlet_id: "OUT-001",
+          nama_outlet: "J&T Express - Tangerang Karawaci",
+          kode_outlet: "TGR01",
+          no_wa_outlet: "081234567890",
+          alamat_outlet: "Jl. Karawaci Raya No.12, Karawaci, Tangerang",
+          latitude: -6.2088,
+          longitude: 106.634,
+          radius_operasional: 50,
+          status_aktif: "AKTIF",
+          target_express: 25,
+          target_cargo: 15,
+          target_resi_harian: 50,
+          target_resi_bulanan: 1500
+        },
+        {
+          outlet_id: "OUT-002",
+          nama_outlet: "J&T Express - Tangerang Cikokol",
+          kode_outlet: "TGR02",
+          no_wa_outlet: "081234567891",
+          alamat_outlet: "Jl. M.H. Thamrin No.88, Cikokol, Tangerang",
+          latitude: -6.1895,
+          longitude: 106.645,
+          radius_operasional: 50,
+          status_aktif: "AKTIF",
+          target_express: 20,
+          target_cargo: 10,
+          target_resi_harian: 40,
+          target_resi_bulanan: 1200
+        }
+      ];
+      defaultOutlets.forEach(function(item) {
+        DatabaseService.appendRow("Outlets", item);
+      });
+    }
+  } catch (e) {
+    Logger.log("ensureDefaultOutlets_ error: " + e.toString());
+  }
+}
+
 function apiGetOutlets() {
+  ensureDefaultOutlets_();
   var rows = DatabaseService.getSheetData("Outlets");
   var headers = rows[0];
   var outlets = [];
   for (var i = 1; i < rows.length; i++) {
     var obj = rowToObject_(headers, rows[i]);
+    if (!obj.outlet_id) continue;
     outlets.push({
-      outlet_id: obj.outlet_id.toString(),
-      nama_outlet: obj.nama_outlet.toString(),
-      alamat_outlet: obj.alamat_outlet.toString(),
+      outlet_id: (obj.outlet_id || "").toString(),
+      nama_outlet: (obj.nama_outlet || "").toString(),
+      alamat_outlet: (obj.alamat_outlet || "").toString(),
+      kode_outlet: (obj.kode_outlet || "").toString(),
+      no_wa_outlet: (obj.no_wa_outlet || "").toString(),
+      latitude: Number(obj.latitude) || 0,
+      longitude: Number(obj.longitude) || 0,
+      radius_operasional: Number(obj.radius_operasional) || 50,
+      status_aktif: (obj.status_aktif || "AKTIF").toString(),
+      target_express: Number(obj.target_express) || 0,
+      target_cargo: Number(obj.target_cargo) || 0,
       target_resi_harian: Number(obj.target_resi_harian) || 0,
       target_resi_bulanan: Number(obj.target_resi_bulanan) || 0
     });
@@ -3788,6 +3844,31 @@ function apiGetAllSettings() {
 function apiSaveAllSettings(params) {
   try {
     params = params || {};
+
+    if (params.outlets && Array.isArray(params.outlets)) {
+      params.outlets.forEach(function(o) {
+        if (!o.outlet_id) return;
+        var existing = DatabaseService.findRowByColumn("Outlets", "outlet_id", o.outlet_id);
+        if (existing) {
+          DatabaseService.updateRowByColumn("Outlets", "outlet_id", o.outlet_id, o);
+        } else {
+          DatabaseService.appendRow("Outlets", o);
+        }
+      });
+    }
+
+    if (params.users && Array.isArray(params.users)) {
+      params.users.forEach(function(u) {
+        if (!u.user_id) return;
+        var existing = DatabaseService.findRowByColumn("Users", "user_id", u.user_id);
+        if (existing) {
+          DatabaseService.updateRowByColumn("Users", "user_id", u.user_id, u);
+        } else {
+          DatabaseService.appendRow("Users", u);
+        }
+      });
+    }
+
     if (params.systemSettings) {
       var sysObj = params.systemSettings;
       var sysRows = DatabaseService.getSheetData("SystemSettings");
@@ -3797,6 +3878,7 @@ function apiSaveAllSettings(params) {
         DatabaseService.appendRow("SystemSettings", sysObj);
       }
     }
+
     return { status: "success", message: "Pengaturan berhasil disimpan." };
   } catch(e) {
     return { status: "error", message: e.message };
