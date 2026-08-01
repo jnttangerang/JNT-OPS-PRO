@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Settings, Save, AlertCircle, Building2, User as UserIcon, Users, HardDrive, FileText, CheckCircle, XCircle, Search, Plus, Key, Lock, Check, Tags, BookOpen } from "lucide-react";
+import { Settings, Save, AlertCircle, Building2, User as UserIcon, Users, HardDrive, FileText, CheckCircle, XCircle, Search, Plus, Key, Lock, Check, Tags, BookOpen, Eye, EyeOff } from "lucide-react";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
 import { SessionData, Outlet, User, SystemSettings } from "../../types";
@@ -48,9 +48,13 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [adminSaving, setAdminSaving] = useState(false);
 
   const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [showAddUserPassword, setShowAddUserPassword] = useState(false);
   const [newUser, setNewUser] = useState<Partial<User>>({});
   
   const [showAddOutletModal, setShowAddOutletModal] = useState(false);
@@ -59,6 +63,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
   const [showResetPasswordModal, setShowResetPasswordModal] = useState<string | null>(null);
   const [resetPasswordVal, setResetPasswordVal] = useState("");
   const [confirmResetPasswordVal, setConfirmResetPasswordVal] = useState("");
+  const [showResetOldPassword, setShowResetOldPassword] = useState(false);
+  const [showResetNewPassword, setShowResetNewPassword] = useState(false);
+  const [showResetConfirmPassword, setShowResetConfirmPassword] = useState(false);
+  const [userPassVisible, setUserPassVisible] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetchSettings();
@@ -363,30 +371,63 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
           <div className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Kata Sandi Lama</label>
-              <input 
-                type="password" 
-                value={oldPassword}
-                onChange={e => setOldPassword(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:border-[#E4002B] outline-none" 
-              />
+              <div className="relative">
+                <input 
+                  type={showOldPassword ? "text" : "password"} 
+                  value={oldPassword}
+                  onChange={e => setOldPassword(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:border-[#E4002B] outline-none" 
+                  placeholder="Masukkan kata sandi lama"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowOldPassword(!showOldPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  title={showOldPassword ? "Sembunyikan password" : "Lihat password"}
+                >
+                  {showOldPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Kata Sandi Baru</label>
-              <input 
-                type="password" 
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:border-[#E4002B] outline-none" 
-              />
+              <div className="relative">
+                <input 
+                  type={showNewPassword ? "text" : "password"} 
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:border-[#E4002B] outline-none" 
+                  placeholder="Masukkan kata sandi baru"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  title={showNewPassword ? "Sembunyikan password" : "Lihat password"}
+                >
+                  {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Konfirmasi Kata Sandi</label>
-              <input 
-                type="password" 
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:border-[#E4002B] outline-none" 
-              />
+              <div className="relative">
+                <input 
+                  type={showConfirmPassword ? "text" : "password"} 
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg pl-3 pr-10 py-2.5 text-sm focus:border-[#E4002B] outline-none" 
+                  placeholder="Ulangi kata sandi baru"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  title={showConfirmPassword ? "Sembunyikan password" : "Lihat password"}
+                >
+                  {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
             <div className="pt-2">
               <button
@@ -686,6 +727,25 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
                         <option value="AKTIF">AKTIF</option>
                         <option value="NON-AKTIF">NON-AKTIF</option>
                       </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Password Saat Ini</label>
+                      <div className="relative">
+                        <input 
+                          type={userPassVisible[u.user_id] ? "text" : "password"} 
+                          value={u.password_hash?.replace(/^hash_/, "") || u.password_hash || ""} 
+                          onChange={(e) => handleChangeUser(u.user_id, "password_hash", "hash_" + e.target.value)} 
+                          className="w-full border border-gray-200 rounded-lg pl-3 pr-10 py-2 text-sm focus:border-[#E4002B] outline-none" 
+                        />
+                        <button 
+                          type="button"
+                          onClick={() => setUserPassVisible(prev => ({ ...prev, [u.user_id]: !prev[u.user_id] }))}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                          title={userPassVisible[u.user_id] ? "Sembunyikan password" : "Lihat password"}
+                        >
+                          {userPassVisible[u.user_id] ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                   
@@ -1035,7 +1095,23 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Password Baru</label>
-              <input type="password" value={newUser.password_hash || ""} onChange={e => setNewUser({...newUser, password_hash: e.target.value})} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#E4002B] outline-none" />
+              <div className="relative">
+                <input 
+                  type={showAddUserPassword ? "text" : "password"} 
+                  value={newUser.password_hash || ""} 
+                  onChange={e => setNewUser({...newUser, password_hash: e.target.value})} 
+                  className="w-full border border-gray-200 rounded-lg pl-3 pr-10 py-2 text-sm focus:border-[#E4002B] outline-none" 
+                  placeholder="Masukkan password baru"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAddUserPassword(!showAddUserPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  title={showAddUserPassword ? "Sembunyikan password" : "Lihat password"}
+                >
+                  {showAddUserPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1116,28 +1192,92 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
       )}
 
       {/* Reset Password Modal */}
-      {showResetPasswordModal && (
-        <Modal 
-          title="Reset Password Pengguna" 
-          onClose={() => setShowResetPasswordModal(null)}
-          onSubmit={handleResetPassword}
-          ctaText="Reset Password"
-        >
-          <div className="space-y-4">
-            <div className="bg-orange-50 border border-orange-100 p-3 rounded-lg text-sm text-orange-800">
-              Anda akan mereset password untuk user ini.
+      {showResetPasswordModal && (() => {
+        const targetUser = userList.find(u => u.user_id === showResetPasswordModal);
+        const oldPassText = targetUser ? (targetUser.password_hash?.replace(/^hash_/, "") || targetUser.password_hash || "-") : "-";
+
+        return (
+          <Modal 
+            title={`Reset Password Pengguna (${targetUser?.username || ""})`}
+            onClose={() => {
+              setShowResetPasswordModal(null);
+              setShowResetOldPassword(false);
+              setShowResetNewPassword(false);
+              setShowResetConfirmPassword(false);
+            }}
+            onSubmit={handleResetPassword}
+            ctaText="Reset Password"
+          >
+            <div className="space-y-4">
+              <div className="bg-orange-50 border border-orange-100 p-3 rounded-lg text-sm text-orange-800">
+                Anda akan mereset password untuk user <span className="font-bold">{targetUser?.nama_lengkap || targetUser?.username}</span>.
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Password Lama / Saat Ini</label>
+                <div className="relative">
+                  <input 
+                    type={showResetOldPassword ? "text" : "password"} 
+                    value={oldPassText} 
+                    readOnly
+                    className="w-full border border-gray-200 bg-gray-50 rounded-lg pl-3 pr-10 py-2 text-sm text-gray-700 outline-none" 
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowResetOldPassword(!showResetOldPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    title={showResetOldPassword ? "Sembunyikan password" : "Lihat password"}
+                  >
+                    {showResetOldPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Password Baru</label>
+                <div className="relative">
+                  <input 
+                    type={showResetNewPassword ? "text" : "password"} 
+                    value={resetPasswordVal} 
+                    onChange={e => setResetPasswordVal(e.target.value)} 
+                    className="w-full border border-gray-200 rounded-lg pl-3 pr-10 py-2 text-sm focus:border-[#E4002B] outline-none" 
+                    placeholder="Masukkan password baru"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowResetNewPassword(!showResetNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    title={showResetNewPassword ? "Sembunyikan password" : "Lihat password"}
+                  >
+                    {showResetNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Konfirmasi Password Baru</label>
+                <div className="relative">
+                  <input 
+                    type={showResetConfirmPassword ? "text" : "password"} 
+                    value={confirmResetPasswordVal} 
+                    onChange={e => setConfirmResetPasswordVal(e.target.value)} 
+                    className="w-full border border-gray-200 rounded-lg pl-3 pr-10 py-2 text-sm focus:border-[#E4002B] outline-none" 
+                    placeholder="Ulangi password baru"
+                  />
+                  <button 
+                    type="button"
+                    onClick={() => setShowResetConfirmPassword(!showResetConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                    title={showResetConfirmPassword ? "Sembunyikan password" : "Lihat password"}
+                  >
+                    {showResetConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Password Baru</label>
-              <input type="password" value={resetPasswordVal} onChange={e => setResetPasswordVal(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#E4002B] outline-none" />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Konfirmasi Password Baru</label>
-              <input type="password" value={confirmResetPasswordVal} onChange={e => setConfirmResetPasswordVal(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-[#E4002B] outline-none" />
-            </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        );
+      })()}
 
     </div>
   );

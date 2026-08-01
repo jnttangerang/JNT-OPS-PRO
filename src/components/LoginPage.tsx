@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { LogIn, ShieldAlert, Truck, Lock, User, Briefcase, TrendingUp, UserCheck } from "lucide-react";
+import { LogIn, ShieldAlert, Truck, Lock, User, Briefcase, TrendingUp, UserCheck, Eye, EyeOff } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData } from "../types";
 import { toast } from "../utils/toast";
@@ -13,6 +13,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [selectedRole, setSelectedRole] = useState<"ADMIN" | "OWNER">("ADMIN");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -179,15 +180,23 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   <Lock className="h-5 w-5" />
                 </div>
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className={`w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent text-sm text-gray-800 transition-all duration-200 ${
+                  className={`w-full pl-10 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent text-sm text-gray-800 transition-all duration-200 ${
                     selectedRole === "ADMIN" ? "focus:ring-[#E4002B]" : "focus:ring-[#171717]"
                   }`}
                   placeholder="••••••••"
                   disabled={loading}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  title={showPassword ? "Sembunyikan password" : "Lihat password"}
+                >
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
               </div>
             </div>
 
