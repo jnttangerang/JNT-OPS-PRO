@@ -1129,7 +1129,7 @@ Catatan : ${catatanAdmin || "-"}
           <div>
             <div className="flex items-center gap-2">
               <span className="bg-red-50 text-[#E4002B] text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest font-mono">
-                OPERATIONAL WORKSPACE
+                OPERASIONAL WORKSPACE
               </span>
               {editingTxId && (
                 <span className="bg-blue-50 text-blue-700 text-[10px] font-bold px-2.5 py-1 rounded-full font-mono border border-blue-100">
@@ -1138,7 +1138,7 @@ Catatan : ${catatanAdmin || "-"}
               )}
             </div>
             <h1 className="text-2xl font-bold text-gray-800 font-sans mt-2">
-              Pre-Input & Workspace Operational
+              Pre-Input & Workspace Operasional
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
               Papan kerja utama admin untuk input, pantau, dan teruskan transaksi aktif.
@@ -2216,7 +2216,7 @@ Catatan : ${catatanAdmin || "-"}
               {loadingDrafts ? (
                 <div className="py-12 text-center text-xs text-gray-400 flex flex-col items-center gap-2">
                   <RefreshCw className="h-6 w-6 animate-spin text-[#E4002B]" />
-                  <span>Memuat workspace operational board...</span>
+                  <span>Memuat workspace operasional board...</span>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 pt-2">

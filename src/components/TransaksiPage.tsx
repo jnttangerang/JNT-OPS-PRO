@@ -937,7 +937,7 @@ export default function TransaksiPage({
               { label: "Foto Paket", done: stepFotoPaket, active: !stepFotoPaket },
               { label: "Foto Resi", done: stepFotoResi, active: stepFotoPaket && !stepFotoResi },
               { label: "Barcode", done: stepBarcode, active: stepFotoPaket && stepFotoResi && !stepBarcode },
-              { label: "Produk YoYi", done: stepProdukYoYi, active: stepFotoPaket && stepFotoResi && stepBarcode && !stepProdukYoYi },
+              { label: "YoYi / JTC", done: stepProdukYoYi, active: stepFotoPaket && stepFotoResi && stepBarcode && !stepProdukYoYi },
               { label: "Pembayaran", done: stepPembayaran, active: stepFotoPaket && stepFotoResi && stepBarcode && stepProdukYoYi && !stepPembayaran },
               { label: "Selesai", done: isAllStepsValid, active: isAllStepsValid }
             ].map((item, idx, arr) => (
@@ -1187,7 +1187,7 @@ export default function TransaksiPage({
                           ? "border-red-400 focus:ring-red-500 focus:border-red-500 bg-red-50" 
                           : "border-gray-200 focus:ring-[#E4002B] focus:border-[#E4002B]"
                       }`}
-                      placeholder="CONTOH: JD12345678901 / JTC98765432101"
+                      placeholder="CONTOH: JD12345678901"
                     />
                     {checkingResi && (
                       <div className="absolute right-3 inset-y-0 flex items-center">
