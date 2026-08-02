@@ -17,14 +17,14 @@ export default function QuickAction({ onNavigate, currentRole }: QuickActionProp
   const actions = [
     {
       id: "pre-input",
-      label: "Scan / Pre-Input",
-      icon: QrCode,
+      label: "Pre-Input",
+      icon: FileText,
       color: "bg-amber-500 hover:bg-amber-600 text-white"
     },
     {
       id: "transaksi",
-      label: "Input Transaksi",
-      icon: FileText,
+      label: "Scan / Input Transaksi",
+      icon: QrCode,
       color: "bg-[#E4002B] hover:bg-red-700 text-white"
     },
     {
