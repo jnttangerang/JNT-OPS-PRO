@@ -60,8 +60,8 @@ export function useAppsScript() {
     async <T = any>(action: string, params: any = {}): Promise<T> => {
       setLoading(true);
 
-      // Utility actions that are handled locally on Node/Express server (AI processing, photo OCR, file uploads)
-      const nodeOnlyActions = ["analyzeResiPhoto", "perbaikiAlamatAI", "ping", "testConnection", "uploadFile"];
+      // Utility actions that are handled locally on Node/Express server (AI processing, photo OCR, file uploads, admin dashboard)
+      const nodeOnlyActions = ["analyzeResiPhoto", "perbaikiAlamatAI", "ping", "testConnection", "uploadFile", "getAdminDashboardData"];
       const isNodeOnlyAction = nodeOnlyActions.includes(action);
 
       // Check if we are running in the Google Sheets Apps Script environment
@@ -140,8 +140,8 @@ export function useAppsScript() {
 
             if (json && json.status === "error") {
               const errMsg = json.message || "";
-              if (errMsg.includes("Aksi tidak dikenali") || errMsg.includes("unrecognized")) {
-                console.warn(`Apps Script returned unrecognized action '${action}', falling back to local Express API...`);
+              if (errMsg.includes("Aksi tidak dikenali") || errMsg.includes("unrecognized") || errMsg.toLowerCase().includes("akses ditolak")) {
+                console.warn(`Apps Script returned error '${errMsg}' for '${action}', falling back to local Express API...`);
                 return await callLocalApi(action, params);
               }
               setLoading(false);

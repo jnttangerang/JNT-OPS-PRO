@@ -866,6 +866,7 @@ const UTILITY_ACTIONS = new Set([
   "addReview",
   "deleteReview",
   "analyzeReview",
+  "getAdminDashboardData",
   "apps-script"
 ]);
 
@@ -892,11 +893,11 @@ app.use("/api/:action", async (req, res, next) => {
       try {
         json = JSON.parse(text);
       } catch {
-        console.warn(`Apps Script response for ${action} was not valid JSON (HTML received), falling back to local route handler...`);
+        console.log(`Apps Script response for ${action} was not valid JSON (HTML received), falling back to local route handler...`);
         return next();
       }
-      if (json && json.status === "error" && json.message && json.message.includes("Aksi tidak dikenali")) {
-        console.warn(`Apps Script returned unrecognized action for ${action}, falling back to local route handler...`);
+      if (json && json.status === "error" && json.message && (json.message.includes("Aksi tidak dikenali") || json.message.toLowerCase().includes("akses ditolak"))) {
+        console.log(`Apps Script returned error for ${action} (${json.message}), falling back to local route handler...`);
         return next();
       }
       return res.json(json);

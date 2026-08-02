@@ -606,8 +606,8 @@ function apiGetDashboardData(params) {
   var dateStart = params.dateStart;
   var dateEnd = params.dateEnd;
 
-  if (role !== "OWNER") {
-    return { status: "error", message: "Akses Ditolak! Hanya role OWNER yang dapat membuka Dashboard." };
+  if (role !== "ADMIN" && role !== "OWNER") {
+    return { status: "error", message: "Akses Ditolak! Hanya role ADMIN dan OWNER yang dapat membuka Dashboard." };
   }
 
   var dbExp = DatabaseService.getSheetData("EXP_Resi");
@@ -847,10 +847,10 @@ function apiGetRiwayatTransaksi(params) {
   var dbOutlets = DatabaseService.getSheetData("Outlets");
   var dbUsers = DatabaseService.getSheetData("Users");
 
-  var expStatusCol = getColIndex_(sheetExp, "status_resi");
-  var expTotalCol = getColIndex_(sheetExp, "grand_total");
-  var crgStatusCol = getColIndex_(sheetCrg, "status_resi");
-  var crgTotalCol = getColIndex_(sheetCrg, "grand_total");
+  var expStatusCol = (dbExp && dbExp[0]) ? dbExp[0].indexOf("status_resi") : -1;
+  var expTotalCol = (dbExp && dbExp[0]) ? dbExp[0].indexOf("grand_total") : -1;
+  var crgStatusCol = (dbCrg && dbCrg[0]) ? dbCrg[0].indexOf("status_resi") : -1;
+  var crgTotalCol = (dbCrg && dbCrg[0]) ? dbCrg[0].indexOf("grand_total") : -1;
 
   var backupMap = {};
   for (var k = 1; k < dbBackup.length; k++) {
@@ -878,7 +878,7 @@ function apiGetRiwayatTransaksi(params) {
       admin: userMap[r[3].toString()] || r[3].toString(),
       outlet: outletMap[outId] || outId,
       tipe: "Express",
-      grand_total: parseFloat(r[expTotalCol]) || 0,
+      grand_total: parseFloat((expTotalCol !== -1 && r[expTotalCol] !== undefined) ? r[expTotalCol] : (r[8] || 0)) || 0,
       pengirim: p.pengirim,
       penerima: p.penerima,
       status_resi: (expStatusCol !== -1 && r[expStatusCol]) ? r[expStatusCol].toString() : "AKTIF"
@@ -898,7 +898,7 @@ function apiGetRiwayatTransaksi(params) {
       admin: userMap[c[3].toString()] || c[3].toString(),
       outlet: outletMap[outIdC] || outIdC,
       tipe: "Cargo",
-      grand_total: parseFloat(c[crgTotalCol]) || 0,
+      grand_total: parseFloat((crgTotalCol !== -1 && c[crgTotalCol] !== undefined) ? c[crgTotalCol] : (c[8] || 0)) || 0,
       pengirim: pC.pengirim,
       penerima: pC.penerima,
       status_resi: (crgStatusCol !== -1 && c[crgStatusCol]) ? c[crgStatusCol].toString() : "AKTIF"
