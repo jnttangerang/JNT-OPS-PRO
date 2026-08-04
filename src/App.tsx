@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2, Tags, Wallet, Users, Terminal
+  Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2, Tags, Wallet, Users, Terminal, Upload
 } from "lucide-react";
 import useAppsScript from "./hooks/useAppsScript";
 import LoginPage from "./components/LoginPage";
@@ -12,6 +12,7 @@ import { LayoutDashboard, Settings } from "lucide-react";
 import RiwayatTransaksiPage from "./components/RiwayatTransaksiPage";
 import UlasanMapsPage from "./components/UlasanMapsPage";
 import CustomerPage from "./components/CustomerPage";
+import ImportCustomerPage from "./components/customer/ImportCustomerPage";
 import DeveloperPage from "./components/DeveloperPage";
 import SettingsPage from "./components/owner/SettingsPage";
 import SetoranOwnerPage from "./components/owner/SetoranOwnerPage";
@@ -190,6 +191,7 @@ export default function App() {
           items: [
             { id: "dashboard-customer", label: "Dashboard Customer", icon: BarChart3 },
             { id: "customer", label: "Data Customer", icon: Users },
+            { id: "import-customer", label: "Import Customer", icon: Upload },
             { id: "analisa-customer", label: "Analisa Customer", icon: Star },
           ]
         },
@@ -550,6 +552,12 @@ export default function App() {
 
         {session && currentView === "customer" && (
           <CustomerPage
+            outlets={outlets}
+          />
+        )}
+        {session && currentView === "import-customer" && session.role === "OWNER" && (
+          <ImportCustomerPage
+            session={session}
             outlets={outlets}
           />
         )}

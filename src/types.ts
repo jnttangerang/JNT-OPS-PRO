@@ -75,6 +75,7 @@ export interface MasterPengirim {
   status: "AKTIF" | "NON-AKTIF";
   created_at: string;
   updated_at: string;
+  outlet_id_asal?: string;
 }
 
 export interface MasterPenerima {
@@ -94,6 +95,7 @@ export interface MasterPenerima {
   status: "AKTIF" | "NON-AKTIF";
   created_at: string;
   updated_at: string;
+  outlet_id_asal?: string;
 }
 
 export interface RiwayatPenerima {

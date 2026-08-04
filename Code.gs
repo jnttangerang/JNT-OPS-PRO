@@ -179,6 +179,8 @@ function handleRouting(action, params) {
       return apiDebugLoginVersion();
     case "debugSpreadsheet":
       return apiDebugSpreadsheet();
+    case "importCustomerFromSheet":
+      return apiImportCustomerFromSheet(params);
     default:
       return { status: "error", message: "Aksi tidak dikenali: " + action };
   }
@@ -1799,7 +1801,7 @@ function simulateSha256(input) {
 // Jangan hapus/reorder kolom existing di sini — itu mengubah posisi index yang
 // sudah dipakai kode lain (mis. getRange(row, N)).
 // ==========================================
-var DB_SCHEMA_VERSION = 5; // v5: tambah MASTER_PENGIRIM, MASTER_PENERIMA, SystemSettings + fix kolom weight/ekspedisi
+var DB_SCHEMA_VERSION = 6; // v6: tambah outlet_id_asal di MASTER_PENGIRIM & MASTER_PENERIMA (persiapan import customer)
 
 var DB_SCHEMA = {
   // Kolom lama TIDAK BOLEH dihapus/direorder — hanya tambah di ujung kanan.
@@ -1840,10 +1842,10 @@ var DB_SCHEMA = {
   // Sheet baru — belum ada di spreadsheet, akan dibuat oleh initializeDatabase().
   MASTER_PENGIRIM: ["id", "customer_id", "nama", "telepon", "provinsi", "kabupaten", "kecamatan", "kelurahan",
     "kode_pos", "alamat", "jumlah_pengiriman", "tanggal_pertama", "tanggal_terakhir", "status",
-    "created_at", "updated_at"],
+    "created_at", "updated_at", "outlet_id_asal"],
   MASTER_PENERIMA: ["id", "customer_id", "nama", "telepon", "provinsi", "kabupaten", "kecamatan", "kelurahan",
     "kode_pos", "alamat", "jumlah_diterima", "tanggal_pertama", "tanggal_terakhir", "status",
-    "created_at", "updated_at"],
+    "created_at", "updated_at", "outlet_id_asal"],
   SystemSettings: ["key", "value"]
 };
 
@@ -3210,7 +3212,8 @@ function apiDailySummaryGAS(params) {
 }
 
 function apiDetectAnomaliesGAS(params) {
-  var setorans = DatabaseService.readData("Master_Setoran") || [];
+  var setoranRaw = DatabaseService.getSheetData("Master_Setoran") || [];
+  var setorans = sheetToObjects(setoranRaw);
   var pendingList = setorans.filter(function(s) { return s.status === "MENUNGGU_APPROVAL"; });
   var rejectedList = setorans.filter(function(s) { return s.status === "DITOLAK"; });
 
@@ -3851,6 +3854,268 @@ function apiGetUsers() {
     return { status: "success", data: list };
   } catch(e) {
     return { status: "error", message: e.message };
+  }
+}
+
+function normalizePhone_(phone) {
+  if (!phone) return "";
+  var digits = String(phone).replace(/\D/g, "");
+  if (digits.indexOf("62") === 0) digits = digits.substring(2);
+  else if (digits.indexOf("0") === 0) digits = digits.substring(1);
+  return digits;
+}
+
+function apiImportCustomerFromSheet(params) {
+  try {
+    var sheetName = params.sheetName;
+    var outletId = params.outletId;
+    var spreadsheetId = params.spreadsheetId;
+    var isPreview = params.preview === true;
+    if (!sheetName) throw new Error("sheetName wajib diisi");
+
+    var rawData;
+    if (spreadsheetId) {
+      var match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      var id = match ? match[1] : spreadsheetId;
+      var extSs = SpreadsheetApp.openById(id);
+      var extSheet = extSs.getSheetByName(sheetName);
+      if (!extSheet) throw new Error("Sheet '" + sheetName + "' tidak ditemukan di Spreadsheet target.");
+      rawData = extSheet.getDataRange().getValues();
+    } else {
+      rawData = DatabaseService.getSheetData(sheetName);
+    }
+
+    if (!rawData || rawData.length < 2) {
+      throw new Error("Sheet kosong atau tidak ditemukan.");
+    }
+
+    var headers = rawData[0];
+    
+    // Cari index kolom
+    var idxSndName = -1, idxSndPhone = -1, idxSndAddr = -1, idxSndZip = -1;
+    var idxRcvName = -1, idxRcvPhone = -1, idxRcvAddr = -1, idxRcvZip = -1;
+    var idxItemName = -1, idxItemWeight = -1, idxItemVol = -1, idxItemValue = -1, idxItemQty = -1;
+
+    for (var i = 0; i < headers.length; i++) {
+      var h = headers[i].toString().trim().toLowerCase();
+      if (h === "nama pengirim" && idxSndName === -1) idxSndName = i;
+      else if (h === "no. hp" && idxSndPhone === -1) idxSndPhone = i;
+      else if (h === "alamat pengirim" && idxSndAddr === -1) idxSndAddr = i;
+      else if (h === "kode pos" && idxSndZip === -1) idxSndZip = i;
+      
+      else if (h === "nama penerima" && idxRcvName === -1) idxRcvName = i;
+      else if (h === "no. hp" && idxSndPhone !== -1 && idxRcvPhone === -1) idxRcvPhone = i;
+      else if (h === "alamat penerima" && idxRcvAddr === -1) idxRcvAddr = i;
+      else if (h === "kode pos" && idxSndZip !== -1 && idxRcvZip === -1) idxRcvZip = i;
+      
+      else if (h === "nama barang" && idxItemName === -1) idxItemName = i;
+      else if (h === "berat barang" && idxItemWeight === -1) idxItemWeight = i;
+      else if (h === "volume (pxlxt)" && idxItemVol === -1) idxItemVol = i;
+      else if (h === "nilai barang (rp)" && idxItemValue === -1) idxItemValue = i;
+      else if (h === "jumlah paket" && idxItemQty === -1) idxItemQty = i;
+    }
+
+    // Ambil database existing untuk checking
+    var dbPengirim = DatabaseService.getSheetData("MASTER_PENGIRIM") || [];
+    var dbPenerima = DatabaseService.getSheetData("MASTER_PENERIMA") || [];
+    var dbCustomer = DatabaseService.getSheetData("Master_Customer") || [];
+    
+    var headPengirim = dbPengirim[0] || DB_SCHEMA.MASTER_PENGIRIM;
+    var headPenerima = dbPenerima[0] || DB_SCHEMA.MASTER_PENERIMA;
+    var headCustomer = dbCustomer[0] || DB_SCHEMA.Master_Customer;
+
+    var hpPengirimMap = {};
+    for (var r = 1; r < dbPengirim.length; r++) {
+      var row = rowToObject_(headPengirim, dbPengirim[r]);
+      var hpNorm = normalizePhone_(row.telepon);
+      if (hpNorm) {
+        row._rowIndex = r; // 0-based array index in memory
+        hpPengirimMap[hpNorm] = row;
+      }
+    }
+
+    var hpPenerimaMap = {};
+    for (var r = 1; r < dbPenerima.length; r++) {
+      var row = rowToObject_(headPenerima, dbPenerima[r]);
+      var hpNorm = normalizePhone_(row.telepon);
+      if (hpNorm) {
+        row._rowIndex = r;
+        hpPenerimaMap[hpNorm] = row;
+      }
+    }
+
+    var hpCustomerMap = {};
+    for (var r = 1; r < dbCustomer.length; r++) {
+      var row = rowToObject_(headCustomer, dbCustomer[r]);
+      var hpNorm = normalizePhone_(row.no_hp || row.telepon);
+      if (hpNorm) {
+        row._rowIndex = r;
+        hpCustomerMap[hpNorm] = row;
+      }
+    }
+
+    var stats = {
+      total: rawData.length - 1,
+      insertPengirim: 0,
+      updatePengirim: 0,
+      insertPenerima: 0,
+      updatePenerima: 0,
+      failed: 0,
+      errors: [],
+      previewRows: []
+    };
+
+    var nowStr = new Date().toISOString();
+
+    // Mapping cache col indices
+    var mapColPengirim = {};
+    for (var c = 0; c < headPengirim.length; c++) mapColPengirim[headPengirim[c]] = c;
+    
+    var mapColPenerima = {};
+    for (var c = 0; c < headPenerima.length; c++) mapColPenerima[headPenerima[c]] = c;
+    
+    var mapColCustomer = {};
+    for (var c = 0; c < headCustomer.length; c++) mapColCustomer[headCustomer[c]] = c;
+    
+    for (var r = 1; r < rawData.length; r++) {
+      try {
+        var dr = rawData[r];
+        var sName = idxSndName !== -1 ? dr[idxSndName].toString().trim() : "";
+        var sPhone = idxSndPhone !== -1 ? dr[idxSndPhone].toString().trim() : "";
+        var sAddr = idxSndAddr !== -1 ? dr[idxSndAddr].toString().trim() : "";
+        var sZip = idxSndZip !== -1 ? dr[idxSndZip].toString().trim() : "";
+
+        var rName = idxRcvName !== -1 ? dr[idxRcvName].toString().trim() : "";
+        var rPhone = idxRcvPhone !== -1 ? dr[idxRcvPhone].toString().trim() : "";
+        var rAddr = idxRcvAddr !== -1 ? dr[idxRcvAddr].toString().trim() : "";
+        var rZip = idxRcvZip !== -1 ? dr[idxRcvZip].toString().trim() : "";
+
+        // Unused fields (extracted as requested)
+        var itemName = idxItemName !== -1 ? dr[idxItemName].toString().trim() : "";
+        var itemWeight = idxItemWeight !== -1 ? dr[idxItemWeight].toString().trim() : "";
+        var itemVol = idxItemVol !== -1 ? dr[idxItemVol].toString().trim() : "";
+        var itemValue = idxItemValue !== -1 ? dr[idxItemValue].toString().trim() : "";
+        var itemQty = idxItemQty !== -1 ? dr[idxItemQty].toString().trim() : "";
+        
+        var sPhoneNorm = normalizePhone_(sPhone);
+        var rPhoneNorm = normalizePhone_(rPhone);
+        var pStatus = "UPDATE";
+
+        if (sPhoneNorm) {
+          if (hpPengirimMap[sPhoneNorm]) {
+            // Update
+            var existingIdx = hpPengirimMap[sPhoneNorm]._rowIndex;
+            if (mapColPengirim["nama"] !== undefined && sName) dbPengirim[existingIdx][mapColPengirim["nama"]] = sName;
+            if (mapColPengirim["alamat"] !== undefined && sAddr) dbPengirim[existingIdx][mapColPengirim["alamat"]] = sAddr;
+            if (mapColPengirim["kode_pos"] !== undefined && sZip) dbPengirim[existingIdx][mapColPengirim["kode_pos"]] = sZip;
+            if (mapColPengirim["updated_at"] !== undefined) dbPengirim[existingIdx][mapColPengirim["updated_at"]] = nowStr;
+            stats.updatePengirim++;
+          } else {
+            pStatus = "NEW";
+            // Insert
+            var newId = "SND-" + new Date().getTime().toString().slice(-5) + Math.floor(Math.random() * 10) + r;
+            var rowObj = {
+              id: newId,
+              customer_id: "",
+              nama: sName,
+              telepon: sPhoneNorm,
+              alamat: sAddr,
+              kode_pos: sZip,
+              status: "AKTIF",
+              created_at: nowStr,
+              updated_at: nowStr,
+              outlet_id_asal: outletId || ""
+            };
+            var newRow = headPengirim.map(function(col) { return rowObj[col] !== undefined ? rowObj[col] : ""; });
+            dbPengirim.push(newRow);
+            
+            rowObj._rowIndex = dbPengirim.length - 1;
+            hpPengirimMap[sPhoneNorm] = rowObj;
+            stats.insertPengirim++;
+          }
+          
+          // Sync Master Customer if exists
+          if (hpCustomerMap[sPhoneNorm]) {
+            var exCstIdx = hpCustomerMap[sPhoneNorm]._rowIndex;
+            if (mapColCustomer["last_updated"] !== undefined) dbCustomer[exCstIdx][mapColCustomer["last_updated"]] = nowStr;
+            if (mapColCustomer["tanggal_terakhir_kirim"] !== undefined) dbCustomer[exCstIdx][mapColCustomer["tanggal_terakhir_kirim"]] = nowStr;
+          }
+        }
+
+        if (rPhoneNorm) {
+          if (hpPenerimaMap[rPhoneNorm]) {
+            var existingRIdx = hpPenerimaMap[rPhoneNorm]._rowIndex;
+            if (mapColPenerima["nama"] !== undefined && rName) dbPenerima[existingRIdx][mapColPenerima["nama"]] = rName;
+            if (mapColPenerima["alamat"] !== undefined && rAddr) dbPenerima[existingRIdx][mapColPenerima["alamat"]] = rAddr;
+            if (mapColPenerima["kode_pos"] !== undefined && rZip) dbPenerima[existingRIdx][mapColPenerima["kode_pos"]] = rZip;
+            if (mapColPenerima["updated_at"] !== undefined) dbPenerima[existingRIdx][mapColPenerima["updated_at"]] = nowStr;
+            stats.updatePenerima++;
+          } else {
+            pStatus = "NEW";
+            var newIdR = "RCV-" + new Date().getTime().toString().slice(-5) + Math.floor(Math.random() * 10) + r;
+            var rowObjR = {
+              id: newIdR,
+              customer_id: "",
+              nama: rName,
+              telepon: rPhoneNorm,
+              alamat: rAddr,
+              kode_pos: rZip,
+              status: "AKTIF",
+              created_at: nowStr,
+              updated_at: nowStr,
+              outlet_id_asal: outletId || ""
+            };
+            var newRowR = headPenerima.map(function(col) { return rowObjR[col] !== undefined ? rowObjR[col] : ""; });
+            dbPenerima.push(newRowR);
+            
+            rowObjR._rowIndex = dbPenerima.length - 1;
+            hpPenerimaMap[rPhoneNorm] = rowObjR;
+            stats.insertPenerima++;
+          }
+        }
+
+        if (isPreview && stats.previewRows.length < 500) {
+          stats.previewRows.push({
+            status: pStatus,
+            namaPengirim: sName,
+            noHpPengirim: sPhone,
+            namaPenerima: rName,
+            noHpPenerima: rPhone,
+            alamat: sAddr || rAddr,
+            outlet: outletId || ""
+          });
+        }
+      } catch (err) {
+        stats.failed++;
+        stats.errors.push("Row " + (r+1) + ": " + err.message);
+      }
+    }
+
+    // Write back batch to sheets
+    if (!isPreview) {
+      if (dbPengirim.length > 1) {
+        var sheetPengirim = getSheetByName("MASTER_PENGIRIM");
+        sheetPengirim.getRange(1, 1, dbPengirim.length, dbPengirim[0].length).setValues(dbPengirim);
+      }
+      
+      if (dbPenerima.length > 1) {
+        var sheetPenerima = getSheetByName("MASTER_PENERIMA");
+        sheetPenerima.getRange(1, 1, dbPenerima.length, dbPenerima[0].length).setValues(dbPenerima);
+      }
+      
+      if (dbCustomer.length > 1) {
+        var sheetCustomer = getSheetByName("Master_Customer");
+        sheetCustomer.getRange(1, 1, dbCustomer.length, dbCustomer[0].length).setValues(dbCustomer);
+      }
+    }
+
+    return {
+      status: "success",
+      message: "Import selesai.",
+      data: stats
+    };
+  } catch (e) {
+    return { status: "error", message: e.toString() };
   }
 }
 

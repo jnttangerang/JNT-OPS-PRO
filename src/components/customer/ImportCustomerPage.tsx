@@ -1,0 +1,344 @@
+import React, { useState } from "react";
+import { Users, Upload, Search, CheckCircle, AlertCircle, RefreshCw, ChevronLeft } from "lucide-react";
+import useAppsScript from "../../hooks/useAppsScript";
+import { toast } from "../../utils/toast";
+
+export default function ImportCustomerPage({ session, outlets }: { session: any, outlets: any[] }) {
+  const { callBackend, loading } = useAppsScript();
+  
+  const [outletId, setOutletId] = useState("");
+  const [spreadsheetId, setSpreadsheetId] = useState("");
+  const [sheetName, setSheetName] = useState("Customer Lama");
+  
+  const [previewData, setPreviewData] = useState<any>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // Pagination for preview
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const itemsPerPage = 50;
+
+  const handlePreview = async () => {
+    if (!outletId) return toast.error("Pilih Outlet terlebih dahulu.");
+    if (!spreadsheetId.trim()) return toast.error("Spreadsheet ID / URL wajib diisi.");
+    if (!sheetName.trim()) return toast.error("Nama Sheet wajib diisi.");
+
+    try {
+      const res = await callBackend("importCustomerFromSheet", {
+        outletId,
+        spreadsheetId: spreadsheetId.trim(),
+        sheetName: sheetName.trim(),
+        preview: true
+      });
+      
+      if (res.status === "success" && res.data) {
+        setPreviewData(res.data);
+        setCurrentPage(1);
+        toast.success("Preview berhasil dimuat.");
+      } else {
+        toast.error(res.message || "Gagal memuat preview.");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Gagal memuat preview.");
+    }
+  };
+
+  const handleImport = async () => {
+    setShowConfirmModal(false);
+    setIsImporting(true);
+    
+    try {
+      const res = await callBackend("importCustomerFromSheet", {
+        outletId,
+        spreadsheetId: spreadsheetId.trim(),
+        sheetName: sheetName.trim(),
+        preview: false
+      });
+      
+      if (res.status === "success") {
+        toast.success(`Import selesai: ${res.data?.insertPengirim || 0} customer baru, ${res.data?.updatePengirim || 0} diupdate.`);
+        setPreviewData(null); // Clear preview after successful import
+      } else {
+        toast.error(res.message || "Gagal import customer.");
+      }
+    } catch (error: any) {
+      toast.error(error.message || "Gagal import customer.");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const filteredPreview = previewData?.previewRows?.filter((row: any) => 
+    row.namaPengirim?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    row.noHpPengirim?.includes(searchQuery) ||
+    row.namaPenerima?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    row.noHpPenerima?.includes(searchQuery)
+  ) || [];
+
+  const totalPages = Math.ceil(filteredPreview.length / itemsPerPage);
+  const currentData = filteredPreview.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const isFormDisabled = loading || isImporting;
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-gray-800 tracking-tight flex items-center gap-3">
+            <Upload className="text-[#E4002B] h-8 w-8" />
+            Import Customer
+          </h1>
+          <p className="text-gray-500 text-sm mt-1">
+            Impor database customer lama ke sistem operasional baru.
+          </p>
+        </div>
+      </div>
+
+      {/* Form Section */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-150 overflow-hidden">
+        <div className="p-6 bg-gray-50/50 border-b border-gray-100 flex flex-col md:flex-row gap-4 items-end">
+          <div className="w-full md:w-1/4">
+            <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+              Pilih Outlet <span className="text-red-500">*</span>
+            </label>
+            <select
+              disabled={isFormDisabled}
+              value={outletId}
+              onChange={(e) => setOutletId(e.target.value)}
+              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-[#E4002B] focus:border-[#E4002B] outline-none transition-all disabled:bg-gray-100 disabled:opacity-70"
+            >
+              <option value="">-- Pilih Outlet --</option>
+              {outlets.map((o) => (
+                <option key={o.outlet_id} value={o.outlet_id}>
+                  {o.nama_outlet}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="w-full md:w-2/4">
+            <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+              Spreadsheet ID / URL <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              disabled={isFormDisabled}
+              value={spreadsheetId}
+              onChange={(e) => setSpreadsheetId(e.target.value)}
+              placeholder="https://docs.google.com/spreadsheets/d/xxxxxxxxxxxxxxxx"
+              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-[#E4002B] focus:border-[#E4002B] outline-none transition-all disabled:bg-gray-100 disabled:opacity-70"
+            />
+          </div>
+
+          <div className="w-full md:w-1/4">
+            <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">
+              Nama Sheet <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              disabled={isFormDisabled}
+              value={sheetName}
+              onChange={(e) => setSheetName(e.target.value)}
+              placeholder="Customer Lama"
+              className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-[#E4002B] focus:border-[#E4002B] outline-none transition-all disabled:bg-gray-100 disabled:opacity-70"
+            />
+          </div>
+
+          <div className="w-full md:w-auto">
+            <button
+              disabled={isFormDisabled || !outletId || !spreadsheetId.trim() || !sheetName.trim()}
+              onClick={handlePreview}
+              className="w-full md:w-auto bg-gray-800 hover:bg-gray-900 text-white font-bold px-6 py-2.5 rounded-xl shadow-sm text-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading && !isImporting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              Preview
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Progress / Loading Indicator */}
+      {isImporting && (
+        <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6 text-center animate-pulse">
+          <RefreshCw className="h-8 w-8 text-blue-500 animate-spin mx-auto mb-3" />
+          <h3 className="font-bold text-blue-800 text-lg">Sedang mengimpor customer...</h3>
+          <p className="text-blue-600 text-sm mt-1">Mohon tunggu, proses ini mungkin memakan waktu beberapa menit.</p>
+        </div>
+      )}
+
+      {/* Preview Section */}
+      {previewData && !isImporting && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm flex flex-col justify-center text-center">
+              <span className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-1">Total Baris</span>
+              <span className="text-2xl font-black text-gray-800">{previewData.total || 0}</span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-green-150 shadow-sm flex flex-col justify-center text-center">
+              <span className="text-green-600 font-bold text-xs uppercase tracking-wider mb-1">Customer Baru</span>
+              <span className="text-2xl font-black text-green-700">{(previewData.insertPengirim || 0) + (previewData.insertPenerima || 0)}</span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-blue-150 shadow-sm flex flex-col justify-center text-center">
+              <span className="text-blue-600 font-bold text-xs uppercase tracking-wider mb-1">Customer Existing</span>
+              <span className="text-2xl font-black text-blue-700">{(previewData.updatePengirim || 0) + (previewData.updatePenerima || 0)}</span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-red-150 shadow-sm flex flex-col justify-center text-center">
+              <span className="text-red-500 font-bold text-xs uppercase tracking-wider mb-1">Baris Error</span>
+              <span className="text-2xl font-black text-red-600">{previewData.failed || 0}</span>
+            </div>
+          </div>
+
+          {/* Action Header */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="relative w-full md:w-96">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Cari nama atau nomor HP..."
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500 outline-none transition-all"
+              />
+            </div>
+            
+            <button
+              onClick={() => setShowConfirmModal(true)}
+              className="w-full md:w-auto bg-[#E4002B] hover:bg-red-700 text-white font-bold px-8 py-2.5 rounded-xl shadow-sm text-sm transition-all flex items-center justify-center gap-2"
+            >
+              <Upload className="h-4 w-4" />
+              Import Customer
+            </button>
+          </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500 text-[11px] uppercase tracking-wider border-b border-gray-100">
+                    <th className="p-4 font-bold">Status</th>
+                    <th className="p-4 font-bold">Nama Pengirim</th>
+                    <th className="p-4 font-bold">No HP</th>
+                    <th className="p-4 font-bold">Nama Penerima</th>
+                    <th className="p-4 font-bold">No HP</th>
+                    <th className="p-4 font-bold">Alamat</th>
+                    <th className="p-4 font-bold">Outlet Asal</th>
+                  </tr>
+                </thead>
+                <tbody className="text-xs divide-y divide-gray-100">
+                  {currentData.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-gray-400">
+                        Tidak ada data preview yang sesuai pencarian.
+                      </td>
+                    </tr>
+                  ) : (
+                    currentData.map((row: any, idx: number) => (
+                      <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                        <td className="p-4">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                            row.status === "NEW" ? "bg-green-100 text-green-700" :
+                            row.status === "UPDATE" ? "bg-blue-100 text-blue-700" :
+                            "bg-red-100 text-red-700"
+                          }`}>
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="p-4 font-semibold text-gray-800">{row.namaPengirim || "-"}</td>
+                        <td className="p-4 font-mono text-gray-600">{row.noHpPengirim || "-"}</td>
+                        <td className="p-4 font-semibold text-gray-800">{row.namaPenerima || "-"}</td>
+                        <td className="p-4 font-mono text-gray-600">{row.noHpPenerima || "-"}</td>
+                        <td className="p-4 text-gray-600 max-w-[200px] truncate" title={row.alamat}>{row.alamat || "-"}</td>
+                        <td className="p-4 text-gray-600">{row.outlet || "-"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="p-4 border-t border-gray-100 bg-gray-50/50 flex flex-col md:flex-row items-center justify-between gap-4">
+                <span className="text-xs text-gray-500">
+                  Menampilkan <span className="font-bold text-gray-700">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="font-bold text-gray-700">{Math.min(currentPage * itemsPerPage, filteredPreview.length)}</span> dari <span className="font-bold text-gray-700">{filteredPreview.length}</span> baris
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    disabled={currentPage === 1}
+                    onClick={() => setCurrentPage((p) => p - 1)}
+                    className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 disabled:opacity-30 transition-colors cursor-pointer"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <span className="text-xs font-bold text-gray-700 px-3 py-1 bg-white rounded-lg border border-gray-200">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    disabled={currentPage === totalPages}
+                    onClick={() => setCurrentPage((p) => p + 1)}
+                    className="p-1.5 rounded-lg hover:bg-gray-200 text-gray-600 disabled:opacity-30 transition-colors cursor-pointer rotate-180"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden scale-100 transition-transform">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="bg-orange-100 text-orange-600 p-2 rounded-xl">
+                  <AlertCircle className="h-6 w-6" />
+                </div>
+                <h3 className="text-lg font-black text-gray-800">Konfirmasi Import</h3>
+              </div>
+              <p className="text-gray-600 text-sm mb-4">
+                Anda akan melakukan import database customer dari sheet <span className="font-bold text-gray-800">"{sheetName}"</span>.
+              </p>
+              <div className="bg-gray-50 p-4 rounded-xl space-y-2 mb-6 border border-gray-150">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-500">Customer Baru (Pengirim & Penerima)</span>
+                  <span className="font-bold text-green-600">{(previewData?.insertPengirim || 0) + (previewData?.insertPenerima || 0)} customer</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-500">Update Existing Customer</span>
+                  <span className="font-bold text-blue-600">{(previewData?.updatePengirim || 0) + (previewData?.updatePenerima || 0)} update</span>
+                </div>
+              </div>
+              <p className="text-gray-600 text-sm mb-6 font-medium">Lanjutkan proses import?</p>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="px-5 py-2.5 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={handleImport}
+                  className="px-5 py-2.5 rounded-xl font-bold text-white bg-[#E4002B] hover:bg-red-700 shadow-md shadow-red-500/20 transition-all flex items-center gap-2"
+                >
+                  <CheckCircle className="h-4 w-4" />
+                  Ya, Import Sekarang
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

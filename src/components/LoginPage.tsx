@@ -219,58 +219,11 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               ) : (
                 <>
                   <LogIn className="h-5 w-5" />
-                  <span>Login Sistem</span>
+                  <span>Login</span>
                 </>
               )}
             </button>
           </form>
-
-          {/* Quick Info Box for Demo */}
-          <div className="mt-8 p-4 bg-gray-50 rounded-xl border border-gray-100 text-center">
-            <span className="text-[11px] uppercase tracking-wider text-gray-400 font-bold block mb-2">
-              Akun Uji Coba (Demo Credentials)
-            </span>
-            <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedRole("ADMIN");
-                  setUsername("admin1");
-                  setPassword("admin123");
-                }}
-                className={`p-2 rounded-lg border text-left transition-all duration-200 cursor-pointer ${
-                  selectedRole === "ADMIN"
-                    ? "bg-red-50/50 border-red-200 shadow-sm"
-                    : "bg-white border-gray-100 opacity-60 hover:opacity-100"
-                }`}
-              >
-                <p className={`font-semibold ${selectedRole === "ADMIN" ? "text-red-700" : "text-gray-700"}`}>Role Admin:</p>
-                <p className="mt-0.5">User: <code className="bg-white/80 px-1 rounded border border-gray-100 font-mono">admin1</code></p>
-                <p>Pass: <code className="bg-white/80 px-1 rounded border border-gray-100 font-mono">admin123</code></p>
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedRole("OWNER");
-                  setUsername("owner1");
-                  setPassword("owner123");
-                }}
-                className={`p-2 rounded-lg border text-left transition-all duration-200 cursor-pointer ${
-                  selectedRole === "OWNER"
-                    ? "bg-neutral-50/80 border-neutral-300 shadow-sm"
-                    : "bg-white border-gray-100 opacity-60 hover:opacity-100"
-                }`}
-              >
-                <p className={`font-semibold ${selectedRole === "OWNER" ? "text-neutral-900" : "text-gray-700"}`}>Role Owner:</p>
-                <p className="mt-0.5">User: <code className="bg-white/80 px-1 rounded border border-gray-100 font-mono">owner1</code></p>
-                <p>Pass: <code className="bg-white/80 px-1 rounded border border-gray-100 font-mono">owner123</code></p>
-              </button>
-            </div>
-            <p className="text-[10px] text-gray-400 mt-2">
-              *Klik kartu akun demo di atas untuk mengisi formulir otomatis
-            </p>
-          </div>
 
         </div>
       </div>

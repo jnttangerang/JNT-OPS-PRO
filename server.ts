@@ -533,6 +533,8 @@ function autoUpsertCustomerAndAddressBook(db: any, params: {
   hp_penerima: string;
   alamat_penerima: string;
   timestamp?: string;
+  outlet_id_tugas?: string;
+  outlet_id?: string;
 }) {
   const nowStr = params.timestamp || new Date().toISOString();
   
@@ -620,7 +622,8 @@ function autoUpsertCustomerAndAddressBook(db: any, params: {
           tanggal_terakhir: nowStr,
           status: "AKTIF",
           created_at: nowStr,
-          updated_at: nowStr
+          updated_at: nowStr,
+          outlet_id_asal: params.outlet_id_tugas || params.outlet_id || ""
         };
         db.MASTER_PENGIRIM.push(newSnd);
       }
@@ -689,7 +692,8 @@ function autoUpsertCustomerAndAddressBook(db: any, params: {
           tanggal_terakhir: nowStr,
           status: "AKTIF",
           created_at: nowStr,
-          updated_at: nowStr
+          updated_at: nowStr,
+          outlet_id_asal: params.outlet_id_tugas || params.outlet_id || ""
         };
         db.MASTER_PENERIMA.push(newRcv);
       }
