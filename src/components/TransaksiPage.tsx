@@ -496,12 +496,12 @@ export default function TransaksiPage({
   }, [tipeProdukCrg, jenisLayanan, aktifkanBiayaTambahan]);
 
   // Utility to handle numeric string cleans
-  const cleanNumber = (valStr: string): number => {
-    return Number(valStr.replace(/\D/g, "")) || 0;
+  const cleanNumber = (valStr: any): number => {
+    return Number(String(valStr || "").replace(/\D/g, "")) || 0;
   };
 
-  const formatThousandsInput = (valStr: string) => {
-    const cleaned = valStr.replace(/\D/g, "");
+  const formatThousandsInput = (valStr: any) => {
+    const cleaned = String(valStr || "").replace(/\D/g, "");
     if (!cleaned) return "";
     return Number(cleaned).toLocaleString("id-ID");
   };

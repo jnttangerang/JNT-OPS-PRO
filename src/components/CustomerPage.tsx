@@ -88,10 +88,10 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
     return list.filter(item => {
       const q = searchQuery.toLowerCase();
       const matchSearch = 
-        (item[nameKey] || "").toLowerCase().includes(q) ||
-        (item[phoneKey] || "").toLowerCase().includes(q) ||
-        (item[addrKey] || "").toLowerCase().includes(q) ||
-        (item.customer_id || "").toLowerCase().includes(q);
+        String(item[nameKey] || "").toLowerCase().includes(q) ||
+        String(item[phoneKey] || "").toLowerCase().includes(q) ||
+        String(item[addrKey] || "").toLowerCase().includes(q) ||
+        String(item.customer_id || "").toLowerCase().includes(q);
 
       const matchOutlet = filterOutlet ? item.outlet_id === filterOutlet : true;
       const matchStatus = filterStatus ? item.status === filterStatus : true;

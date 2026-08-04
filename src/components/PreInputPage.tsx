@@ -221,13 +221,13 @@ export default function PreInputPage({
   };
 
   // Convert Rp string formatted back to integer
-  const getCleanNumberValue = (rpStr: string): number => {
-    return Number(rpStr.replace(/\D/g, "")) || 0;
+  const getCleanNumberValue = (rpStr: string | number): number => {
+    return Number(String(rpStr || "").replace(/\D/g, "")) || 0;
   };
 
   // Debounced Customer Search on Sender Name
   useEffect(() => {
-    if ((namaPengirim || "").trim().length < 2 || selectedCustomerId) {
+    if (String(namaPengirim || "").trim().length < 2 || selectedCustomerId) {
       setCustomerSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -288,8 +288,8 @@ export default function PreInputPage({
 
   // Duplicate Customer Detection
   useEffect(() => {
-    const normPhone = (hpPengirim || "").replace(/\D/g, "");
-    const safeNama = (namaPengirim || "").trim();
+    const normPhone = String(hpPengirim || "").replace(/\D/g, "");
+    const safeNama = String(namaPengirim || "").trim();
     if (!safeNama && !normPhone) {
       setDuplicateAlert(null);
       return;
@@ -299,8 +299,8 @@ export default function PreInputPage({
       if (d.transaksi_id === editingTxId) return false;
       if (d.status === "SELESAI" || d.status === "Dibatalkan" || d.status === "BATAL") return false;
       
-      const dPhone = (d.hp_pengirim || "").replace(/\D/g, "");
-      const dName = (d.nama_pengirim || "").trim().toLowerCase();
+      const dPhone = String(d.hp_pengirim || "").replace(/\D/g, "");
+      const dName = String(d.nama_pengirim || "").trim().toLowerCase();
       
       const matchName = dName && safeNama.toLowerCase() === dName;
       const matchPhone = normPhone && normPhone.length >= 8 && dPhone === normPhone;
@@ -314,7 +314,7 @@ export default function PreInputPage({
   // Auto-Save Effect (Debounced 800ms)
   useEffect(() => {
     // Only auto-save if user has provided at least name, HP, or item name
-    const hasAnyContent = (namaPengirim || "").trim() || (hpPengirim || "").trim() || (namaBarang || "").trim() || (namaPenerima || "").trim();
+    const hasAnyContent = String(namaPengirim || "").trim() || String(hpPengirim || "").trim() || String(namaBarang || "").trim() || String(namaPenerima || "").trim();
     if (!hasAnyContent || submittedTxId) return;
 
     if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
@@ -330,15 +330,15 @@ export default function PreInputPage({
           status: "Draft",
           admin_id: session.user_id,
           outlet_id_tugas: activeOutletId,
-          nama_pengirim: (namaPengirim || "").trim(),
-          hp_pengirim: (hpPengirim || "").trim(),
-          alamat_pengirim: (alamatPengirim || "").trim(),
-          nama_penerima: (namaPenerima || "").trim(),
-          hp_penerima: (hpPenerima || "").trim(),
-          alamat_penerima: (alamatPenerima || "").trim(),
-          alamat_penerima_asli: alamatPenerimaAsli || (alamatPenerima || "").trim(),
-          catatan_admin: (catatanAdmin || "").trim(),
-          nama_barang: (namaBarang || "").trim(),
+          nama_pengirim: String(namaPengirim || "").trim(),
+          hp_pengirim: String(hpPengirim || "").trim(),
+          alamat_pengirim: String(alamatPengirim || "").trim(),
+          nama_penerima: String(namaPenerima || "").trim(),
+          hp_penerima: String(hpPenerima || "").trim(),
+          alamat_penerima: String(alamatPenerima || "").trim(),
+          alamat_penerima_asli: alamatPenerimaAsli || String(alamatPenerima || "").trim(),
+          catatan_admin: String(catatanAdmin || "").trim(),
+          nama_barang: String(namaBarang || "").trim(),
           ekspedisi,
           berat_timbangan: Number(beratKg) || 0,
           panjang_cm: Number(volP) || 0,
@@ -632,12 +632,12 @@ export default function PreInputPage({
       // Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const matchName = (card.nama_pengirim || "").toLowerCase().includes(q) || (card.nama_penerima || "").toLowerCase().includes(q);
-        const matchPhone = (card.hp_pengirim || "").toLowerCase().includes(q) || (card.hp_penerima || "").toLowerCase().includes(q);
-        const matchAddr = (card.alamat_penerima || "").toLowerCase().includes(q) || (card.alamat_pengirim || "").toLowerCase().includes(q);
-        const matchItem = (card.nama_barang || "").toLowerCase().includes(q);
-        const matchResi = (card.no_resi || "").toLowerCase().includes(q);
-        const matchTx = (card.transaksi_id || "").toLowerCase().includes(q);
+        const matchName = String(card.nama_pengirim || "").toLowerCase().includes(q) || String(card.nama_penerima || "").toLowerCase().includes(q);
+        const matchPhone = String(card.hp_pengirim || "").toLowerCase().includes(q) || String(card.hp_penerima || "").toLowerCase().includes(q);
+        const matchAddr = String(card.alamat_penerima || "").toLowerCase().includes(q) || String(card.alamat_pengirim || "").toLowerCase().includes(q);
+        const matchItem = String(card.nama_barang || "").toLowerCase().includes(q);
+        const matchResi = String(card.no_resi || "").toLowerCase().includes(q);
+        const matchTx = String(card.transaksi_id || "").toLowerCase().includes(q);
         if (!matchName && !matchPhone && !matchAddr && !matchItem && !matchResi && !matchTx) {
           return false;
         }
@@ -819,31 +819,31 @@ export default function PreInputPage({
   const handleSavePreInput = async (isDraftManual = false) => {
     setFormError(null);
 
-    if (!(namaPengirim || "").trim()) {
+    if (!String(namaPengirim || "").trim()) {
       setFormError("Nama pengirim wajib diisi!");
       return;
     }
-    if (!(hpPengirim || "").trim()) {
+    if (!String(hpPengirim || "").trim()) {
       setFormError("Nomor HP pengirim wajib diisi!");
       return;
     }
-    if (!(alamatPengirim || "").trim()) {
+    if (!String(alamatPengirim || "").trim()) {
       setFormError("Alamat pengirim wajib diisi!");
       return;
     }
-    if (!(namaPenerima || "").trim()) {
+    if (!String(namaPenerima || "").trim()) {
       setFormError("Nama penerima wajib diisi!");
       return;
     }
-    if (!(hpPenerima || "").trim()) {
+    if (!String(hpPenerima || "").trim()) {
       setFormError("Nomor HP penerima wajib diisi!");
       return;
     }
-    if (!(alamatPenerima || "").trim()) {
+    if (!String(alamatPenerima || "").trim()) {
       setFormError("Alamat penerima wajib diisi!");
       return;
     }
-    if (!(namaBarang || "").trim()) {
+    if (!String(namaBarang || "").trim()) {
       setFormError("Nama barang paket wajib diisi!");
       return;
     }
@@ -856,15 +856,15 @@ export default function PreInputPage({
         status: isDraftManual ? "Draft" : "Siap Dibayar",
         admin_id: session.user_id,
         outlet_id_tugas: activeOutletId,
-        nama_pengirim: (namaPengirim || "").trim(),
-        hp_pengirim: (hpPengirim || "").trim(),
-        alamat_pengirim: (alamatPengirim || "").trim(),
-        nama_penerima: (namaPenerima || "").trim(),
-        hp_penerima: (hpPenerima || "").trim(),
-        alamat_penerima: (alamatPenerima || "").trim(),
-        alamat_penerima_asli: alamatPenerimaAsli || (alamatPenerima || "").trim(),
-        catatan_admin: (catatanAdmin || "").trim(),
-        nama_barang: (namaBarang || "").trim(),
+        nama_pengirim: String(namaPengirim || "").trim(),
+        hp_pengirim: String(hpPengirim || "").trim(),
+        alamat_pengirim: String(alamatPengirim || "").trim(),
+        nama_penerima: String(namaPenerima || "").trim(),
+        hp_penerima: String(hpPenerima || "").trim(),
+        alamat_penerima: String(alamatPenerima || "").trim(),
+        alamat_penerima_asli: alamatPenerimaAsli || String(alamatPenerima || "").trim(),
+        catatan_admin: String(catatanAdmin || "").trim(),
+        nama_barang: String(namaBarang || "").trim(),
         ekspedisi,
         berat_timbangan: Number(beratKg) || 0,
         panjang_cm: Number(volP) || 0,
@@ -1089,11 +1089,11 @@ Catatan : ${catatanAdmin || "-"}
       if (!searchQuery.trim()) return true;
 
       const q = searchQuery.toLowerCase();
-      const nameMatch = (d.nama_pengirim || "").toLowerCase().includes(q) || (d.nama_penerima || "").toLowerCase().includes(q);
-      const phoneMatch = (d.hp_pengirim || "").includes(q) || (d.hp_penerima || "").includes(q);
-      const itemMatch = (d.nama_barang || "").toLowerCase().includes(q);
-      const addrMatch = (d.alamat_pengirim || "").toLowerCase().includes(q) || (d.alamat_penerima || "").toLowerCase().includes(q);
-      const txMatch = (d.transaksi_id || "").toLowerCase().includes(q);
+      const nameMatch = String(d.nama_pengirim || "").toLowerCase().includes(q) || String(d.nama_penerima || "").toLowerCase().includes(q);
+      const phoneMatch = String(d.hp_pengirim || "").includes(q) || String(d.hp_penerima || "").includes(q);
+      const itemMatch = String(d.nama_barang || "").toLowerCase().includes(q);
+      const addrMatch = String(d.alamat_pengirim || "").toLowerCase().includes(q) || String(d.alamat_penerima || "").toLowerCase().includes(q);
+      const txMatch = String(d.transaksi_id || "").toLowerCase().includes(q);
 
       return nameMatch || phoneMatch || itemMatch || addrMatch || txMatch;
     });
