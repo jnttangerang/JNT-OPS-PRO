@@ -1,11 +1,31 @@
-import React, { useState, useMemo } from "react";
-import { ArrowUpDown } from "lucide-react";
-import { Users, Upload, Search, CheckCircle, AlertCircle, RefreshCw, ChevronLeft, Edit, Trash2, Check, X } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { 
+  Users, Upload, Search, CheckCircle, AlertCircle, RefreshCw, ChevronLeft, Edit, Trash2, Check, X, Info, ArrowUpDown 
+} from "lucide-react";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
 
-export default function ImportCustomerPage({ session, outlets }: { session: any, outlets: any[] }) {
+export default function ImportCustomerPage({ session, outlets = [] }: { session: any, outlets?: any[] }) {
   const { callBackend, loading } = useAppsScript();
+  
+  const [fetchedOutlets, setFetchedOutlets] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!outlets || outlets.length === 0) {
+      callBackend("getOutlets").then((res) => {
+        if (res && res.status === "success" && Array.isArray(res.data)) {
+          setFetchedOutlets(res.data);
+        }
+      }).catch((err) => {
+        console.error("Failed to load outlets in ImportCustomerPage", err);
+      });
+    }
+  }, [outlets, callBackend]);
+
+  const outletList = useMemo(() => {
+    if (Array.isArray(outlets) && outlets.length > 0) return outlets;
+    return fetchedOutlets;
+  }, [outlets, fetchedOutlets]);
   
   const [outletId, setOutletId] = useState("");
   const [spreadsheetId, setSpreadsheetId] = useState("");
@@ -28,6 +48,8 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc'|'desc'} | null>(null);
+  const [importSessionId, setImportSessionId] = useState("");
+  const [importSummary, setImportSummary] = useState<any>(null);
 
 
   const handlePreview = async () => {
@@ -36,11 +58,19 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
     if (!sheetName.trim()) return toast.error("Nama Sheet wajib diisi.");
 
     try {
+      const newSessionId = crypto.randomUUID ? crypto.randomUUID() : "IMPORT-" + Date.now() + "-" + Math.floor(Math.random() * 1000);
+      setImportSessionId(newSessionId);
+      setImportSummary(null);
+
       const res = await callBackend("importCustomerFromSheet", {
         outletId,
         spreadsheetId: spreadsheetId.trim(),
         sheetName: sheetName.trim(),
-        preview: true
+        preview: true,
+        importSessionId: newSessionId,
+        user_id: session?.user_id || session?.username || "Unknown",
+        frontend_version: "1.0.0",
+        app_version: "1.0.0"
       });
       
       if (res.status === "success" && res.data) {
@@ -102,11 +132,16 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
         spreadsheetId: spreadsheetId.trim(),
         sheetName: sheetName.trim(),
         preview: false,
-        editedRows: workingCopy
+        editedRows: workingCopy,
+        importSessionId,
+        user_id: session?.user_id || session?.username || "Unknown",
+        frontend_version: "1.0.0",
+        app_version: "1.0.0"
       });
       
       if (res.status === "success") {
-        toast.success(`Import selesai: ${res.data?.insertPengirim || 0} customer baru, ${res.data?.updatePengirim || 0} diupdate.`);
+        toast.success("Import selesai");
+        setImportSummary(res.data);
         setPreviewData(null);
       } else {
         toast.error(res.message || "Gagal import customer.");
@@ -134,7 +169,7 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       result = result.filter((row: any) => {
-        const outName = outlets.find((o: any) => o.outlet_id === row.outlet)?.nama_outlet || row.outlet || "";
+        const outName = outletList.find((o: any) => (o.outlet_id || o.id) === row.outlet)?.nama_outlet || row.outlet || "";
         return (
           row.namaPengirim?.toLowerCase().includes(q) ||
           row.noHpPengirim?.includes(q) ||
@@ -151,8 +186,8 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
         let bVal = b[sortConfig.key] || "";
         
         if (sortConfig.key === "outletName") {
-          aVal = outlets.find((o: any) => o.outlet_id === a.outlet)?.nama_outlet || a.outlet || "";
-          bVal = outlets.find((o: any) => o.outlet_id === b.outlet)?.nama_outlet || b.outlet || "";
+          aVal = outletList.find((o: any) => (o.outlet_id || o.id) === a.outlet)?.nama_outlet || a.outlet || "";
+          bVal = outletList.find((o: any) => (o.outlet_id || o.id) === b.outlet)?.nama_outlet || b.outlet || "";
         } else if (sortConfig.key === "status") {
           aVal = a.status || "";
           bVal = b.status || "";
@@ -165,7 +200,7 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
     }
 
     return result;
-  }, [workingCopy, statusFilter, searchQuery, sortConfig, outlets]);
+  }, [workingCopy, statusFilter, searchQuery, sortConfig, outletList]);
 
   const handleSort = (key: string) => {
     let direction = 'asc';
@@ -233,11 +268,15 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
               className="w-full bg-white border border-gray-300 rounded-xl px-4 py-2.5 text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-[#E4002B] focus:border-[#E4002B] outline-none transition-all disabled:bg-gray-100 disabled:opacity-70"
             >
               <option value="">-- Pilih Outlet --</option>
-              {outlets.map((o) => (
-                <option key={o.outlet_id} value={o.outlet_id}>
-                  {o.nama_outlet}
-                </option>
-              ))}
+              {outletList.map((o) => {
+                const id = o.outlet_id || o.id;
+                const name = o.nama_outlet || o.nama || id;
+                return (
+                  <option key={id} value={id}>
+                    {name}
+                  </option>
+                );
+              })}
             </select>
           </div>
 
@@ -389,23 +428,16 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
                     </th>
                     <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('namaPengirim')}>
                       <div className="flex items-center gap-1">
-                        Nama Pengirim
-                        <ArrowUpDown className="w-3 h-3 text-gray-400" />
-                      </div>
-                    </th>
-                    <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('noHpPengirim')}>
-                      <div className="flex items-center gap-1">
-                        No HP
+                        Pengirim
                         <ArrowUpDown className="w-3 h-3 text-gray-400" />
                       </div>
                     </th>
                     <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('namaPenerima')}>
                       <div className="flex items-center gap-1">
-                        Nama Penerima
+                        Penerima
                         <ArrowUpDown className="w-3 h-3 text-gray-400" />
                       </div>
                     </th>
-                    <th className="p-4 font-bold sticky top-0 bg-gray-50 z-10">No HP</th>
                     <th className="p-4 font-bold sticky top-0 bg-gray-50 z-10">Alamat</th>
                     <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('outletName')}>
                       <div className="flex items-center gap-1">
@@ -419,7 +451,7 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
                 <tbody className="text-xs divide-y divide-gray-100">
                   {currentData.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="p-8 text-center text-gray-400">
+                      <td colSpan={8} className="p-8 text-center text-gray-400">
                         Tidak ada data preview yang sesuai pencarian.
                       </td>
                     </tr>
@@ -427,7 +459,7 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
                     currentData.map((row: any, idx: number) => {
                       const isEditing = editingIdx === row._id;
                       const globalNum = (currentPage - 1) * itemsPerPage + idx + 1;
-                      const outletName = outlets.find(o => o.outlet_id === row.outlet)?.nama_outlet || row.outlet;
+                      const outletName = outletList.find(o => (o.outlet_id || o.id) === row.outlet)?.nama_outlet || row.outlet;
 
                       return (
                         <tr key={row._id} className="hover:bg-gray-50 transition-colors">

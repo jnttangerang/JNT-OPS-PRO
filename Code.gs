@@ -1801,7 +1801,7 @@ function simulateSha256(input) {
 // Jangan hapus/reorder kolom existing di sini — itu mengubah posisi index yang
 // sudah dipakai kode lain (mis. getRange(row, N)).
 // ==========================================
-var DB_SCHEMA_VERSION = 6; // v6: tambah outlet_id_asal di MASTER_PENGIRIM & MASTER_PENERIMA (persiapan import customer)
+var DB_SCHEMA_VERSION = 9; // v9: tambah metadata IMPORT_LOG (frontend_version dll)
 
 var DB_SCHEMA = {
   // Kolom lama TIDAK BOLEH dihapus/direorder — hanya tambah di ujung kanan.
@@ -1840,12 +1840,14 @@ var DB_SCHEMA = {
   KEUANGAN_OUTLET: ["id", "tanggal", "outlet_id", "jenis", "kategori_id", "nominal", "deskripsi", "bukti_url",
     "dibuat_oleh", "created_at", "aktif"],
   // Sheet baru — belum ada di spreadsheet, akan dibuat oleh initializeDatabase().
+  IMPORT_LOG: ["id", "created_at", "owner", "outlet_id", "outlet_name", "spreadsheet_id", "spreadsheet_name", "sheet_name",
+    "total_preview", "total_new", "total_update", "total_skipped", "status", "completed_at", "frontend_version", "backend_version", "db_schema_version", "app_version"],
   MASTER_PENGIRIM: ["id", "customer_id", "nama", "telepon", "provinsi", "kabupaten", "kecamatan", "kelurahan",
     "kode_pos", "alamat", "jumlah_pengiriman", "tanggal_pertama", "tanggal_terakhir", "status",
-    "created_at", "updated_at", "outlet_id_asal"],
+    "created_at", "updated_at", "outlet_id_asal", "telepon_alternatif", "import_id"],
   MASTER_PENERIMA: ["id", "customer_id", "nama", "telepon", "provinsi", "kabupaten", "kecamatan", "kelurahan",
     "kode_pos", "alamat", "jumlah_diterima", "tanggal_pertama", "tanggal_terakhir", "status",
-    "created_at", "updated_at", "outlet_id_asal"],
+    "created_at", "updated_at", "outlet_id_asal", "telepon_alternatif", "import_id"],
   SystemSettings: ["key", "value"]
 };
 
@@ -3864,6 +3866,27 @@ function sanitizeString_(str) {
   return s;
 }
 
+function parsePhoneNumbers_(rawPhone) {
+  var str = String(rawPhone || "");
+  var parts = str.split(/[\/\,\;\|\&]/);
+  var primary = "";
+  var alternate = "";
+  for (var i = 0; i < parts.length; i++) {
+    var norm = normalizePhone_(parts[i]);
+    if (norm) {
+      if (!primary) {
+        primary = norm;
+      } else if (!alternate && norm !== primary) {
+        alternate = norm;
+      }
+    }
+  }
+  return {
+    primaryPhone: primary,
+    alternatePhone: alternate
+  };
+}
+
 function normalizePhone_(phone) {
   if (!phone) return "";
   var digits = String(phone).replace(/\D/g, "");
@@ -3879,7 +3902,13 @@ function apiImportCustomerFromSheet(params) {
     var spreadsheetId = params.spreadsheetId;
     var isPreview = params.preview === true;
     var useEditedRows = !isPreview && params.editedRows !== undefined;
+    var importSessionId = params.importSessionId;
+    var userId = params.user_id || "Unknown";
+    
+    var frontendVersion = params.frontend_version || "";
+    var appVersion = params.app_version || "";
 
+    if (!importSessionId) throw new Error("importSessionId is required.");
     if (!sheetName && !useEditedRows) throw new Error("sheetName wajib diisi");
 
     var rawData;
@@ -3973,6 +4002,11 @@ function apiImportCustomerFromSheet(params) {
     }
 
     var stats = {
+      importSessionId: importSessionId,
+      frontendVersion: frontendVersion,
+      backendVersion: "1.0",
+      dbSchemaVersion: DB_SCHEMA_VERSION,
+      appVersion: appVersion,
       total: 0,
       insertPengirim: 0,
       updatePengirim: 0,
@@ -4024,8 +4058,21 @@ function apiImportCustomerFromSheet(params) {
           rZip = sanitizeString_(idxRcvZip !== -1 ? dr[idxRcvZip] : "");
         }
 
-        var sPhoneNorm = normalizePhone_(sPhone);
-        var rPhoneNorm = normalizePhone_(rPhone);
+        var parsedSPhone = parsePhoneNumbers_(sPhone);
+        var sPhoneNorm = parsedSPhone.primaryPhone;
+        var sPhoneAlt = parsedSPhone.alternatePhone;
+
+        var parsedRPhone = parsePhoneNumbers_(rPhone);
+        var rPhoneNorm = parsedRPhone.primaryPhone;
+        var rPhoneAlt = parsedRPhone.alternatePhone;
+
+        // If useEditedRows is true and we got alternative phones from the UI edit directly
+        if (useEditedRows) {
+           var ed = params.editedRows[r];
+           // If UI sends noHpPengirimAlt explicitly, use it, overriding the parsed one
+           if (ed.noHpPengirimAlt !== undefined) sPhoneAlt = sanitizeString_(ed.noHpPengirimAlt);
+           if (ed.noHpPenerimaAlt !== undefined) rPhoneAlt = sanitizeString_(ed.noHpPenerimaAlt);
+        }
 
         if (!sName && !sPhoneNorm && !rName && !rPhoneNorm) {
           continue;
@@ -4052,6 +4099,7 @@ function apiImportCustomerFromSheet(params) {
             if (mapColPengirim["nama"] !== undefined && sName) dbPengirim[existingIdx][mapColPengirim["nama"]] = sName;
             if (mapColPengirim["alamat"] !== undefined && sAddr) dbPengirim[existingIdx][mapColPengirim["alamat"]] = sAddr;
             if (mapColPengirim["kode_pos"] !== undefined && sZip) dbPengirim[existingIdx][mapColPengirim["kode_pos"]] = sZip;
+            if (mapColPengirim["telepon_alternatif"] !== undefined && sPhoneAlt) dbPengirim[existingIdx][mapColPengirim["telepon_alternatif"]] = sPhoneAlt;
             if (mapColPengirim["updated_at"] !== undefined) dbPengirim[existingIdx][mapColPengirim["updated_at"]] = nowStr;
             stats.updatePengirim++;
           } else {
@@ -4063,6 +4111,7 @@ function apiImportCustomerFromSheet(params) {
               customer_id: "",
               nama: sName,
               telepon: sPhoneNorm,
+              telepon_alternatif: sPhoneAlt,
               alamat: sAddr,
               kode_pos: sZip,
               status: "AKTIF",
@@ -4102,6 +4151,7 @@ function apiImportCustomerFromSheet(params) {
             if (mapColPenerima["nama"] !== undefined && rName) dbPenerima[existingRIdx][mapColPenerima["nama"]] = rName;
             if (mapColPenerima["alamat"] !== undefined && rAddr) dbPenerima[existingRIdx][mapColPenerima["alamat"]] = rAddr;
             if (mapColPenerima["kode_pos"] !== undefined && rZip) dbPenerima[existingRIdx][mapColPenerima["kode_pos"]] = rZip;
+            if (mapColPenerima["telepon_alternatif"] !== undefined && rPhoneAlt) dbPenerima[existingRIdx][mapColPenerima["telepon_alternatif"]] = rPhoneAlt;
             if (mapColPenerima["updated_at"] !== undefined) dbPenerima[existingRIdx][mapColPenerima["updated_at"]] = nowStr;
             stats.updatePenerima++;
           } else {
@@ -4112,6 +4162,7 @@ function apiImportCustomerFromSheet(params) {
               customer_id: "",
               nama: rName,
               telepon: rPhoneNorm,
+              telepon_alternatif: rPhoneAlt,
               alamat: rAddr,
               kode_pos: rZip,
               status: "AKTIF",
@@ -4138,9 +4189,13 @@ function apiImportCustomerFromSheet(params) {
           stats.previewRows.push({
             status: pStatus,
             namaPengirim: sName,
-            noHpPengirim: sPhone,
+            noHpPengirim: sPhoneNorm, // Use parsed phone in preview
+            noHpPengirimAlt: sPhoneAlt,
             namaPenerima: rName,
-            noHpPenerima: rPhone,
+            noHpPenerima: rPhoneNorm,
+            noHpPenerimaAlt: rPhoneAlt,
+            alamatPengirim: sAddr,
+            alamatPenerima: rAddr,
             alamat: sAddr || rAddr,
             outlet: outletId || ""
           });
@@ -4169,12 +4224,64 @@ function apiImportCustomerFromSheet(params) {
       }
     }
 
+    // Write to IMPORT_LOG
+    try {
+      var statusLog = isPreview ? "PREVIEW" : "IMPORTED";
+      var logData = {
+        id: importSessionId,
+        created_at: nowStr,
+        owner: userId,
+        outlet_id: outletId || "",
+        outlet_name: "", // can be mapped if needed
+        spreadsheet_id: spreadsheetId || "",
+        spreadsheet_name: "", // optional
+        sheet_name: sheetName || "",
+        total_preview: stats.total,
+        total_new: stats.insertPengirim + stats.insertPenerima,
+        total_update: stats.updatePengirim + stats.updatePenerima,
+        total_skipped: stats.total - (stats.insertPengirim + stats.insertPenerima + stats.updatePengirim + stats.updatePenerima),
+        status: statusLog,
+        completed_at: isPreview ? "" : nowStr,
+        frontend_version: frontendVersion,
+        backend_version: "1.0",
+        db_schema_version: String(DB_SCHEMA_VERSION),
+        app_version: appVersion
+      };
+      
+      var existingLog = DatabaseService.findRowByColumn("IMPORT_LOG", "id", importSessionId);
+      if (existingLog) {
+         // PREVIEW was generated, so we keep created_at, update the rest
+         logData.created_at = existingLog.created_at;
+         DatabaseService.updateRowByColumn("IMPORT_LOG", "id", importSessionId, logData);
+      } else {
+         DatabaseService.appendRow("IMPORT_LOG", logData);
+      }
+    } catch(logErr) {
+      Logger.log("Failed to write IMPORT_LOG: " + logErr);
+    }
+
     return {
       status: "success",
       message: "Import selesai.",
       data: stats
     };
   } catch (e) {
+    try {
+      if (typeof importSessionId !== "undefined") {
+        var failLog = {
+          id: importSessionId,
+          status: "FAILED",
+          completed_at: new Date().toISOString()
+        };
+        var existingLog = DatabaseService.findRowByColumn("IMPORT_LOG", "id", importSessionId);
+        if (existingLog) {
+           DatabaseService.updateRowByColumn("IMPORT_LOG", "id", importSessionId, failLog);
+        } else {
+           failLog.created_at = new Date().toISOString();
+           DatabaseService.appendRow("IMPORT_LOG", failLog);
+        }
+      }
+    } catch(e2) {}
     return { status: "error", message: e.toString() };
   }
 }
