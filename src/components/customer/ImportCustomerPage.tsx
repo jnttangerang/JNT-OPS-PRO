@@ -97,12 +97,12 @@ export default function ImportCustomerPage({ session, outlets = [] }: { session:
   };
 
   const handleSaveEdit = () => {
-    if (!previewData) return;
-    const newData = { ...previewData };
-    const rowIdx = newData.previewRows.findIndex((r: any) => r._id === editingIdx);
+    if (!previewData?.previewRows) return;
+    const newPreviewRows = [...previewData.previewRows];
+    const rowIdx = newPreviewRows.findIndex((r: any) => r._id === editingIdx);
     if (rowIdx > -1) {
-      newData.previewRows[rowIdx] = { ...editForm };
-      setPreviewData(newData);
+      newPreviewRows[rowIdx] = { ...editForm };
+      setPreviewData({ ...previewData, previewRows: newPreviewRows });
     }
     setEditingIdx(null);
   };
@@ -428,20 +428,32 @@ export default function ImportCustomerPage({ session, outlets = [] }: { session:
                     </th>
                     <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('namaPengirim')}>
                       <div className="flex items-center gap-1">
-                        Pengirim
+                        Nama Pengirim
+                        <ArrowUpDown className="w-3 h-3 text-gray-400" />
+                      </div>
+                    </th>
+                    <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('noHpPengirim')}>
+                      <div className="flex items-center gap-1">
+                        No HP Pengirim
                         <ArrowUpDown className="w-3 h-3 text-gray-400" />
                       </div>
                     </th>
                     <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('namaPenerima')}>
                       <div className="flex items-center gap-1">
-                        Penerima
+                        Nama Penerima
+                        <ArrowUpDown className="w-3 h-3 text-gray-400" />
+                      </div>
+                    </th>
+                    <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('noHpPenerima')}>
+                      <div className="flex items-center gap-1">
+                        No HP Penerima
                         <ArrowUpDown className="w-3 h-3 text-gray-400" />
                       </div>
                     </th>
                     <th className="p-4 font-bold sticky top-0 bg-gray-50 z-10">Alamat</th>
                     <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('outletName')}>
                       <div className="flex items-center gap-1">
-                        Outlet Asal
+                        Outlet
                         <ArrowUpDown className="w-3 h-3 text-gray-400" />
                       </div>
                     </th>
@@ -451,7 +463,7 @@ export default function ImportCustomerPage({ session, outlets = [] }: { session:
                 <tbody className="text-xs divide-y divide-gray-100">
                   {currentData.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-gray-400">
+                      <td colSpan={10} className="p-8 text-center text-gray-400">
                         Tidak ada data preview yang sesuai pencarian.
                       </td>
                     </tr>
