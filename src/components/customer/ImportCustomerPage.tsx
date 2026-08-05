@@ -1,5 +1,6 @@
-import React, { useState } from "react";
-import { Users, Upload, Search, CheckCircle, AlertCircle, RefreshCw, ChevronLeft } from "lucide-react";
+import React, { useState, useMemo } from "react";
+import { ArrowUpDown } from "lucide-react";
+import { Users, Upload, Search, CheckCircle, AlertCircle, RefreshCw, ChevronLeft, Edit, Trash2, Check, X } from "lucide-react";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
 
@@ -19,6 +20,16 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
   const [searchQuery, setSearchQuery] = useState("");
   const itemsPerPage = 50;
 
+  // Edit / Delete State
+  const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+
+  const [deletedIds, setDeletedIds] = useState<Set<number>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc'|'desc'} | null>(null);
+
+
   const handlePreview = async () => {
     if (!outletId) return toast.error("Pilih Outlet terlebih dahulu.");
     if (!spreadsheetId.trim()) return toast.error("Spreadsheet ID / URL wajib diisi.");
@@ -33,7 +44,13 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
       });
       
       if (res.status === "success" && res.data) {
-        setPreviewData(res.data);
+        // Assign unique IDs for client-side editing/deleting
+        const withIds = res.data.previewRows.map((r: any, i: number) => ({ ...r, _id: i }));
+        setPreviewData({ ...res.data, previewRows: withIds });
+        setDeletedIds(new Set());
+        setSelectedIds(new Set());
+        setStatusFilter("ALL");
+        setSortConfig(null);
         setCurrentPage(1);
         toast.success("Preview berhasil dimuat.");
       } else {
@@ -44,6 +61,37 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
     }
   };
 
+  const handleEdit = (row: any) => {
+    setEditingIdx(row._id);
+    setEditForm({ ...row });
+  };
+
+  const handleSaveEdit = () => {
+    if (!previewData) return;
+    const newData = { ...previewData };
+    const rowIdx = newData.previewRows.findIndex((r: any) => r._id === editingIdx);
+    if (rowIdx > -1) {
+      newData.previewRows[rowIdx] = { ...editForm };
+      setPreviewData(newData);
+    }
+    setEditingIdx(null);
+  };
+
+  const handleDelete = (id: number) => {
+    const newDeleted = new Set(deletedIds);
+    newDeleted.add(id);
+    setDeletedIds(newDeleted);
+    
+    const newSelected = new Set(selectedIds);
+    newSelected.delete(id);
+    setSelectedIds(newSelected);
+  };
+
+  const workingCopy = useMemo(() => {
+    if (!previewData?.previewRows) return [];
+    return previewData.previewRows.filter((r: any) => !deletedIds.has(r._id));
+  }, [previewData?.previewRows, deletedIds]);
+
   const handleImport = async () => {
     setShowConfirmModal(false);
     setIsImporting(true);
@@ -53,12 +101,13 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
         outletId,
         spreadsheetId: spreadsheetId.trim(),
         sheetName: sheetName.trim(),
-        preview: false
+        preview: false,
+        editedRows: workingCopy
       });
       
       if (res.status === "success") {
         toast.success(`Import selesai: ${res.data?.insertPengirim || 0} customer baru, ${res.data?.updatePengirim || 0} diupdate.`);
-        setPreviewData(null); // Clear preview after successful import
+        setPreviewData(null);
       } else {
         toast.error(res.message || "Gagal import customer.");
       }
@@ -69,12 +118,86 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
     }
   };
 
-  const filteredPreview = previewData?.previewRows?.filter((row: any) => 
-    row.namaPengirim?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    row.noHpPengirim?.includes(searchQuery) ||
-    row.namaPenerima?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    row.noHpPenerima?.includes(searchQuery)
-  ) || [];
+  const deletedCount = deletedIds.size;
+  const totalValid = workingCopy.length;
+  const newCustomers = workingCopy.filter((r: any) => r.status === "NEW").length;
+  const existingCustomers = workingCopy.filter((r: any) => r.status === "UPDATE").length;
+  const errorCount = previewData?.failed || 0;
+
+  const filteredPreview = useMemo(() => {
+    let result = workingCopy;
+    
+    if (statusFilter !== "ALL") {
+      result = result.filter((r: any) => r.status === statusFilter);
+    }
+
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter((row: any) => {
+        const outName = outlets.find((o: any) => o.outlet_id === row.outlet)?.nama_outlet || row.outlet || "";
+        return (
+          row.namaPengirim?.toLowerCase().includes(q) ||
+          row.noHpPengirim?.includes(q) ||
+          row.namaPenerima?.toLowerCase().includes(q) ||
+          row.noHpPenerima?.includes(q) ||
+          outName.toLowerCase().includes(q)
+        );
+      });
+    }
+
+    if (sortConfig) {
+      result = [...result].sort((a: any, b: any) => {
+        let aVal = a[sortConfig.key] || "";
+        let bVal = b[sortConfig.key] || "";
+        
+        if (sortConfig.key === "outletName") {
+          aVal = outlets.find((o: any) => o.outlet_id === a.outlet)?.nama_outlet || a.outlet || "";
+          bVal = outlets.find((o: any) => o.outlet_id === b.outlet)?.nama_outlet || b.outlet || "";
+        } else if (sortConfig.key === "status") {
+          aVal = a.status || "";
+          bVal = b.status || "";
+        }
+
+        if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [workingCopy, statusFilter, searchQuery, sortConfig, outlets]);
+
+  const handleSort = (key: string) => {
+    let direction = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction: direction as 'asc' | 'desc' });
+  };
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedIds(new Set(filteredPreview.map((r: any) => r._id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handleSelectRow = (id: number, checked: boolean) => {
+    const newSelected = new Set(selectedIds);
+    if (checked) newSelected.add(id);
+    else newSelected.delete(id);
+    setSelectedIds(newSelected);
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    const newDeleted = new Set(deletedIds);
+    selectedIds.forEach(id => newDeleted.add(id));
+    setDeletedIds(newDeleted);
+    setSelectedIds(new Set());
+  };
+
 
   const totalPages = Math.ceil(filteredPreview.length / itemsPerPage);
   const currentData = filteredPreview.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
@@ -172,39 +295,66 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
       {previewData && !isImporting && (
         <div className="space-y-6 animate-fade-in">
           {/* Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm flex flex-col justify-center text-center">
-              <span className="text-gray-400 font-bold text-xs uppercase tracking-wider mb-1">Total Baris</span>
-              <span className="text-2xl font-black text-gray-800">{previewData.total || 0}</span>
+              <span className="text-gray-500 font-bold text-xs uppercase tracking-wider mb-1">Total Data Valid</span>
+              <span className="text-2xl font-black text-gray-700">{totalValid}</span>
             </div>
             <div className="bg-white p-5 rounded-2xl border border-green-150 shadow-sm flex flex-col justify-center text-center">
               <span className="text-green-600 font-bold text-xs uppercase tracking-wider mb-1">Customer Baru</span>
-              <span className="text-2xl font-black text-green-700">{(previewData.insertPengirim || 0) + (previewData.insertPenerima || 0)}</span>
+              <span className="text-2xl font-black text-green-700">{newCustomers}</span>
             </div>
             <div className="bg-white p-5 rounded-2xl border border-blue-150 shadow-sm flex flex-col justify-center text-center">
               <span className="text-blue-600 font-bold text-xs uppercase tracking-wider mb-1">Customer Existing</span>
-              <span className="text-2xl font-black text-blue-700">{(previewData.updatePengirim || 0) + (previewData.updatePenerima || 0)}</span>
+              <span className="text-2xl font-black text-blue-700">{existingCustomers}</span>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-orange-150 shadow-sm flex flex-col justify-center text-center">
+              <span className="text-orange-500 font-bold text-xs uppercase tracking-wider mb-1">Data Dihapus</span>
+              <span className="text-2xl font-black text-orange-600">{deletedCount > 0 ? deletedCount : 0}</span>
             </div>
             <div className="bg-white p-5 rounded-2xl border border-red-150 shadow-sm flex flex-col justify-center text-center">
-              <span className="text-red-500 font-bold text-xs uppercase tracking-wider mb-1">Baris Error</span>
-              <span className="text-2xl font-black text-red-600">{previewData.failed || 0}</span>
+              <span className="text-red-500 font-bold text-xs uppercase tracking-wider mb-1">Data Error</span>
+              <span className="text-2xl font-black text-red-600">{errorCount}</span>
             </div>
           </div>
 
           {/* Action Header */}
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="relative w-full md:w-96">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Cari nama atau nomor HP..."
-                value={searchQuery}
+            <div className="flex flex-col md:flex-row items-center gap-3 w-full md:w-auto">
+              <div className="relative w-full md:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nama, no HP, outlet..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-[#E4002B] outline-none transition-all"
+                />
+              </div>
+              <select
+                value={statusFilter}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
+                  setStatusFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500 outline-none transition-all"
-              />
+                className="w-full md:w-auto bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-semibold text-gray-700 focus:ring-2 focus:ring-[#E4002B] outline-none transition-all"
+              >
+                <option value="ALL">Semua Status</option>
+                <option value="NEW">NEW</option>
+                <option value="UPDATE">UPDATE</option>
+              </select>
+              {selectedIds.size > 0 && (
+                <button
+                  onClick={handleBulkDelete}
+                  className="w-full md:w-auto bg-orange-100 text-orange-700 hover:bg-orange-200 font-bold px-4 py-2 rounded-xl text-sm transition-all flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Hapus ({selectedIds.size})
+                </button>
+              )}
             </div>
             
             <button
@@ -217,47 +367,132 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
           </div>
 
           {/* Table */}
-          <div className="bg-white rounded-2xl border border-gray-150 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
+          <div className="bg-white rounded-2xl border border-gray-150 shadow-sm flex flex-col">
+            <div className="overflow-x-auto max-h-[600px] overflow-y-auto relative">
+              <table className="w-full text-left border-collapse relative">
+                <thead className="sticky top-0 z-20 bg-gray-50 shadow-sm">
                   <tr className="bg-gray-50 text-gray-500 text-[11px] uppercase tracking-wider border-b border-gray-100">
-                    <th className="p-4 font-bold">Status</th>
-                    <th className="p-4 font-bold">Nama Pengirim</th>
-                    <th className="p-4 font-bold">No HP</th>
-                    <th className="p-4 font-bold">Nama Penerima</th>
-                    <th className="p-4 font-bold">No HP</th>
-                    <th className="p-4 font-bold">Alamat</th>
-                    <th className="p-4 font-bold">Outlet Asal</th>
+                    <th className="p-4 font-bold sticky top-0 bg-gray-50 z-10">
+                      <input 
+                        type="checkbox" 
+                        className="rounded text-red-500 focus:ring-red-500 cursor-pointer"
+                        checked={filteredPreview.length > 0 && selectedIds.size === filteredPreview.length}
+                        onChange={handleSelectAll}
+                      />
+                    </th>
+                    <th className="p-4 font-bold sticky top-0 bg-gray-50 z-10">No</th>
+                    <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('status')}>
+                      <div className="flex items-center gap-1">
+                        Status
+                        <ArrowUpDown className="w-3 h-3 text-gray-400" />
+                      </div>
+                    </th>
+                    <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('namaPengirim')}>
+                      <div className="flex items-center gap-1">
+                        Nama Pengirim
+                        <ArrowUpDown className="w-3 h-3 text-gray-400" />
+                      </div>
+                    </th>
+                    <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('noHpPengirim')}>
+                      <div className="flex items-center gap-1">
+                        No HP
+                        <ArrowUpDown className="w-3 h-3 text-gray-400" />
+                      </div>
+                    </th>
+                    <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('namaPenerima')}>
+                      <div className="flex items-center gap-1">
+                        Nama Penerima
+                        <ArrowUpDown className="w-3 h-3 text-gray-400" />
+                      </div>
+                    </th>
+                    <th className="p-4 font-bold sticky top-0 bg-gray-50 z-10">No HP</th>
+                    <th className="p-4 font-bold sticky top-0 bg-gray-50 z-10">Alamat</th>
+                    <th className="p-4 font-bold cursor-pointer hover:bg-gray-100 transition-colors select-none sticky top-0 bg-gray-50 z-10" onClick={() => handleSort('outletName')}>
+                      <div className="flex items-center gap-1">
+                        Outlet Asal
+                        <ArrowUpDown className="w-3 h-3 text-gray-400" />
+                      </div>
+                    </th>
+                    <th className="p-4 font-bold sticky top-0 bg-gray-50 z-10">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="text-xs divide-y divide-gray-100">
                   {currentData.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-gray-400">
+                      <td colSpan={10} className="p-8 text-center text-gray-400">
                         Tidak ada data preview yang sesuai pencarian.
                       </td>
                     </tr>
                   ) : (
-                    currentData.map((row: any, idx: number) => (
-                      <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                        <td className="p-4">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                            row.status === "NEW" ? "bg-green-100 text-green-700" :
-                            row.status === "UPDATE" ? "bg-blue-100 text-blue-700" :
-                            "bg-red-100 text-red-700"
-                          }`}>
-                            {row.status}
-                          </span>
-                        </td>
-                        <td className="p-4 font-semibold text-gray-800">{row.namaPengirim || "-"}</td>
-                        <td className="p-4 font-mono text-gray-600">{row.noHpPengirim || "-"}</td>
-                        <td className="p-4 font-semibold text-gray-800">{row.namaPenerima || "-"}</td>
-                        <td className="p-4 font-mono text-gray-600">{row.noHpPenerima || "-"}</td>
-                        <td className="p-4 text-gray-600 max-w-[200px] truncate" title={row.alamat}>{row.alamat || "-"}</td>
-                        <td className="p-4 text-gray-600">{row.outlet || "-"}</td>
-                      </tr>
-                    ))
+                    currentData.map((row: any, idx: number) => {
+                      const isEditing = editingIdx === row._id;
+                      const globalNum = (currentPage - 1) * itemsPerPage + idx + 1;
+                      const outletName = outlets.find(o => o.outlet_id === row.outlet)?.nama_outlet || row.outlet;
+
+                      return (
+                        <tr key={row._id} className="hover:bg-gray-50 transition-colors">
+                          <td className="p-4">
+                            <input 
+                              type="checkbox" 
+                              className="rounded text-red-500 focus:ring-red-500 cursor-pointer"
+                              checked={selectedIds.has(row._id)}
+                              onChange={(e) => handleSelectRow(row._id, e.target.checked)}
+                            />
+                          </td>
+                          <td className="p-4 font-mono text-gray-500">{globalNum}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                              row.status === "NEW" ? "bg-green-100 text-green-700" :
+                              row.status === "UPDATE" ? "bg-blue-100 text-blue-700" :
+                              "bg-red-100 text-red-700"
+                            }`}>
+                              {row.status}
+                            </span>
+                          </td>
+                          <td className="p-4 font-semibold text-gray-800">
+                            {isEditing ? (
+                              <input type="text" className="w-full border p-1 rounded" value={editForm.namaPengirim || ""} onChange={e => setEditForm({...editForm, namaPengirim: e.target.value})} />
+                            ) : (row.namaPengirim || "-")}
+                          </td>
+                          <td className="p-4 font-mono text-gray-600">
+                            {isEditing ? (
+                              <input type="text" className="w-full border p-1 rounded" value={editForm.noHpPengirim || ""} onChange={e => setEditForm({...editForm, noHpPengirim: e.target.value})} />
+                            ) : (row.noHpPengirim || "-")}
+                          </td>
+                          <td className="p-4 font-semibold text-gray-800">
+                            {isEditing ? (
+                              <input type="text" className="w-full border p-1 rounded" value={editForm.namaPenerima || ""} onChange={e => setEditForm({...editForm, namaPenerima: e.target.value})} />
+                            ) : (row.namaPenerima || "-")}
+                          </td>
+                          <td className="p-4 font-mono text-gray-600">
+                            {isEditing ? (
+                              <input type="text" className="w-full border p-1 rounded" value={editForm.noHpPenerima || ""} onChange={e => setEditForm({...editForm, noHpPenerima: e.target.value})} />
+                            ) : (row.noHpPenerima || "-")}
+                          </td>
+                          <td className="p-4 text-gray-600 max-w-[200px] truncate" title={row.alamat}>
+                            {isEditing ? (
+                              <input type="text" className="w-full border p-1 rounded" value={editForm.alamat || ""} onChange={e => setEditForm({...editForm, alamat: e.target.value})} />
+                            ) : (row.alamat || "-")}
+                          </td>
+                          <td className="p-4 text-gray-600">
+                            {outletName || "-"}
+                          </td>
+                          <td className="p-4 flex items-center gap-2">
+                            {isEditing ? (
+                              <>
+                                <button onClick={handleSaveEdit} className="text-green-600 hover:bg-green-50 p-1 rounded"><Check className="w-4 h-4" /></button>
+                                <button onClick={() => setEditingIdx(null)} className="text-gray-500 hover:bg-gray-100 p-1 rounded"><X className="w-4 h-4" /></button>
+                              </>
+                            ) : (
+                              <>
+                                <button onClick={() => handleEdit(row)} className="text-blue-600 hover:bg-blue-50 p-1 rounded" title="Edit"><Edit className="w-4 h-4" /></button>
+                                <button onClick={() => handleDelete(row._id)} className="text-red-600 hover:bg-red-50 p-1 rounded" title="Hapus"><Trash2 className="w-4 h-4" /></button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -311,11 +546,11 @@ export default function ImportCustomerPage({ session, outlets }: { session: any,
               <div className="bg-gray-50 p-4 rounded-xl space-y-2 mb-6 border border-gray-150">
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-gray-500">Customer Baru (Pengirim & Penerima)</span>
-                  <span className="font-bold text-green-600">{(previewData?.insertPengirim || 0) + (previewData?.insertPenerima || 0)} customer</span>
+                  <span className="font-bold text-green-600">{newCustomers} customer</span>
                 </div>
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-gray-500">Update Existing Customer</span>
-                  <span className="font-bold text-blue-600">{(previewData?.updatePengirim || 0) + (previewData?.updatePenerima || 0)} update</span>
+                  <span className="font-bold text-blue-600">{existingCustomers} update</span>
                 </div>
               </div>
               <p className="text-gray-600 text-sm mb-6 font-medium">Lanjutkan proses import?</p>

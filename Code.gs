@@ -3857,6 +3857,13 @@ function apiGetUsers() {
   }
 }
 
+function sanitizeString_(str) {
+  if (str === null || str === undefined) return "";
+  var s = String(str).trim();
+  if (s === "-") return "";
+  return s;
+}
+
 function normalizePhone_(phone) {
   if (!phone) return "";
   var digits = String(phone).replace(/\D/g, "");
@@ -3871,48 +3878,53 @@ function apiImportCustomerFromSheet(params) {
     var outletId = params.outletId;
     var spreadsheetId = params.spreadsheetId;
     var isPreview = params.preview === true;
-    if (!sheetName) throw new Error("sheetName wajib diisi");
+    var useEditedRows = !isPreview && params.editedRows !== undefined;
+
+    if (!sheetName && !useEditedRows) throw new Error("sheetName wajib diisi");
 
     var rawData;
-    if (spreadsheetId) {
-      var match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
-      var id = match ? match[1] : spreadsheetId;
-      var extSs = SpreadsheetApp.openById(id);
-      var extSheet = extSs.getSheetByName(sheetName);
-      if (!extSheet) throw new Error("Sheet '" + sheetName + "' tidak ditemukan di Spreadsheet target.");
-      rawData = extSheet.getDataRange().getValues();
-    } else {
-      rawData = DatabaseService.getSheetData(sheetName);
-    }
-
-    if (!rawData || rawData.length < 2) {
-      throw new Error("Sheet kosong atau tidak ditemukan.");
-    }
-
-    var headers = rawData[0];
-    
-    // Cari index kolom
+    var headers;
     var idxSndName = -1, idxSndPhone = -1, idxSndAddr = -1, idxSndZip = -1;
     var idxRcvName = -1, idxRcvPhone = -1, idxRcvAddr = -1, idxRcvZip = -1;
     var idxItemName = -1, idxItemWeight = -1, idxItemVol = -1, idxItemValue = -1, idxItemQty = -1;
 
-    for (var i = 0; i < headers.length; i++) {
-      var h = headers[i].toString().trim().toLowerCase();
-      if (h === "nama pengirim" && idxSndName === -1) idxSndName = i;
-      else if (h === "no. hp" && idxSndPhone === -1) idxSndPhone = i;
-      else if (h === "alamat pengirim" && idxSndAddr === -1) idxSndAddr = i;
-      else if (h === "kode pos" && idxSndZip === -1) idxSndZip = i;
+    if (!useEditedRows) {
+      if (spreadsheetId) {
+        var match = spreadsheetId.match(/\/d\/([a-zA-Z0-9-_]+)/);
+        var id = match ? match[1] : spreadsheetId;
+        var extSs = SpreadsheetApp.openById(id);
+        var extSheet = extSs.getSheetByName(sheetName);
+        if (!extSheet) throw new Error("Sheet '" + sheetName + "' tidak ditemukan di Spreadsheet target.");
+        rawData = extSheet.getDataRange().getValues();
+      } else {
+        rawData = DatabaseService.getSheetData(sheetName);
+      }
+
+      if (!rawData || rawData.length < 2) {
+        throw new Error("Sheet kosong atau tidak ditemukan.");
+      }
+
+      headers = rawData[0];
       
-      else if (h === "nama penerima" && idxRcvName === -1) idxRcvName = i;
-      else if (h === "no. hp" && idxSndPhone !== -1 && idxRcvPhone === -1) idxRcvPhone = i;
-      else if (h === "alamat penerima" && idxRcvAddr === -1) idxRcvAddr = i;
-      else if (h === "kode pos" && idxSndZip !== -1 && idxRcvZip === -1) idxRcvZip = i;
-      
-      else if (h === "nama barang" && idxItemName === -1) idxItemName = i;
-      else if (h === "berat barang" && idxItemWeight === -1) idxItemWeight = i;
-      else if (h === "volume (pxlxt)" && idxItemVol === -1) idxItemVol = i;
-      else if (h === "nilai barang (rp)" && idxItemValue === -1) idxItemValue = i;
-      else if (h === "jumlah paket" && idxItemQty === -1) idxItemQty = i;
+      // Cari index kolom
+      for (var i = 0; i < headers.length; i++) {
+        var h = headers[i].toString().trim().toLowerCase();
+        if (h === "nama pengirim" && idxSndName === -1) idxSndName = i;
+        else if (h === "no. hp" && idxSndPhone === -1) idxSndPhone = i;
+        else if (h === "alamat pengirim" && idxSndAddr === -1) idxSndAddr = i;
+        else if (h === "kode pos" && idxSndZip === -1) idxSndZip = i;
+        
+        else if (h === "nama penerima" && idxRcvName === -1) idxRcvName = i;
+        else if (h === "no. hp" && idxSndPhone !== -1 && idxRcvPhone === -1) idxRcvPhone = i;
+        else if (h === "alamat penerima" && idxRcvAddr === -1) idxRcvAddr = i;
+        else if (h === "kode pos" && idxSndZip !== -1 && idxRcvZip === -1) idxRcvZip = i;
+        
+        else if (h === "nama barang" && idxItemName === -1) idxItemName = i;
+        else if (h === "berat barang" && idxItemWeight === -1) idxItemWeight = i;
+        else if (h === "volume (pxlxt)" && idxItemVol === -1) idxItemVol = i;
+        else if (h === "nilai barang (rp)" && idxItemValue === -1) idxItemValue = i;
+        else if (h === "jumlah paket" && idxItemQty === -1) idxItemQty = i;
+      }
     }
 
     // Ambil database existing untuk checking
@@ -3925,6 +3937,7 @@ function apiImportCustomerFromSheet(params) {
     var headCustomer = dbCustomer[0] || DB_SCHEMA.Master_Customer;
 
     var hpPengirimMap = {};
+    var nameAddrPengirimMap = {};
     for (var r = 1; r < dbPengirim.length; r++) {
       var row = rowToObject_(headPengirim, dbPengirim[r]);
       var hpNorm = normalizePhone_(row.telepon);
@@ -3932,9 +3945,12 @@ function apiImportCustomerFromSheet(params) {
         row._rowIndex = r; // 0-based array index in memory
         hpPengirimMap[hpNorm] = row;
       }
+      var nameAddrKey = sanitizeString_(row.nama) + "|||" + sanitizeString_(row.alamat);
+      nameAddrPengirimMap[nameAddrKey] = row;
     }
 
     var hpPenerimaMap = {};
+    var nameAddrPenerimaMap = {};
     for (var r = 1; r < dbPenerima.length; r++) {
       var row = rowToObject_(headPenerima, dbPenerima[r]);
       var hpNorm = normalizePhone_(row.telepon);
@@ -3942,6 +3958,8 @@ function apiImportCustomerFromSheet(params) {
         row._rowIndex = r;
         hpPenerimaMap[hpNorm] = row;
       }
+      var nameAddrKey = sanitizeString_(row.nama) + "|||" + sanitizeString_(row.alamat);
+      nameAddrPenerimaMap[nameAddrKey] = row;
     }
 
     var hpCustomerMap = {};
@@ -3955,7 +3973,7 @@ function apiImportCustomerFromSheet(params) {
     }
 
     var stats = {
-      total: rawData.length - 1,
+      total: 0,
       insertPengirim: 0,
       updatePengirim: 0,
       insertPenerima: 0,
@@ -3977,41 +3995,67 @@ function apiImportCustomerFromSheet(params) {
     var mapColCustomer = {};
     for (var c = 0; c < headCustomer.length; c++) mapColCustomer[headCustomer[c]] = c;
     
-    for (var r = 1; r < rawData.length; r++) {
+    var rowCount = useEditedRows ? params.editedRows.length : (rawData ? rawData.length : 0);
+    var startIdx = useEditedRows ? 0 : 1;
+
+    for (var r = startIdx; r < rowCount; r++) {
       try {
-        var dr = rawData[r];
-        var sName = idxSndName !== -1 ? dr[idxSndName].toString().trim() : "";
-        var sPhone = idxSndPhone !== -1 ? dr[idxSndPhone].toString().trim() : "";
-        var sAddr = idxSndAddr !== -1 ? dr[idxSndAddr].toString().trim() : "";
-        var sZip = idxSndZip !== -1 ? dr[idxSndZip].toString().trim() : "";
-
-        var rName = idxRcvName !== -1 ? dr[idxRcvName].toString().trim() : "";
-        var rPhone = idxRcvPhone !== -1 ? dr[idxRcvPhone].toString().trim() : "";
-        var rAddr = idxRcvAddr !== -1 ? dr[idxRcvAddr].toString().trim() : "";
-        var rZip = idxRcvZip !== -1 ? dr[idxRcvZip].toString().trim() : "";
-
-        // Unused fields (extracted as requested)
-        var itemName = idxItemName !== -1 ? dr[idxItemName].toString().trim() : "";
-        var itemWeight = idxItemWeight !== -1 ? dr[idxItemWeight].toString().trim() : "";
-        var itemVol = idxItemVol !== -1 ? dr[idxItemVol].toString().trim() : "";
-        var itemValue = idxItemValue !== -1 ? dr[idxItemValue].toString().trim() : "";
-        var itemQty = idxItemQty !== -1 ? dr[idxItemQty].toString().trim() : "";
+        var sName = "", sPhone = "", sAddr = "", sZip = "";
+        var rName = "", rPhone = "", rAddr = "", rZip = "";
         
+        if (useEditedRows) {
+          var ed = params.editedRows[r];
+          sName = sanitizeString_(ed.namaPengirim);
+          sPhone = sanitizeString_(ed.noHpPengirim);
+          rName = sanitizeString_(ed.namaPenerima);
+          rPhone = sanitizeString_(ed.noHpPenerima);
+          sAddr = sanitizeString_(ed.alamatPengirim || ed.alamat); // Fallback to ed.alamat if UI is not updated
+          rAddr = sanitizeString_(ed.alamatPenerima || ed.alamat);
+        } else {
+          var dr = rawData[r];
+          sName = sanitizeString_(idxSndName !== -1 ? dr[idxSndName] : "");
+          sPhone = sanitizeString_(idxSndPhone !== -1 ? dr[idxSndPhone] : "");
+          sAddr = sanitizeString_(idxSndAddr !== -1 ? dr[idxSndAddr] : "");
+          sZip = sanitizeString_(idxSndZip !== -1 ? dr[idxSndZip] : "");
+
+          rName = sanitizeString_(idxRcvName !== -1 ? dr[idxRcvName] : "");
+          rPhone = sanitizeString_(idxRcvPhone !== -1 ? dr[idxRcvPhone] : "");
+          rAddr = sanitizeString_(idxRcvAddr !== -1 ? dr[idxRcvAddr] : "");
+          rZip = sanitizeString_(idxRcvZip !== -1 ? dr[idxRcvZip] : "");
+        }
+
         var sPhoneNorm = normalizePhone_(sPhone);
         var rPhoneNorm = normalizePhone_(rPhone);
-        var pStatus = "UPDATE";
 
-        if (sPhoneNorm) {
-          if (hpPengirimMap[sPhoneNorm]) {
+        if (!sName && !sPhoneNorm && !rName && !rPhoneNorm) {
+          continue;
+        }
+        
+        var pStatus = "UPDATE";
+        var isNewSnd = false;
+        var isNewRcv = false;
+
+        if (sName || sPhoneNorm) {
+          var pengirimMatch = null;
+          if (sPhoneNorm && hpPengirimMap[sPhoneNorm]) {
+            pengirimMatch = hpPengirimMap[sPhoneNorm];
+          } else if (!sPhoneNorm && sName) {
+            var sKey = sName + "|||" + sAddr;
+            if (nameAddrPengirimMap[sKey]) {
+              pengirimMatch = nameAddrPengirimMap[sKey];
+            }
+          }
+
+          if (pengirimMatch) {
             // Update
-            var existingIdx = hpPengirimMap[sPhoneNorm]._rowIndex;
+            var existingIdx = pengirimMatch._rowIndex;
             if (mapColPengirim["nama"] !== undefined && sName) dbPengirim[existingIdx][mapColPengirim["nama"]] = sName;
             if (mapColPengirim["alamat"] !== undefined && sAddr) dbPengirim[existingIdx][mapColPengirim["alamat"]] = sAddr;
             if (mapColPengirim["kode_pos"] !== undefined && sZip) dbPengirim[existingIdx][mapColPengirim["kode_pos"]] = sZip;
             if (mapColPengirim["updated_at"] !== undefined) dbPengirim[existingIdx][mapColPengirim["updated_at"]] = nowStr;
             stats.updatePengirim++;
           } else {
-            pStatus = "NEW";
+            isNewSnd = true;
             // Insert
             var newId = "SND-" + new Date().getTime().toString().slice(-5) + Math.floor(Math.random() * 10) + r;
             var rowObj = {
@@ -4030,28 +4074,38 @@ function apiImportCustomerFromSheet(params) {
             dbPengirim.push(newRow);
             
             rowObj._rowIndex = dbPengirim.length - 1;
-            hpPengirimMap[sPhoneNorm] = rowObj;
+            if (sPhoneNorm) hpPengirimMap[sPhoneNorm] = rowObj;
             stats.insertPengirim++;
           }
           
           // Sync Master Customer if exists
-          if (hpCustomerMap[sPhoneNorm]) {
+          if (sPhoneNorm && hpCustomerMap[sPhoneNorm]) {
             var exCstIdx = hpCustomerMap[sPhoneNorm]._rowIndex;
             if (mapColCustomer["last_updated"] !== undefined) dbCustomer[exCstIdx][mapColCustomer["last_updated"]] = nowStr;
             if (mapColCustomer["tanggal_terakhir_kirim"] !== undefined) dbCustomer[exCstIdx][mapColCustomer["tanggal_terakhir_kirim"]] = nowStr;
           }
         }
 
-        if (rPhoneNorm) {
-          if (hpPenerimaMap[rPhoneNorm]) {
-            var existingRIdx = hpPenerimaMap[rPhoneNorm]._rowIndex;
+        if (rName || rPhoneNorm) {
+          var penerimaMatch = null;
+          if (rPhoneNorm && hpPenerimaMap[rPhoneNorm]) {
+            penerimaMatch = hpPenerimaMap[rPhoneNorm];
+          } else if (!rPhoneNorm && rName) {
+            var rKey = rName + "|||" + rAddr;
+            if (nameAddrPenerimaMap[rKey]) {
+              penerimaMatch = nameAddrPenerimaMap[rKey];
+            }
+          }
+
+          if (penerimaMatch) {
+            var existingRIdx = penerimaMatch._rowIndex;
             if (mapColPenerima["nama"] !== undefined && rName) dbPenerima[existingRIdx][mapColPenerima["nama"]] = rName;
             if (mapColPenerima["alamat"] !== undefined && rAddr) dbPenerima[existingRIdx][mapColPenerima["alamat"]] = rAddr;
             if (mapColPenerima["kode_pos"] !== undefined && rZip) dbPenerima[existingRIdx][mapColPenerima["kode_pos"]] = rZip;
             if (mapColPenerima["updated_at"] !== undefined) dbPenerima[existingRIdx][mapColPenerima["updated_at"]] = nowStr;
             stats.updatePenerima++;
           } else {
-            pStatus = "NEW";
+            isNewRcv = true;
             var newIdR = "RCV-" + new Date().getTime().toString().slice(-5) + Math.floor(Math.random() * 10) + r;
             var rowObjR = {
               id: newIdR,
@@ -4069,12 +4123,18 @@ function apiImportCustomerFromSheet(params) {
             dbPenerima.push(newRowR);
             
             rowObjR._rowIndex = dbPenerima.length - 1;
-            hpPenerimaMap[rPhoneNorm] = rowObjR;
+            if (rPhoneNorm) hpPenerimaMap[rPhoneNorm] = rowObjR;
             stats.insertPenerima++;
           }
         }
+        
+        if (isNewSnd || isNewRcv) {
+            pStatus = "NEW";
+        }
+        
+        stats.total++;
 
-        if (isPreview && stats.previewRows.length < 500) {
+        if (isPreview) {
           stats.previewRows.push({
             status: pStatus,
             namaPengirim: sName,
