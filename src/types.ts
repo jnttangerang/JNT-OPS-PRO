@@ -256,6 +256,90 @@ export interface SessionData {
   nama_lengkap: string;
 }
 
+export interface MasterTransaksi {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  import_id?: string;
+  outlet_id: string;
+  outlet_name?: string;
+  admin_id: string;
+  admin_name?: string;
+  tanggal_transaksi: string;
+  jam_transaksi?: string;
+  no_resi?: string;
+  ekspedisi?: string;
+  tipe_produk?: string;
+  pengirim_id?: string;
+  penerima_id?: string;
+  snapshot_nama_pengirim?: string;
+  snapshot_hp_pengirim?: string;
+  snapshot_alamat_pengirim?: string;
+  snapshot_nama_penerima?: string;
+  snapshot_hp_penerima?: string;
+  snapshot_alamat_penerima?: string;
+  nama_barang?: string;
+  berat_barang?: number;
+  volume_barang?: string;
+  nilai_barang?: number;
+  jumlah_paket?: number;
+  metode_bayar?: string;
+  ongkir_customer?: number;
+  packing?: number;
+  amplop?: number;
+  biaya_lain?: number;
+  total_customer?: number;
+  ongkir_yoyi?: number;
+  asuransi?: number;
+  biaya_lain_yoyi?: number;
+  wajib_setor_owner?: number;
+  kas_outlet?: number;
+  status_transaksi?: string;
+  status_setoran?: string;
+  status_audit?: string;
+  status_sync?: string;
+  sumber_data?: string;
+  catatan?: string;
+}
+
+export interface MasterPengiriman {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  transaksi_id?: string;
+  import_id?: string;
+  outlet_id: string;
+  outlet_name?: string;
+  admin_id: string;
+  admin_name?: string;
+  tanggal_pengiriman: string;
+  jam_pengiriman?: string;
+  no_resi?: string;
+  ekspedisi?: string;
+  tipe_produk?: string;
+  pengirim_id?: string;
+  penerima_id?: string;
+  snapshot_nama_pengirim?: string;
+  snapshot_hp_pengirim?: string;
+  snapshot_alamat_pengirim?: string;
+  snapshot_nama_penerima?: string;
+  snapshot_hp_penerima?: string;
+  snapshot_alamat_penerima?: string;
+  nama_barang?: string;
+  berat_barang?: number;
+  volume_barang?: string;
+  nilai_barang?: number;
+  jumlah_paket?: number;
+  foto_barang?: string;
+  foto_resi?: string;
+  status_pengiriman?: string;
+  status_pickup?: string;
+  status_delivery?: string;
+  status_sync?: string;
+  sumber_data?: string;
+  catatan?: string;
+}
+
 export interface DatabaseSchema {
   Users: User[];
   Outlets: Outlet[];
@@ -268,6 +352,10 @@ export interface DatabaseSchema {
   SystemSettings?: SystemSettings;
   MASTER_KATEGORI_KEUANGAN?: KategoriKeuangan[];
   KEUANGAN_OUTLET?: KeuanganOutlet[];
+  MASTER_PENGIRIM?: MasterPengirim[];
+  MASTER_PENERIMA?: MasterPenerima[];
+  MASTER_TRANSAKSI?: MasterTransaksi[];
+  MASTER_PENGIRIMAN?: MasterPengiriman[];
 }
 
 export interface KategoriKeuangan {

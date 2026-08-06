@@ -1801,7 +1801,7 @@ function simulateSha256(input) {
 // Jangan hapus/reorder kolom existing di sini — itu mengubah posisi index yang
 // sudah dipakai kode lain (mis. getRange(row, N)).
 // ==========================================
-var DB_SCHEMA_VERSION = 9; // v9: tambah metadata IMPORT_LOG (frontend_version dll)
+var DB_SCHEMA_VERSION = 11; // v11: tambah MASTER_PENGIRIMAN (Foundation Operasional Aktivitas Pengiriman)
 
 var DB_SCHEMA = {
   // Kolom lama TIDAK BOLEH dihapus/direorder — hanya tambah di ujung kanan.
@@ -1848,6 +1848,28 @@ var DB_SCHEMA = {
   MASTER_PENERIMA: ["id", "customer_id", "nama", "telepon", "provinsi", "kabupaten", "kecamatan", "kelurahan",
     "kode_pos", "alamat", "jumlah_diterima", "tanggal_pertama", "tanggal_terakhir", "status",
     "created_at", "updated_at", "outlet_id_asal", "telepon_alternatif", "import_id"],
+  MASTER_TRANSAKSI: [
+    "id", "created_at", "updated_at", "import_id", "outlet_id", "outlet_name",
+    "admin_id", "admin_name", "tanggal_transaksi", "jam_transaksi", "no_resi",
+    "ekspedisi", "tipe_produk", "pengirim_id", "penerima_id",
+    "snapshot_nama_pengirim", "snapshot_hp_pengirim", "snapshot_alamat_pengirim",
+    "snapshot_nama_penerima", "snapshot_hp_penerima", "snapshot_alamat_penerima",
+    "nama_barang", "berat_barang", "volume_barang", "nilai_barang", "jumlah_paket",
+    "metode_bayar", "ongkir_customer", "packing", "amplop", "biaya_lain",
+    "total_customer", "ongkir_yoyi", "asuransi", "biaya_lain_yoyi",
+    "wajib_setor_owner", "kas_outlet", "status_transaksi", "status_setoran",
+    "status_audit", "status_sync", "sumber_data", "catatan"
+  ],
+  MASTER_PENGIRIMAN: [
+    "id", "created_at", "updated_at", "transaksi_id", "import_id", "outlet_id", "outlet_name",
+    "admin_id", "admin_name", "tanggal_pengiriman", "jam_pengiriman", "no_resi",
+    "ekspedisi", "tipe_produk", "pengirim_id", "penerima_id",
+    "snapshot_nama_pengirim", "snapshot_hp_pengirim", "snapshot_alamat_pengirim",
+    "snapshot_nama_penerima", "snapshot_hp_penerima", "snapshot_alamat_penerima",
+    "nama_barang", "berat_barang", "volume_barang", "nilai_barang", "jumlah_paket",
+    "foto_barang", "foto_resi", "status_pengiriman", "status_pickup", "status_delivery",
+    "status_sync", "sumber_data", "catatan"
+  ],
   SystemSettings: ["key", "value"]
 };
 
@@ -2455,6 +2477,269 @@ var DatabaseService = {
   }
 };
 
+var LIFECYCLE_ORDER = {
+  DRAFT: 10,
+  WAITING_PAYMENT: 20,
+  PAID: 30,
+  READY_PICKUP: 40,
+  PICKED_UP: 50,
+  IN_TRANSIT: 60,
+  DELIVERED: 70,
+  CANCELLED: 99
+};
+
+function normalizeLifecycleStatus(statusStr) {
+  if (!statusStr) return "DRAFT";
+  var s = String(statusStr).trim().toUpperCase();
+  if (s === "DRAFT" || s === "DRAFT (BELUM BAYAR)" || s === "PENCATATAN" || s === "PRE INPUT" || s === "PENDING") return "DRAFT";
+  if (s === "WAITING_PAYMENT" || s === "SIAP DIBAYAR" || s === "SIAP BAYAR" || s === "BELUM BAYAR") return "WAITING_PAYMENT";
+  if (s === "PAID" || s === "LUNAS" || s === "SELESAI" || s === "RESI & BAYAR") return "PAID";
+  if (s === "READY_PICKUP" || s === "SIAP_PICKUP" || s === "MENUNGGU_PICKUP" || s === "SCANNER") return "READY_PICKUP";
+  if (s === "PICKED_UP" || s === "SUDAH_PICKUP" || s === "PICKUP") return "PICKED_UP";
+  if (s === "IN_TRANSIT" || s === "DALAM_PROSES" || s === "PROSES_KIRIM") return "IN_TRANSIT";
+  if (s === "DELIVERED" || s === "SUDAH_DIKIRIM" || s === "SELESAI_DIKIRIM") return "DELIVERED";
+  if (s === "CANCELLED" || s === "BATAL" || s === "FAILED") return "CANCELLED";
+  return s;
+}
+
+function validateLifecycleTransition(currentStatus, targetStatus) {
+  var curr = normalizeLifecycleStatus(currentStatus);
+  var target = normalizeLifecycleStatus(targetStatus);
+
+  if (curr === target) {
+    return { valid: true, sameStatus: true };
+  }
+
+  if (curr === "DELIVERED") {
+    return { valid: false, reason: "Transaksi yang sudah DELIVERED tidak dapat diubah lagi." };
+  }
+
+  if (curr === "CANCELLED") {
+    return { valid: false, reason: "Transaksi yang sudah CANCELLED tidak dapat diubah lagi." };
+  }
+
+  if (target === "CANCELLED") {
+    return { valid: true };
+  }
+
+  var currLvl = LIFECYCLE_ORDER[curr] || 10;
+  var targetLvl = LIFECYCLE_ORDER[target] || 10;
+
+  if (targetLvl < currLvl) {
+    return { valid: false, reason: "Mundur status dari " + curr + " ke " + target + " tidak diperbolehkan." };
+  }
+
+  if (targetLvl - currLvl > 20) {
+    return { valid: false, reason: "Transisi status dari " + curr + " ke " + target + " tidak valid! Harus mengikuti urutan progresif lifecycle." };
+  }
+
+  return { valid: true };
+}
+
+function autoUpsertMasterTransaksiAndPengiriman(params) {
+  var txId = (params.transaksi_id || "").toString().trim();
+  if (!txId) return { success: false, message: "transaksi_id wajib diisi" };
+
+  var nowIso = new Date().toISOString();
+  var dateStr = params.tanggal_transaksi || nowIso.split("T")[0];
+  var timeStr = params.jam_transaksi || (nowIso.split("T")[1] ? nowIso.split("T")[1].slice(0, 8) : "00:00:00");
+
+  var targetStatus = normalizeLifecycleStatus(params.status_transaksi || "DRAFT");
+
+  var existingTx = DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "id", txId);
+
+  if (existingTx) {
+    var transitionCheck = validateLifecycleTransition(existingTx.status_transaksi, targetStatus);
+    if (!transitionCheck.valid) {
+      Logger.log("[LIFECYCLE REJECTED] " + txId + ": " + transitionCheck.reason);
+      return { success: false, message: transitionCheck.reason };
+    }
+
+    existingTx.updated_at = nowIso;
+    if (!transitionCheck.sameStatus) {
+      existingTx.status_transaksi = targetStatus;
+    }
+
+    if (params.no_resi) existingTx.no_resi = params.no_resi;
+    if (params.ekspedisi) existingTx.ekspedisi = params.ekspedisi;
+    if (params.tipe_produk) existingTx.tipe_produk = params.tipe_produk;
+    if (params.pengirim_id) existingTx.pengirim_id = params.pengirim_id;
+    if (params.penerima_id) existingTx.penerima_id = params.penerima_id;
+    if (params.snapshot_nama_pengirim && !existingTx.snapshot_nama_pengirim) existingTx.snapshot_nama_pengirim = params.snapshot_nama_pengirim;
+    if (params.snapshot_hp_pengirim && !existingTx.snapshot_hp_pengirim) existingTx.snapshot_hp_pengirim = params.snapshot_hp_pengirim;
+    if (params.snapshot_alamat_pengirim && !existingTx.snapshot_alamat_pengirim) existingTx.snapshot_alamat_pengirim = params.snapshot_alamat_pengirim;
+    if (params.snapshot_nama_penerima && !existingTx.snapshot_nama_penerima) existingTx.snapshot_nama_penerima = params.snapshot_nama_penerima;
+    if (params.snapshot_hp_penerima && !existingTx.snapshot_hp_penerima) existingTx.snapshot_hp_penerima = params.snapshot_hp_penerima;
+    if (params.snapshot_alamat_penerima && !existingTx.snapshot_alamat_penerima) existingTx.snapshot_alamat_penerima = params.snapshot_alamat_penerima;
+    if (params.nama_barang) existingTx.nama_barang = params.nama_barang;
+    if (params.berat_barang !== undefined) existingTx.berat_barang = Number(params.berat_barang);
+    if (params.volume_barang) existingTx.volume_barang = params.volume_barang;
+    if (params.nilai_barang !== undefined) existingTx.nilai_barang = Number(params.nilai_barang);
+    if (params.metode_bayar) existingTx.metode_bayar = params.metode_bayar;
+    if (params.ongkir_customer !== undefined) existingTx.ongkir_customer = Number(params.ongkir_customer);
+    if (params.packing !== undefined) existingTx.packing = Number(params.packing);
+    if (params.amplop !== undefined) existingTx.amplop = Number(params.amplop);
+    if (params.biaya_lain !== undefined) existingTx.biaya_lain = Number(params.biaya_lain);
+    if (params.total_customer !== undefined) existingTx.total_customer = Number(params.total_customer);
+    if (params.ongkir_yoyi !== undefined) existingTx.ongkir_yoyi = Number(params.ongkir_yoyi);
+    if (params.asuransi !== undefined) existingTx.asuransi = Number(params.asuransi);
+    if (params.biaya_lain_yoyi !== undefined) existingTx.biaya_lain_yoyi = Number(params.biaya_lain_yoyi);
+    if (params.wajib_setor_owner !== undefined) existingTx.wajib_setor_owner = Number(params.wajib_setor_owner);
+    if (params.kas_outlet !== undefined) existingTx.kas_outlet = Number(params.kas_outlet);
+    if (params.status_setoran) existingTx.status_setoran = params.status_setoran;
+    if (params.status_audit) existingTx.status_audit = params.status_audit;
+    if (params.sumber_data) existingTx.sumber_data = params.sumber_data;
+    if (params.catatan) existingTx.catatan = params.catatan;
+
+    DatabaseService.updateRowByColumn("MASTER_TRANSAKSI", "id", txId, existingTx);
+  } else {
+    var txObj = {
+      id: txId,
+      created_at: nowIso,
+      updated_at: nowIso,
+      import_id: params.import_id || "",
+      outlet_id: params.outlet_id || "OUT-001",
+      outlet_name: params.outlet_name || "",
+      admin_id: params.admin_id || "SYSTEM",
+      admin_name: params.admin_name || "",
+      tanggal_transaksi: dateStr,
+      jam_transaksi: timeStr,
+      no_resi: params.no_resi || "",
+      ekspedisi: params.ekspedisi || "Express",
+      tipe_produk: params.tipe_produk || "",
+      pengirim_id: params.pengirim_id || "",
+      penerima_id: params.penerima_id || "",
+      snapshot_nama_pengirim: params.snapshot_nama_pengirim || "",
+      snapshot_hp_pengirim: params.snapshot_hp_pengirim || "",
+      snapshot_alamat_pengirim: params.snapshot_alamat_pengirim || "",
+      snapshot_nama_penerima: params.snapshot_nama_penerima || "",
+      snapshot_hp_penerima: params.snapshot_hp_penerima || "",
+      snapshot_alamat_penerima: params.snapshot_alamat_penerima || "",
+      nama_barang: params.nama_barang || "",
+      berat_barang: Number(params.berat_barang) || 0,
+      volume_barang: params.volume_barang || "0 x 0 x 0",
+      nilai_barang: Number(params.nilai_barang) || 0,
+      jumlah_paket: Number(params.jumlah_paket) || 1,
+      metode_bayar: params.metode_bayar || "",
+      ongkir_customer: Number(params.ongkir_customer) || 0,
+      packing: Number(params.packing) || 0,
+      amplop: Number(params.amplop) || 0,
+      biaya_lain: Number(params.biaya_lain) || 0,
+      total_customer: Number(params.total_customer) || 0,
+      ongkir_yoyi: Number(params.ongkir_yoyi) || 0,
+      asuransi: Number(params.asuransi) || 0,
+      biaya_lain_yoyi: Number(params.biaya_lain_yoyi) || 0,
+      wajib_setor_owner: Number(params.wajib_setor_owner) || 0,
+      kas_outlet: Number(params.kas_outlet) || 0,
+      status_transaksi: targetStatus,
+      status_setoran: params.status_setoran || "PENDING",
+      status_audit: params.status_audit || "PENDING",
+      status_sync: params.status_sync || "LOCAL",
+      sumber_data: params.sumber_data || "Pre Input",
+      catatan: params.catatan || ""
+    };
+    DatabaseService.appendRow("MASTER_TRANSAKSI", txObj);
+  }
+
+  var shipStatus = targetStatus;
+  var pickupStatus = "BELUM_PICKUP";
+  var deliveryStatus = "BELUM_DIKIRIM";
+
+  if (targetStatus === "READY_PICKUP") {
+    pickupStatus = "SIAP_PICKUP";
+  } else if (targetStatus === "PICKED_UP") {
+    pickupStatus = "PICKED_UP";
+  } else if (targetStatus === "IN_TRANSIT") {
+    pickupStatus = "PICKED_UP";
+    deliveryStatus = "DALAM_PROSES";
+  } else if (targetStatus === "DELIVERED") {
+    pickupStatus = "PICKED_UP";
+    deliveryStatus = "DELIVERED";
+  } else if (targetStatus === "CANCELLED") {
+    pickupStatus = "BATAL";
+    deliveryStatus = "BATAL";
+  }
+
+  if (params.status_pengiriman) shipStatus = params.status_pengiriman;
+  if (params.status_pickup) pickupStatus = params.status_pickup;
+  if (params.status_delivery) deliveryStatus = params.status_delivery;
+
+  // DUPLICATE PROTECTION: 1 transaksi = 1 row in MASTER_PENGIRIMAN
+  try {
+    var existingShip = DatabaseService.findRowByColumn("MASTER_PENGIRIMAN", "transaksi_id", txId);
+    if (existingShip) {
+      existingShip.updated_at = nowIso;
+      existingShip.status_pengiriman = shipStatus;
+      existingShip.status_pickup = pickupStatus;
+      existingShip.status_delivery = deliveryStatus;
+
+      if (params.no_resi) existingShip.no_resi = params.no_resi;
+      if (params.ekspedisi) existingShip.ekspedisi = params.ekspedisi;
+      if (params.tipe_produk) existingShip.tipe_produk = params.tipe_produk;
+      if (params.pengirim_id) existingShip.pengirim_id = params.pengirim_id;
+      if (params.penerima_id) existingShip.penerima_id = params.penerima_id;
+      if (params.nama_barang) existingShip.nama_barang = params.nama_barang;
+      if (params.berat_barang !== undefined) existingShip.berat_barang = Number(params.berat_barang);
+      if (params.volume_barang) existingShip.volume_barang = params.volume_barang;
+      if (params.nilai_barang !== undefined) existingShip.nilai_barang = Number(params.nilai_barang);
+      if (params.foto_barang !== undefined) existingShip.foto_barang = params.foto_barang || "";
+      if (params.foto_resi !== undefined) existingShip.foto_resi = params.foto_resi || "";
+      if (params.catatan) existingShip.catatan = params.catatan;
+
+      DatabaseService.updateRowByColumn("MASTER_PENGIRIMAN", "transaksi_id", txId, existingShip);
+    } else {
+      var shipObj = {
+        id: "SHIP-" + new Date().getTime(),
+        created_at: nowIso,
+        updated_at: nowIso,
+        transaksi_id: txId,
+        import_id: params.import_id || "",
+        outlet_id: params.outlet_id || "OUT-001",
+        outlet_name: params.outlet_name || "",
+        admin_id: params.admin_id || "SYSTEM",
+        admin_name: params.admin_name || "",
+        tanggal_pengiriman: dateStr,
+        jam_pengiriman: timeStr,
+        no_resi: params.no_resi || "",
+        ekspedisi: params.ekspedisi || "Express",
+        tipe_produk: params.tipe_produk || "",
+        pengirim_id: params.pengirim_id || "",
+        penerima_id: params.penerima_id || "",
+        snapshot_nama_pengirim: params.snapshot_nama_pengirim || "",
+        snapshot_hp_pengirim: params.snapshot_hp_pengirim || "",
+        snapshot_alamat_pengirim: params.snapshot_alamat_pengirim || "",
+        snapshot_nama_penerima: params.snapshot_nama_penerima || "",
+        snapshot_hp_penerima: params.snapshot_hp_penerima || "",
+        snapshot_alamat_penerima: params.snapshot_alamat_penerima || "",
+        nama_barang: params.nama_barang || "",
+        berat_barang: Number(params.berat_barang) || 0,
+        volume_barang: params.volume_barang || "0 x 0 x 0",
+        nilai_barang: Number(params.nilai_barang) || 0,
+        jumlah_paket: Number(params.jumlah_paket) || 1,
+        foto_barang: params.foto_barang || "",
+        foto_resi: params.foto_resi || "",
+        status_pengiriman: shipStatus,
+        status_pickup: pickupStatus,
+        status_delivery: deliveryStatus,
+        status_sync: "LOCAL",
+        sumber_data: params.sumber_data || "Pre Input",
+        catatan: params.catatan || ""
+      };
+      DatabaseService.appendRow("MASTER_PENGIRIMAN", shipObj);
+    }
+  } catch (err) {
+    var txRow = DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "id", txId);
+    if (txRow) {
+      txRow.status_sync = "FAILED";
+      txRow.catatan = (txRow.catatan ? txRow.catatan + " | " : "") + "ROLLBACK: OPERATIONAL_CREATION_FAILED";
+      DatabaseService.updateRowByColumn("MASTER_TRANSAKSI", "id", txId, txRow);
+    }
+    return { success: false, message: "Gagal memperbarui MASTER_PENGIRIMAN. Rollback status_sync = FAILED." };
+  }
+
+  return { success: true, transaksi_id: txId };
+}
+
 var TransactionService = {
   generateTransactionId: function() {
     return "TRX-" + new Date().getTime() + "-" + Math.floor(Math.random() * 1000);
@@ -2609,6 +2894,29 @@ var TransactionService = {
     }
     
     DatabaseService.appendAudit(params.admin_id, "PREINPUT_SIMPAN", "Mencatat pre-input '" + params.nama_pengirim + "' ke '" + params.nama_penerima + "' (" + txId + ")", params.outlet_id_tugas);
+
+    autoUpsertMasterTransaksiAndPengiriman({
+      transaksi_id: txId,
+      outlet_id: params.outlet_id_tugas,
+      admin_id: params.admin_id,
+      tanggal_transaksi: nowStr.split("T")[0],
+      jam_transaksi: nowStr.split("T")[1] ? nowStr.split("T")[1].slice(0, 8) : "00:00:00",
+      ekspedisi: params.ekspedisi,
+      snapshot_nama_pengirim: params.nama_pengirim,
+      snapshot_hp_pengirim: params.hp_pengirim,
+      snapshot_alamat_pengirim: params.alamat_pengirim,
+      snapshot_nama_penerima: params.nama_penerima,
+      snapshot_hp_penerima: params.hp_penerima,
+      snapshot_alamat_penerima: params.alamat_penerima,
+      nama_barang: params.nama_barang,
+      berat_barang: params.berat_kg,
+      volume_barang: params.volume,
+      nilai_barang: params.nilai_barang,
+      foto_barang: params.foto_paket_url || "",
+      status_transaksi: "PENDING",
+      sumber_data: "Pre Input",
+      catatan: params.catatan_admin
+    });
     
     return { transaksi_id: txId };
   },
@@ -2670,6 +2978,42 @@ var TransactionService = {
       "Simpan resi " + jenisLayanan + " '" + resiId + "' (" + data.tipe_produk + "). Grand Total: Rp " + fin.grand_total,
       data.outlet_id_input
     );
+
+    autoUpsertMasterTransaksiAndPengiriman({
+      transaksi_id: transId,
+      outlet_id: data.outlet_id_input,
+      admin_id: data.admin_id_pencatat,
+      tanggal_transaksi: txDate,
+      jam_transaksi: timestamp.split("T")[1] ? timestamp.split("T")[1].slice(0, 8) : "00:00:00",
+      no_resi: resiId,
+      ekspedisi: data.ekspedisi || jenisLayanan,
+      tipe_produk: data.tipe_produk,
+      snapshot_nama_pengirim: data.nama_pengirim,
+      snapshot_hp_pengirim: data.hp_pengirim,
+      snapshot_alamat_pengirim: data.alamat_pengirim,
+      snapshot_nama_penerima: data.nama_penerima,
+      snapshot_hp_penerima: data.hp_penerima,
+      snapshot_alamat_penerima: data.alamat_penerima,
+      nama_barang: data.nama_barang,
+      berat_barang: Number(data.berat_kg) || 0,
+      volume_barang: data.volume || "0 x 0 x 0",
+      nilai_barang: Number(data.nilai_barang) || 0,
+      metode_bayar: data.metode_bayar,
+      ongkir_customer: Number(data.ongkir_dasar) || 0,
+      packing: Number(data.biaya_packing) || 0,
+      amplop: Number(data.biaya_amplop) || 0,
+      biaya_lain: Number(data.biaya_lain) || 0,
+      total_customer: Number(data.total_dibayar_customer) || Number(fin.grand_total) || 0,
+      ongkir_yoyi: Number(data.biaya_yoyi) || 0,
+      asuransi: Number(data.biaya_asuransi) || 0,
+      biaya_lain_yoyi: Number(data.biaya_jtc) || 0,
+      wajib_setor_owner: Number(fin.setoran_ke_owner) || 0,
+      kas_outlet: Number(fin.kas_operasional) || 0,
+      foto_barang: data.foto_paket_url || "",
+      foto_resi: data.foto_resi_url || "",
+      status_transaksi: "SELESAI",
+      sumber_data: "Resi & Bayar"
+    });
     
     return { resi_id: resiId };
   },
