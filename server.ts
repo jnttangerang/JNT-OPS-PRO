@@ -39,6 +39,19 @@ import {
   assembleTransactionDomain
 } from "./src/lib/operationalEngine";
 
+import {
+  auditTransaction,
+  auditDaily,
+  auditOutlet,
+  auditAdmin,
+  auditImport
+} from "./src/lib/auditEngine";
+
+import {
+  logAuditEvent,
+  reconstructTransactionHistory
+} from "./src/lib/auditTrailEngine";
+
 dotenv.config();
 
 const app = express();
@@ -572,6 +585,9 @@ function autoUpsertCustomerAndAddressBook(db: any, params: {
   timestamp?: string;
   outlet_id_tugas?: string;
   outlet_id?: string;
+  actor_id?: string;
+  actor_name?: string;
+  correlation_id?: string;
 }) {
   const nowStr = params.timestamp || new Date().toISOString();
   
@@ -610,6 +626,21 @@ function autoUpsertCustomerAndAddressBook(db: any, params: {
         status: "AKTIF"
       };
       db.MASTER_CUSTOMER.push(custObj);
+      if (params.correlation_id) {
+        logAuditEvent(db, {
+          actor_id: params.actor_id,
+          actor_name: params.actor_name,
+          transaksi_id: params.correlation_id,
+          event_type: "CUSTOMER_CREATED",
+          entity_type: "CUSTOMER",
+          action: "CREATE_CUSTOMER",
+          result: "SUCCESS",
+          source: "SYSTEM",
+          correlation_id: params.correlation_id,
+          metadata: { customer_id: senderCustId, role: "SENDER" }
+        });
+      }
+
     }
 
     if (db.Master_Customer) {
@@ -705,7 +736,22 @@ function autoUpsertCustomerAndAddressBook(db: any, params: {
         updated_at: nowStr,
         status: "AKTIF"
       };
-      db.MASTER_CUSTOMER.push(recCustObj);
+            db.MASTER_CUSTOMER.push(recCustObj);
+      if (params.correlation_id) {
+        logAuditEvent(db, {
+          actor_id: params.actor_id,
+          actor_name: params.actor_name,
+          transaksi_id: params.correlation_id,
+          event_type: "CUSTOMER_CREATED",
+          entity_type: "CUSTOMER",
+          action: "CREATE_CUSTOMER",
+          result: "SUCCESS",
+          source: "SYSTEM",
+          correlation_id: params.correlation_id,
+          metadata: { customer_id: recCustId, role: "RECIPIENT" }
+        });
+      }
+
     }
 
     if (alamatRecClean) {
@@ -776,216 +822,11 @@ function autoUpsertCustomerAndAddressBook(db: any, params: {
   return { senderCustId, recCustId, pengirim_id, penerima_id };
 }
 
-const LIFECYCLE_ORDER: Record<string, number> = {
-  DRAFT: 10,
-  WAITING_PAYMENT: 20,
-  PAID: 30,
-  READY_PICKUP: 40,
-  PICKED_UP: 50,
-  IN_TRANSIT: 60,
-  DELIVERED: 70,
-  CANCELLED: 99
-};
-
-function normalizeLifecycleStatus(statusStr?: string): string {
-  if (!statusStr) return "DRAFT";
-  const s = statusStr.trim().toUpperCase();
-  if (s === "DRAFT" || s === "DRAFT (BELUM BAYAR)" || s === "PENCATATAN" || s === "PRE INPUT" || s === "PENDING") return "DRAFT";
-  if (s === "WAITING_PAYMENT" || s === "SIAP DIBAYAR" || s === "SIAP BAYAR" || s === "BELUM BAYAR") return "WAITING_PAYMENT";
-  if (s === "PAID" || s === "LUNAS" || s === "SELESAI" || s === "RESI & BAYAR") return "PAID";
-  if (s === "READY_PICKUP" || s === "SIAP_PICKUP" || s === "MENUNGGU_PICKUP" || s === "SCANNER") return "READY_PICKUP";
-  if (s === "PICKED_UP" || s === "SUDAH_PICKUP" || s === "PICKUP") return "PICKED_UP";
-  if (s === "IN_TRANSIT" || s === "DALAM_PROSES" || s === "PROSES_KIRIM") return "IN_TRANSIT";
-  if (s === "DELIVERED" || s === "SUDAH_DIKIRIM" || s === "SELESAI_DIKIRIM") return "DELIVERED";
-  if (s === "CANCELLED" || s === "BATAL" || s === "FAILED") return "CANCELLED";
-  return s;
-}
-
-function validateLifecycleTransition(currentStatus: string, targetStatus: string): { valid: boolean; sameStatus?: boolean; reason?: string } {
-  const curr = normalizeLifecycleStatus(currentStatus);
-  const target = normalizeLifecycleStatus(targetStatus);
-
-  if (curr === target) {
-    return { valid: true, sameStatus: true };
-  }
-
-  if (curr === "DELIVERED") {
-    return { valid: false, reason: "Transaksi yang sudah DELIVERED tidak dapat diubah lagi." };
-  }
-
-  if (curr === "CANCELLED") {
-    return { valid: false, reason: "Transaksi yang sudah CANCELLED tidak dapat diubah lagi." };
-  }
-
-  if (target === "CANCELLED") {
-    return { valid: true };
-  }
-
-  const currLvl = LIFECYCLE_ORDER[curr] || 10;
-  const targetLvl = LIFECYCLE_ORDER[target] || 10;
-
-  if (targetLvl < currLvl) {
-    return { valid: false, reason: `Mundur status dari ${curr} ke ${target} tidak diperbolehkan.` };
-  }
-
-  if (targetLvl - currLvl > 20) {
-    return { valid: false, reason: `Transisi status dari ${curr} ke ${target} tidak valid! Harus mengikuti urutan progresif lifecycle.` };
-  }
-
-  return { valid: true };
-}
-
-// ==========================================
-// PHASE 23 — FINANCIAL ENGINE
-// ==========================================
-
 function safeNum(val: any): number {
   if (val === null || val === undefined || val === "") return 0;
   const parsed = Number(val);
   if (isNaN(parsed)) return 0;
   return parsed;
-}
-
-function isTransactionValidForFinance(tx: any): boolean {
-  const status = (tx.status_transaksi || tx.status || "").toUpperCase();
-  if (status === "CANCELLED" || status === "BATAL" || status === "REVISED" || status === "FAILED") {
-    return false;
-  }
-  return true;
-}
-
-function calculateFinancialSummary(tx: any) {
-  if (!isTransactionValidForFinance(tx)) {
-    return {
-      customer_payment: 0,
-      owner_deposit: 0,
-      outlet_cash: 0,
-      rounding: 0
-    };
-  }
-
-  // Pure inputs
-  const ongkir_customer = safeNum(tx.ongkir_customer || tx.ongkir_dasar);
-  const asuransi = safeNum(tx.asuransi || tx.biaya_asuransi);
-  const biaya_lain = safeNum(tx.biaya_lain);
-  const amplop = safeNum(tx.amplop || tx.biaya_amplop);
-  const packing = safeNum(tx.packing || tx.biaya_packing);
-  
-  // Total Uang Dibayar Customer (Base Service + Rounding)
-  const total_customer = safeNum(tx.total_customer || tx.total_dibayar_customer);
-  
-  // Biaya Dasar Layanan
-  const biayaDasarLayanan = ongkir_customer + asuransi + biaya_lain;
-  
-  // Pembulatan (Rounding)
-  let rounding = total_customer - biayaDasarLayanan;
-  if (rounding < 0) rounding = 0; // Prevent negative rounding if customer underpays (handled by validation ideally)
-  
-  // Surcharges / Kas Operasional Outlet
-  const biayaTambahan = amplop + packing;
-  
-  // Setoran Ke Owner = Biaya Dasar Layanan + Pembulatan = Total Uang Dibayar (excluding surcharges)
-  const owner_deposit = biayaDasarLayanan + rounding;
-  
-  // Grand Total = Setoran Owner + Surcharges
-  const customer_payment = owner_deposit + biayaTambahan;
-  
-  return {
-    customer_payment: customer_payment,
-    owner_deposit: owner_deposit,
-    outlet_cash: biayaTambahan,
-    rounding: rounding
-  };
-}
-
-function calculateDailyFinancial(transactions: any[]) {
-  let total_customer = 0;
-  let total_owner = 0;
-  let total_outlet = 0;
-  let jumlah_transaksi = 0;
-  let jumlah_express = 0;
-  let jumlah_cargo = 0;
-
-  for (const tx of transactions) {
-    if (!isTransactionValidForFinance(tx)) continue;
-    
-    const summary = calculateFinancialSummary(tx);
-    total_customer += summary.customer_payment;
-    total_owner += summary.owner_deposit;
-    total_outlet += summary.outlet_cash;
-    jumlah_transaksi++;
-
-    const eks = (tx.ekspedisi || "").toUpperCase();
-    if (eks === "EXPRESS") jumlah_express++;
-    else if (eks === "CARGO") jumlah_cargo++;
-  }
-
-  return {
-    total_customer,
-    total_owner,
-    total_outlet,
-    jumlah_transaksi,
-    jumlah_express,
-    jumlah_cargo
-  };
-}
-
-function calculateAdminFinancial(transactions: any[]) {
-  const result: Record<string, any> = {};
-  for (const tx of transactions) {
-    if (!isTransactionValidForFinance(tx)) continue;
-    const admin = tx.admin_id || "UNKNOWN";
-    if (!result[admin]) {
-      result[admin] = {
-        admin_id: admin,
-        customer_payment: 0,
-        owner_deposit: 0,
-        outlet_cash: 0,
-        jumlah_resi: 0,
-        jumlah_express: 0,
-        jumlah_cargo: 0
-      };
-    }
-    const summary = calculateFinancialSummary(tx);
-    result[admin].customer_payment += summary.customer_payment;
-    result[admin].owner_deposit += summary.owner_deposit;
-    result[admin].outlet_cash += summary.outlet_cash;
-    result[admin].jumlah_resi++;
-
-    const eks = (tx.ekspedisi || "").toUpperCase();
-    if (eks === "EXPRESS") result[admin].jumlah_express++;
-    else if (eks === "CARGO") result[admin].jumlah_cargo++;
-  }
-  return Object.values(result);
-}
-
-function calculateOutletFinancial(transactions: any[]) {
-  const result: Record<string, any> = {};
-  for (const tx of transactions) {
-    if (!isTransactionValidForFinance(tx)) continue;
-    const outlet = tx.outlet_id || "UNKNOWN";
-    if (!result[outlet]) {
-      result[outlet] = {
-        outlet_id: outlet,
-        customer_payment: 0,
-        owner_deposit: 0,
-        outlet_cash: 0,
-        jumlah_resi: 0,
-        jumlah_express: 0,
-        jumlah_cargo: 0
-      };
-    }
-    const summary = calculateFinancialSummary(tx);
-    result[outlet].customer_payment += summary.customer_payment;
-    result[outlet].owner_deposit += summary.owner_deposit;
-    result[outlet].outlet_cash += summary.outlet_cash;
-    result[outlet].jumlah_resi++;
-
-    const eks = (tx.ekspedisi || "").toUpperCase();
-    if (eks === "EXPRESS") result[outlet].jumlah_express++;
-    else if (eks === "CARGO") result[outlet].jumlah_cargo++;
-  }
-  return Object.values(result);
 }
 
 function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
@@ -1035,6 +876,9 @@ function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
   status_sync?: string;
   sumber_data?: string;
   catatan?: string;
+  actor_id?: string;
+  actor_name?: string;
+  correlation_id?: string;
 }) {
   if (!db.MASTER_TRANSAKSI) db.MASTER_TRANSAKSI = [];
   if (!db.MASTER_PENGIRIMAN) db.MASTER_PENGIRIMAN = [];
@@ -1054,12 +898,45 @@ function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
   if (existingTx) {
     const transitionCheck = validateLifecycleTransition(existingTx.status_transaksi, targetStatus);
     if (!transitionCheck.valid) {
+      if (params.correlation_id) {
+        logAuditEvent(db, {
+          actor_id: params.admin_id,
+          actor_name: params.admin_name,
+          transaksi_id: txId,
+          outlet_id: params.outlet_id,
+          event_type: "LIFECYCLE_REJECTED",
+          entity_type: "TRANSACTION",
+          action: "UPDATE_STATUS",
+          previous_status: existingTx.status_transaksi,
+          new_status: targetStatus,
+          result: "REJECTED",
+          source: params.sumber_data || "SYSTEM",
+          correlation_id: params.correlation_id,
+          reason: transitionCheck.reason
+        });
+      }
       console.warn(`[LIFECYCLE REJECTED] ${txId}: ${transitionCheck.reason}`);
       return { success: false, message: transitionCheck.reason };
     }
 
     existingTx.updated_at = nowIso;
     if (!transitionCheck.sameStatus) {
+      if (params.correlation_id) {
+        logAuditEvent(db, {
+          actor_id: params.admin_id,
+          actor_name: params.admin_name,
+          transaksi_id: txId,
+          outlet_id: params.outlet_id,
+          event_type: "LIFECYCLE_TRANSITION",
+          entity_type: "TRANSACTION",
+          action: "UPDATE_STATUS",
+          previous_status: existingTx.status_transaksi,
+          new_status: targetStatus,
+          result: "SUCCESS",
+          source: params.sumber_data || "SYSTEM",
+          correlation_id: params.correlation_id
+        });
+      }
       existingTx.status_transaksi = targetStatus;
     }
 
@@ -1238,10 +1115,61 @@ function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
       existingTx.status_sync = "FAILED";
       existingTx.catatan = (existingTx.catatan ? existingTx.catatan + " | " : "") + "ROLLBACK: OPERATIONAL_CREATION_FAILED";
     }
+
+    if (params.correlation_id) {
+      logAuditEvent(db, {
+        actor_id: params.admin_id,
+        actor_name: params.admin_name,
+        transaksi_id: txId,
+        outlet_id: params.outlet_id,
+        event_type: "ROLLBACK_EXECUTED",
+        entity_type: "TRANSACTION",
+        action: "ROLLBACK",
+        result: "FAILED",
+        source: params.sumber_data || "SYSTEM",
+        correlation_id: params.correlation_id,
+        reason: "OPERATIONAL_CREATION_FAILED"
+      });
+    }
     return { success: false, message: "Gagal memperbarui MASTER_PENGIRIMAN. Rollback status_sync = FAILED." };
+
   }
 
+
+  if (params.correlation_id) {
+    let evtTx = (db.MASTER_TRANSAKSI.length > 0 && db.MASTER_TRANSAKSI[0].id === txId && db.MASTER_TRANSAKSI[0].created_at === nowIso) ? "TRANSACTION_CREATED" : "TRANSACTION_UPDATED";
+    logAuditEvent(db, {
+      actor_id: params.admin_id,
+      actor_name: params.admin_name,
+      transaksi_id: txId,
+      outlet_id: params.outlet_id,
+      event_type: evtTx,
+      entity_type: "TRANSACTION",
+      action: "UPSERT",
+      new_status: targetStatus,
+      result: "SUCCESS",
+      source: params.sumber_data || "SYSTEM",
+      correlation_id: params.correlation_id
+    });
+    
+    let evtShip = (db.MASTER_PENGIRIMAN.length > 0 && db.MASTER_PENGIRIMAN[0].transaksi_id === txId && db.MASTER_PENGIRIMAN[0].created_at === nowIso) ? "SHIPMENT_CREATED" : "SHIPMENT_UPDATED";
+    logAuditEvent(db, {
+      actor_id: params.admin_id,
+      actor_name: params.admin_name,
+      transaksi_id: txId,
+      pengiriman_id: (db.MASTER_PENGIRIMAN.find((x:any) => x.transaksi_id === txId) || {}).id,
+      outlet_id: params.outlet_id,
+      event_type: evtShip,
+      entity_type: "SHIPMENT",
+      action: "UPSERT",
+      new_status: shipStatus,
+      result: "SUCCESS",
+      source: params.sumber_data || "SYSTEM",
+      correlation_id: params.correlation_id
+    });
+  }
   return { success: true, transaksi_id: txId };
+
 }
 
 function syncExistingDataToThreeLayers(db: any) {
@@ -3694,6 +3622,17 @@ app.post("/api/rejectSetoran", (req, res) => {
   return res.json({ status: "success", message: "Setoran ditolak", data: s });
 });
 
+app.post("/api/auditTransaction", (req, res) => {
+  const db = readDb();
+  const { transaksi_id, date, outlet_id, admin_id, import_id } = req.body;
+  if (transaksi_id) return res.json({ status: "success", data: auditTransaction(db, transaksi_id) });
+  if (date) return res.json({ status: "success", data: auditDaily(db, date, outlet_id) });
+  if (outlet_id) return res.json({ status: "success", data: auditOutlet(db, outlet_id) });
+  if (admin_id) return res.json({ status: "success", data: auditAdmin(db, admin_id) });
+  if (import_id) return res.json({ status: "success", data: auditImport(db, import_id) });
+  return res.status(400).json({ status: "error", message: "Parameter transaksi_id, date, outlet_id, admin_id, atau import_id diperlukan." });
+});
+
 app.post("/api/getAuditData", (req, res) => {
   const db = readDb();
   const { outlet_id, date_start, date_end } = req.body;
@@ -3717,13 +3656,8 @@ app.post("/api/getAuditData", (req, res) => {
     const sum = calculateFinancialSummary(tx);
     const yoyi = safeNum(tx.ongkir_yoyi) + safeNum(tx.asuransi) + safeNum(tx.biaya_lain_yoyi);
     
-    let auditStatus = "BELUM_DIAUDIT";
-    if (tx.owner_audit_status) {
-       auditStatus = tx.owner_audit_status;
-    } else if (sStatus === "DISETUJUI") {
-       if (sum.customer_payment === 0) auditStatus = "PERLU_REVIEW";
-       else auditStatus = "SESUAI";
-    }
+    const auditEngineResult = auditTransaction(db, tx);
+    let auditStatus = tx.owner_audit_status || auditEngineResult.status;
     
     list.push({
       resi_id: tx.no_resi || tx.resi_id || tx.id,
@@ -3740,7 +3674,8 @@ app.post("/api/getAuditData", (req, res) => {
       audit_status: auditStatus,
       audit_note: tx.owner_audit_note || "",
       audited_by: tx.owner_audited_by || "",
-      timestamp: tx.created_at || tx.timestamp
+      timestamp: tx.created_at || tx.timestamp,
+      audit_result: auditEngineResult
     });
   });
   
