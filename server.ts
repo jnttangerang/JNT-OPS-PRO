@@ -49,6 +49,8 @@ import {
 
 import {
   logAuditEvent,
+  recordAuditEvent,
+  getAuditTrail,
   reconstructTransactionHistory
 } from "./src/lib/auditTrailEngine";
 
@@ -575,7 +577,7 @@ function normalizePhone(phone: any): string {
   return digits;
 }
 
-function autoUpsertCustomerAndAddressBook(db: any, params: {
+export function autoUpsertCustomerAndAddressBook(db: any, params: {
   nama_pengirim: string;
   hp_pengirim: string;
   alamat_pengirim: string;
@@ -829,7 +831,7 @@ function safeNum(val: any): number {
   return parsed;
 }
 
-function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
+export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
   transaksi_id: string;
   import_id?: string;
   outlet_id?: string;
@@ -3581,6 +3583,20 @@ app.post("/api/createSetoran", (req, res) => {
   
   if (!db.Master_Setoran) db.Master_Setoran = [];
   db.Master_Setoran.push(setoranObj);
+  logAuditEvent(db, {
+    actor_id: adminPembuat,
+    actor_name: adminPembuat,
+    actor_role: "ADMIN",
+    outlet_id: outlet_id,
+    outlet_name: outletName,
+    entity_type: "SETORAN",
+    entity_id: setoranObj.setoran_id,
+    event_type: "SETORAN_CREATED",
+    action: "CREATE_SETORAN",
+    after: setoranObj,
+    result: "SUCCESS",
+    source: "FINANCIAL_ENGINE"
+  });
   writeDb(db);
   
   return res.json({ status: "success", message: "Setoran berhasil dibuat", data: setoranObj });
@@ -3617,9 +3633,66 @@ app.post("/api/rejectSetoran", (req, res) => {
   s.approved_at = new Date().toISOString();
   s.approved_by = admin_id;
   s.catatan_owner = catatan;
+  logAuditEvent(db, {
+    actor_id: admin_id || "OWNER",
+    actor_name: admin_id || "Owner",
+    actor_role: "OWNER",
+    outlet_id: s.outlet_id,
+    entity_type: "SETORAN",
+    entity_id: setoran_id,
+    event_type: "SETORAN_REJECTED",
+    action: "REJECT_SETORAN",
+    before: { status: s.status },
+    after: { status: "DITOLAK", approved_by: admin_id, catatan },
+    result: "SUCCESS",
+    reason: catatan,
+    source: "FINANCIAL_ENGINE"
+  });
   
   writeDb(db);
   return res.json({ status: "success", message: "Setoran ditolak", data: s });
+});
+
+
+// Phase 27 Audit Trail Endpoints
+app.post(["/api/auditTrail", "/api/getAuditTrail"], (req, res) => {
+  const db = readDb();
+  const filters = req.body || {};
+  const data = getAuditTrail(db, filters);
+  return res.json({ status: "success", data });
+});
+
+app.post("/api/getAuditTrailByTransaction", (req, res) => {
+  const db = readDb();
+  const { transaksi_id } = req.body || {};
+  if (!transaksi_id) return res.status(400).json({ status: "error", message: "transaksi_id diperlukan" });
+  const data = getAuditTrail(db, { transaksi_id });
+  return res.json({ status: "success", data });
+});
+
+app.post("/api/getAuditTrailByCustomer", (req, res) => {
+  const db = readDb();
+  const { customer_id, entity_id } = req.body || {};
+  const targetId = customer_id || entity_id;
+  if (!targetId) return res.status(400).json({ status: "error", message: "customer_id atau entity_id diperlukan" });
+  const data = getAuditTrail(db, { entity_id: targetId, entity_type: "CUSTOMER" });
+  return res.json({ status: "success", data });
+});
+
+app.post("/api/getAuditTrailByImport", (req, res) => {
+  const db = readDb();
+  const { import_id } = req.body || {};
+  if (!import_id) return res.status(400).json({ status: "error", message: "import_id diperlukan" });
+  const data = getAuditTrail(db, { import_id });
+  return res.json({ status: "success", data });
+});
+
+app.post(["/api/reconstructTransactionHistory", "/api/reconstructHistory"], (req, res) => {
+  const db = readDb();
+  const { transaksi_id } = req.body || {};
+  if (!transaksi_id) return res.status(400).json({ status: "error", message: "transaksi_id diperlukan" });
+  const data = reconstructTransactionHistory(db, transaksi_id);
+  return res.json({ status: "success", data });
 });
 
 app.post("/api/auditTransaction", (req, res) => {
