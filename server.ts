@@ -53,6 +53,34 @@ import {
   getAuditTrail,
   reconstructTransactionHistory
 } from "./src/lib/auditTrailEngine";
+import {
+  reconcileTransaction,
+  reconcileDaily,
+  reconcileOutlet,
+  calculateReconciliationSummary,
+  logReconciliationExecution
+} from "./src/lib/reconciliationEngine";
+import {
+  syncReconciliationExceptions,
+  startExceptionReview,
+  resolveException,
+  reopenException,
+  getExceptions,
+  getClosingReconciliationStatus
+} from "./src/lib/reconciliationReviewEngine";
+export {
+  reconcileTransaction,
+  reconcileDaily,
+  reconcileOutlet,
+  calculateReconciliationSummary,
+  logReconciliationExecution,
+  syncReconciliationExceptions,
+  startExceptionReview,
+  resolveException,
+  reopenException,
+  getExceptions,
+  getClosingReconciliationStatus
+};
 
 dotenv.config();
 
@@ -5061,6 +5089,144 @@ app.post("/api/apps-script", async (req, res) => {
 });
 
 
+
+
+// === PHASE 28 & PHASE 29 RECONCILIATION ENGINE ENDPOINTS ===
+app.post("/api/reconcileTransaction", (req, res) => {
+  const db = readDb();
+  const { transaksi_id, actor_id } = req.body || {};
+  if (!transaksi_id) return res.status(400).json({ status: "error", message: "transaksi_id diperlukan" });
+  const result = reconcileTransaction(db, transaksi_id);
+  logReconciliationExecution(db, result, actor_id || "SYSTEM");
+  syncReconciliationExceptions(db, result);
+  writeDb(db);
+  return res.json({ status: "success", data: result });
+});
+
+app.post("/api/reconcileDaily", (req, res) => {
+  const db = readDb();
+  const { date, date_str, tanggal, outlet_id, actor_id } = req.body || {};
+  const targetDate = date || date_str || tanggal || new Date().toISOString().split("T")[0];
+  const result = reconcileDaily(db, targetDate, outlet_id);
+  logReconciliationExecution(db, result, actor_id || "SYSTEM");
+  syncReconciliationExceptions(db, result);
+  writeDb(db);
+  return res.json({ status: "success", data: result });
+});
+
+app.post("/api/reconcileOutlet", (req, res) => {
+  const db = readDb();
+  const { outlet_id, date_start, date_end, actor_id } = req.body || {};
+  if (!outlet_id) return res.status(400).json({ status: "error", message: "outlet_id diperlukan" });
+  const result = reconcileOutlet(db, outlet_id, { start: date_start, end: date_end });
+  logReconciliationExecution(db, result, actor_id || "SYSTEM");
+  syncReconciliationExceptions(db, result);
+  writeDb(db);
+  return res.json({ status: "success", data: result });
+});
+
+app.post("/api/getReconciliationSummary", (req, res) => {
+  const { results } = req.body || {};
+  if (!Array.isArray(results)) return res.status(400).json({ status: "error", message: "results harus berupa array" });
+  const summary = calculateReconciliationSummary(results);
+  return res.json({ status: "success", data: summary });
+});
+
+// === PHASE 29 RECONCILIATION REVIEW ENDPOINTS ===
+app.post("/api/reconciliation/syncExceptions", (req, res) => {
+  const db = readDb();
+  const { reconciliation_result } = req.body || {};
+  if (!reconciliation_result) return res.status(400).json({ status: "error", message: "reconciliation_result diperlukan" });
+  const synced = syncReconciliationExceptions(db, reconciliation_result);
+  writeDb(db);
+  return res.json({ status: "success", data: synced });
+});
+
+app.post("/api/reconciliation/review", (req, res) => {
+  const db = readDb();
+  const { exception_id, actor_id, actor_name, actor_role } = req.body || {};
+  if (!exception_id) return res.status(400).json({ status: "error", message: "exception_id diperlukan" });
+  const result = startExceptionReview(db, exception_id, {
+    actor_id: actor_id || "USER-01",
+    actor_name: actor_name || "Admin",
+    actor_role: actor_role || "ADMIN"
+  });
+  if (result.status === "error") return res.status(400).json(result);
+  writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/reconciliation/resolve", (req, res) => {
+  const db = readDb();
+  const { exception_id, resolution, resolution_reason, evidence, correlation_id, actor_id, actor_name, actor_role } = req.body || {};
+  const result = resolveException(db, {
+    exception_id,
+    resolution,
+    resolution_reason,
+    evidence,
+    correlation_id,
+    actor: {
+      actor_id: actor_id || "USER-01",
+      actor_name: actor_name || "Admin",
+      actor_role: actor_role || "ADMIN"
+    }
+  });
+  if (result.status === "error") return res.status(400).json(result);
+  writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/reconciliation/reopen", (req, res) => {
+  const db = readDb();
+  const { exception_id, reason, actor_id, actor_name, actor_role } = req.body || {};
+  const result = reopenException(db, {
+    exception_id,
+    reason,
+    actor: {
+      actor_id: actor_id || "USER-01",
+      actor_name: actor_name || "Owner",
+      actor_role: actor_role || "OWNER"
+    }
+  });
+  if (result.status === "error") return res.status(400).json(result);
+  writeDb(db);
+  return res.json(result);
+});
+
+app.get("/api/reconciliation/exceptions", (req, res) => {
+  const db = readDb();
+  const list = getExceptions(db, req.query as any);
+  return res.json({ status: "success", data: list });
+});
+
+app.post("/api/reconciliation/exceptions", (req, res) => {
+  const db = readDb();
+  const list = getExceptions(db, req.body || {});
+  return res.json({ status: "success", data: list });
+});
+
+app.get("/api/reconciliation/exception/:id", (req, res) => {
+  const db = readDb();
+  const { id } = req.params;
+  const list = getExceptions(db, { search: id });
+  const item = list.find(e => e.exception_id === id);
+  if (!item) return res.status(404).json({ status: "error", message: "Exception tidak ditemukan" });
+  return res.json({ status: "success", data: item });
+});
+
+app.get("/api/reconciliation/closingStatus", (req, res) => {
+  const db = readDb();
+  const { outlet_id, date } = req.query as any;
+  const statusInfo = getClosingReconciliationStatus(db, outlet_id, date);
+  return res.json({ status: "success", data: statusInfo });
+});
+
+app.post("/api/reconciliation/closingStatus", (req, res) => {
+  const db = readDb();
+  const { outlet_id, date } = req.body || {};
+  const statusInfo = getClosingReconciliationStatus(db, outlet_id, date);
+  return res.json({ status: "success", data: statusInfo });
+});
 
 // === PRODUCTION STANDALONE INTEGRATION ===
 
