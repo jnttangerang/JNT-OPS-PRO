@@ -1,6 +1,42 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import {
+  syncAllDecisions,
+  getDecisions,
+  acknowledgeDecision,
+  assignDecision,
+  startDecision,
+  resolveDecision,
+  reopenDecision,
+  escalateDecision
+} from "./src/lib/decisionEngine";
+import {
+  getControlActions,
+  executeControlAction,
+  isRoleValid
+} from "./src/lib/operationalControlEngine";
+import {
+  getWorkflowList,
+  getWorkflowDetail,
+  createWorkflowCase,
+  assignWorkflowCase,
+  startWorkflowCase,
+  resolveWorkflowCase,
+  verifyWorkflowCase,
+  reopenWorkflowCase,
+  closeWorkflowCase,
+  getWorkflowSummary
+} from "./src/lib/operationalWorkflowEngine";
+import {
+  getControlTowerSummary,
+  getControlTowerMatrix,
+  getControlTowerTrend
+} from "./src/lib/controlTowerEngine";
+import {
+  generateFinancialCloseReport,
+  accessEvidence
+} from "./src/lib/financialCloseEvidenceEngine";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 
@@ -68,6 +104,33 @@ import {
   getExceptions,
   getClosingReconciliationStatus
 } from "./src/lib/reconciliationReviewEngine";
+import {
+  validateDailyClosing,
+  executeDailyClosing,
+  reopenDailyClosing,
+  getDailyClosingStatus,
+  getDailyClosingRecord
+} from "./src/lib/dailyClosingEngine";
+import {
+  processCreateSettlement,
+  processRecordDeposit,
+  processReconcileSettlement,
+  processApproveSettlement,
+  processRejectSettlement,
+  processReopenSettlement,
+  ensureSettlementTable,
+  getSettlementRecord,
+  filterOutletDateTransactions,
+  getSetoranRecord,
+  SettlementRecord
+} from "./src/lib/settlementEngine";
+import {
+  validateFinancialClose,
+  certifyFinancialClose,
+  reopenFinancialClose,
+  getCertificationRecord,
+  ensureCertificationTable
+} from "./src/lib/financialCloseCertificationEngine";
 export {
   reconcileTransaction,
   reconcileDaily,
@@ -79,7 +142,12 @@ export {
   resolveException,
   reopenException,
   getExceptions,
-  getClosingReconciliationStatus
+  getClosingReconciliationStatus,
+  validateDailyClosing,
+  executeDailyClosing,
+  reopenDailyClosing,
+  getDailyClosingStatus,
+  getDailyClosingRecord
 };
 
 dotenv.config();
@@ -5228,7 +5296,908 @@ app.post("/api/reconciliation/closingStatus", (req, res) => {
   return res.json({ status: "success", data: statusInfo });
 });
 
+// === PHASE 30 DAILY CLOSING ENGINE ENDPOINTS ===
+app.post("/api/dailyClosing/validate", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, actor_id, actor_name, actor_role } = req.body || {};
+  const result = validateDailyClosing(db, {
+    outlet_id,
+    tanggal,
+    actor: {
+      actor_id: actor_id || "USER-01",
+      actor_name: actor_name || "Admin",
+      actor_role: actor_role || "ADMIN"
+    }
+  });
+  writeDb(db);
+  if (result.status === "blocked") return res.status(400).json(result);
+  if (result.status === "error") return res.status(400).json(result);
+  return res.json(result);
+});
+
+app.post("/api/dailyClosing/close", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, notes, actor_id, actor_name, actor_role } = req.body || {};
+  const result = executeDailyClosing(db, {
+    outlet_id,
+    tanggal,
+    notes,
+    actor: {
+      actor_id: actor_id || "USER-01",
+      actor_name: actor_name || "Admin",
+      actor_role: actor_role || "ADMIN"
+    }
+  });
+  writeDb(db);
+  if (result.status === "error") return res.status(400).json(result);
+  return res.json(result);
+});
+
+app.get("/api/dailyClosing/status", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, date } = req.query as any;
+  const targetDate = tanggal || date;
+  const statusInfo = getDailyClosingStatus(db, outlet_id, targetDate);
+  return res.json(statusInfo);
+});
+
+app.post("/api/dailyClosing/status", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, date } = req.body || {};
+  const targetDate = tanggal || date;
+  const statusInfo = getDailyClosingStatus(db, outlet_id, targetDate);
+  return res.json(statusInfo);
+});
+
+app.post("/api/dailyClosing/reopen", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, reason, actor_id, actor_name, actor_role } = req.body || {};
+  const result = reopenDailyClosing(db, {
+    outlet_id,
+    tanggal,
+    reason,
+    actor: {
+      actor_id: actor_id || "OWNER-01",
+      actor_name: actor_name || "Owner",
+      actor_role: actor_role || "OWNER"
+    }
+  });
+  writeDb(db);
+  if (result.status === "error") return res.status(400).json(result);
+  return res.json(result);
+});
+
+// === PHASE 32 FINANCIAL SETTLEMENT & OWNER APPROVAL ENDPOINTS ===
+app.post("/api/settlement/create", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, actor_id, actor_name, actor_role } = req.body || {};
+  if (!outlet_id || !tanggal) {
+    return res.status(400).json({ status: "error", error_code: "INVALID_PARAM", message: "outlet_id dan tanggal wajib diisi." });
+  }
+  const actor = {
+    actor_id: actor_id || "ADM-01",
+    actor_name: actor_name || "Admin",
+    actor_role: actor_role || "ADMIN"
+  };
+  const transactions = filterOutletDateTransactions(db, outlet_id, tanggal);
+  const setoranRecord = getSetoranRecord(db, outlet_id, tanggal);
+  const existingRecord = getSettlementRecord(db, outlet_id, tanggal);
+
+  const result = processCreateSettlement({
+    outlet_id,
+    tanggal,
+    transactions,
+    setoranRecord,
+    actor,
+    existingRecord
+  });
+
+  const list = ensureSettlementTable(db);
+  const existingIdx = list.findIndex(s => s.settlement_id === result.data.settlement_id);
+  if (existingIdx >= 0) {
+    list[existingIdx] = result.data;
+  } else {
+    list.push(result.data);
+  }
+
+  logAuditEvent(db, {
+    event_type: "SETTLEMENT_CREATED",
+    action: result.isUpdate ? "UPDATE_SETTLEMENT" : "CREATE_SETTLEMENT",
+    entity_type: "FINANCIAL_SETTLEMENT",
+    entity_id: result.data.settlement_id,
+    outlet_id,
+    result: "SUCCESS",
+    actor_id: actor.actor_id,
+    actor_name: actor.actor_name,
+    actor_role: actor.actor_role,
+    metadata: {
+      expected_owner_deposit: result.data.expected_owner_deposit,
+      actual_owner_deposit: result.data.actual_owner_deposit,
+      difference: result.data.difference,
+      status: result.data.status
+    }
+  });
+
+  writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/settlement/recordDeposit", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, actual_amount, setoran_id, notes, actor_id, actor_name, actor_role } = req.body || {};
+  if (!outlet_id || !tanggal || actual_amount === undefined) {
+    return res.status(400).json({ status: "error", error_code: "INVALID_PARAM", message: "outlet_id, tanggal, dan actual_amount wajib diisi." });
+  }
+  const actor = {
+    actor_id: actor_id || "ADM-01",
+    actor_name: actor_name || "Admin",
+    actor_role: actor_role || "ADMIN"
+  };
+
+  let settlement = getSettlementRecord(db, outlet_id, tanggal);
+  if (!settlement) {
+    const transactions = filterOutletDateTransactions(db, outlet_id, tanggal);
+    const created = processCreateSettlement({ outlet_id, tanggal, transactions, actor });
+    settlement = created.data;
+    ensureSettlementTable(db).push(settlement);
+  }
+
+  const result = processRecordDeposit({
+    settlement,
+    actual_amount: Number(actual_amount),
+    setoran_id,
+    notes,
+    actor
+  });
+
+  if (result.status === "error") {
+    return res.status(400).json(result);
+  }
+
+  const list = ensureSettlementTable(db);
+  const idx = list.findIndex(s => s.settlement_id === settlement!.settlement_id);
+  if (idx >= 0) list[idx] = result.data!;
+
+  logAuditEvent(db, {
+    event_type: "SETTLEMENT_DEPOSIT_RECORDED",
+    action: "RECORD_DEPOSIT",
+    entity_type: "FINANCIAL_SETTLEMENT",
+    entity_id: result.data!.settlement_id,
+    outlet_id,
+    result: "SUCCESS",
+    actor_id: actor.actor_id,
+    actor_name: actor.actor_name,
+    actor_role: actor.actor_role,
+    metadata: {
+      actual_amount: result.data!.actual_owner_deposit,
+      expected_amount: result.data!.expected_owner_deposit,
+      difference: result.data!.difference,
+      status: result.data!.status
+    }
+  });
+
+  writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/settlement/reconcile", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, actual_amount, actor_id, actor_name, actor_role } = req.body || {};
+  if (!outlet_id || !tanggal) {
+    return res.status(400).json({ status: "error", error_code: "INVALID_PARAM", message: "outlet_id dan tanggal wajib diisi." });
+  }
+  const actor = {
+    actor_id: actor_id || "SYS-01",
+    actor_name: actor_name || "System",
+    actor_role: actor_role || "SYSTEM"
+  };
+
+  let settlement = getSettlementRecord(db, outlet_id, tanggal);
+  const transactions = filterOutletDateTransactions(db, outlet_id, tanggal);
+  if (!settlement) {
+    const created = processCreateSettlement({ outlet_id, tanggal, transactions, actor });
+    settlement = created.data;
+    ensureSettlementTable(db).push(settlement);
+  }
+
+  const openExceptions = getExceptions(db, { outlet_id });
+  const result = processReconcileSettlement({
+    settlement,
+    transactions,
+    actualDepositInput: actual_amount !== undefined ? Number(actual_amount) : undefined,
+    openExceptions,
+    actor
+  });
+
+  const list = ensureSettlementTable(db);
+  const idx = list.findIndex(s => s.settlement_id === settlement!.settlement_id);
+  if (idx >= 0) list[idx] = result.data;
+
+  logAuditEvent(db, {
+    event_type: Math.abs(result.data.difference) <= 0.01 ? "SETTLEMENT_MATCHED" : "SETTLEMENT_MISMATCHED",
+    action: "RECONCILE_SETTLEMENT",
+    entity_type: "FINANCIAL_SETTLEMENT",
+    entity_id: result.data.settlement_id,
+    outlet_id,
+    result: "SUCCESS",
+    actor_id: actor.actor_id,
+    actor_name: actor.actor_name,
+    actor_role: actor.actor_role,
+    metadata: {
+      difference: result.data.difference,
+      status: result.data.status
+    }
+  });
+
+  writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/settlement/approve", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, settlement_id, actor_id, actor_name, actor_role, allowSelfApproval } = req.body || {};
+  const actor = {
+    actor_id: actor_id || "OWN-01",
+    actor_name: actor_name || "Owner",
+    actor_role: actor_role || "OWNER"
+  };
+
+  let settlement: SettlementRecord | null = null;
+  if (settlement_id) {
+    const list = ensureSettlementTable(db);
+    settlement = list.find(s => s.settlement_id === settlement_id) || null;
+  } else if (outlet_id && tanggal) {
+    settlement = getSettlementRecord(db, outlet_id, tanggal);
+  }
+
+  if (!settlement) {
+    return res.status(400).json({ status: "error", error_code: "SETTLEMENT_NOT_FOUND", message: "Settlement tidak ditemukan." });
+  }
+
+  const openExceptions = getExceptions(db, { outlet_id: settlement.outlet_id });
+  const result = processApproveSettlement({
+    settlement,
+    openExceptions,
+    actor,
+    allowSelfApproval: !!allowSelfApproval
+  });
+
+  if (result.status === "error") {
+    return res.status(400).json(result);
+  }
+
+  const list = ensureSettlementTable(db);
+  const idx = list.findIndex(s => s.settlement_id === settlement!.settlement_id);
+  if (idx >= 0) list[idx] = result.data!;
+
+  logAuditEvent(db, {
+    event_type: "SETTLEMENT_APPROVED",
+    action: "APPROVE_SETTLEMENT",
+    entity_type: "FINANCIAL_SETTLEMENT",
+    entity_id: result.data!.settlement_id,
+    outlet_id: result.data!.outlet_id,
+    result: "SUCCESS",
+    actor_id: actor.actor_id,
+    actor_name: actor.actor_name,
+    actor_role: actor.actor_role,
+    metadata: {
+      status: result.data!.status,
+      expected_owner_deposit: result.data!.expected_owner_deposit,
+      actual_owner_deposit: result.data!.actual_owner_deposit
+    }
+  });
+
+  writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/settlement/reject", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, settlement_id, reason, actor_id, actor_name, actor_role } = req.body || {};
+  const actor = {
+    actor_id: actor_id || "OWN-01",
+    actor_name: actor_name || "Owner",
+    actor_role: actor_role || "OWNER"
+  };
+
+  let settlement: SettlementRecord | null = null;
+  if (settlement_id) {
+    const list = ensureSettlementTable(db);
+    settlement = list.find(s => s.settlement_id === settlement_id) || null;
+  } else if (outlet_id && tanggal) {
+    settlement = getSettlementRecord(db, outlet_id, tanggal);
+  }
+
+  if (!settlement) {
+    return res.status(400).json({ status: "error", error_code: "SETTLEMENT_NOT_FOUND", message: "Settlement tidak ditemukan." });
+  }
+
+  const result = processRejectSettlement({
+    settlement,
+    reason: reason || "Ditolak oleh Owner",
+    actor
+  });
+
+  if (result.status === "error") {
+    return res.status(400).json(result);
+  }
+
+  const list = ensureSettlementTable(db);
+  const idx = list.findIndex(s => s.settlement_id === settlement!.settlement_id);
+  if (idx >= 0) list[idx] = result.data!;
+
+  logAuditEvent(db, {
+    event_type: "SETTLEMENT_REJECTED",
+    action: "REJECT_SETTLEMENT",
+    entity_type: "FINANCIAL_SETTLEMENT",
+    entity_id: result.data!.settlement_id,
+    outlet_id: result.data!.outlet_id,
+    result: "SUCCESS",
+    actor_id: actor.actor_id,
+    actor_name: actor.actor_name,
+    actor_role: actor.actor_role,
+    metadata: {
+      reason,
+      status: result.data!.status
+    }
+  });
+
+  writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/settlement/reopen", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, settlement_id, reason, actor_id, actor_name, actor_role } = req.body || {};
+  const actor = {
+    actor_id: actor_id || "OWN-01",
+    actor_name: actor_name || "Owner",
+    actor_role: actor_role || "OWNER"
+  };
+
+  let settlement: SettlementRecord | null = null;
+  if (settlement_id) {
+    const list = ensureSettlementTable(db);
+    settlement = list.find(s => s.settlement_id === settlement_id) || null;
+  } else if (outlet_id && tanggal) {
+    settlement = getSettlementRecord(db, outlet_id, tanggal);
+  }
+
+  if (!settlement) {
+    return res.status(400).json({ status: "error", error_code: "SETTLEMENT_NOT_FOUND", message: "Settlement tidak ditemukan." });
+  }
+
+  const result = processReopenSettlement({
+    settlement,
+    reason: reason || "Dibuka kembali oleh Owner",
+    actor
+  });
+
+  if (result.status === "error") {
+    return res.status(400).json(result);
+  }
+
+  const list = ensureSettlementTable(db);
+  const idx = list.findIndex(s => s.settlement_id === settlement!.settlement_id);
+  if (idx >= 0) list[idx] = result.data!;
+
+  logAuditEvent(db, {
+    event_type: "SETTLEMENT_REOPENED",
+    action: "REOPEN_SETTLEMENT",
+    entity_type: "FINANCIAL_SETTLEMENT",
+    entity_id: result.data!.settlement_id,
+    outlet_id: result.data!.outlet_id,
+    result: "SUCCESS",
+    actor_id: actor.actor_id,
+    actor_name: actor.actor_name,
+    actor_role: actor.actor_role,
+    metadata: {
+      reason,
+      status: result.data!.status
+    }
+  });
+
+  writeDb(db);
+  return res.json(result);
+});
+
+app.get("/api/settlement/list", (req, res) => {
+  const db = readDb();
+  const list = ensureSettlementTable(db);
+  const { outlet_id, status } = req.query as any;
+  let filtered = [...list];
+  if (outlet_id) filtered = filtered.filter(s => s.outlet_id === outlet_id);
+  if (status) filtered = filtered.filter(s => s.status === status);
+  return res.json({ status: "success", count: filtered.length, data: filtered });
+});
+
+app.post("/api/settlement/list", (req, res) => {
+  const db = readDb();
+  const list = ensureSettlementTable(db);
+  const { outlet_id, status } = req.body || {};
+  let filtered = [...list];
+  if (outlet_id) filtered = filtered.filter(s => s.outlet_id === outlet_id);
+  if (status) filtered = filtered.filter(s => s.status === status);
+  return res.json({ status: "success", count: filtered.length, data: filtered });
+});
+
+app.get("/api/settlement/detail/:id", (req, res) => {
+  const db = readDb();
+  const list = ensureSettlementTable(db);
+  const stl = list.find(s => s.settlement_id === req.params.id);
+  if (!stl) return res.status(404).json({ status: "error", message: "Settlement tidak ditemukan." });
+  return res.json({ status: "success", data: stl });
+});
+
+app.get("/api/settlement/status", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, date } = req.query as any;
+  const targetDate = tanggal || date;
+  const stl = getSettlementRecord(db, outlet_id, targetDate);
+  return res.json({ status: "success", data: stl });
+});
+
+app.post("/api/settlement/status", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, date } = req.body || {};
+  const targetDate = tanggal || date;
+  const stl = getSettlementRecord(db, outlet_id, targetDate);
+  return res.json({ status: "success", data: stl });
+});
+
+// === PHASE 33 FINANCIAL CLOSE CERTIFICATION ENDPOINTS ===
+
+app.post("/api/financial-close/validate", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, actor_id, actor_name, actor_role } = req.body || {};
+  const actor = {
+    actor_id: actor_id || "SYS-01",
+    actor_name: actor_name || "System",
+    actor_role: actor_role || "SYSTEM"
+  };
+  const result = validateFinancialClose(db, { outlet_id, tanggal, actor });
+  if (result.status === "success" || result.data) writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/financial-close/certify", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, actor_id, actor_name, actor_role } = req.body || {};
+  const actor = {
+    actor_id: actor_id || "OWN-01",
+    actor_name: actor_name || "Owner",
+    actor_role: actor_role || "OWNER"
+  };
+  const result = certifyFinancialClose(db, { outlet_id, tanggal, actor });
+  if (result.status === "success" || result.data) writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/financial-close/reopen", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, reason, actor_id, actor_name, actor_role } = req.body || {};
+  const actor = {
+    actor_id: actor_id || "OWN-01",
+    actor_name: actor_name || "Owner",
+    actor_role: actor_role || "OWNER"
+  };
+  const result = reopenFinancialClose(db, { outlet_id, tanggal, reason, actor });
+  if (result.status === "success" || result.data) writeDb(db);
+  return res.json(result);
+});
+
+app.get("/api/financial-close/status", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, date } = req.query as any;
+  const targetDate = tanggal || date;
+  const record = getCertificationRecord(db, outlet_id, targetDate);
+  return res.json({ status: "success", data: record });
+});
+
+app.get("/api/financial-close/detail/:id", (req, res) => {
+  const db = readDb();
+  const list = ensureCertificationTable(db);
+  const record = list.find(r => r.certification_id === req.params.id);
+  if (!record) return res.status(404).json({ status: "error", message: "Certification record tidak ditemukan." });
+  return res.json({ status: "success", data: record });
+});
+
+
+// === PHASE 34 FINANCIAL CLOSE EVIDENCE & REPORTING ENDPOINTS ===
+
+app.get("/api/financial-close/report", (req, res) => {
+  const db = readDb();
+  const outlet_id = req.query.outlet_id as string;
+  const tanggal = req.query.tanggal as string;
+  const actor = {
+    actor_id: (req.query.actor_id as string) || "SYS-01",
+    actor_name: (req.query.actor_name as string) || "System",
+    actor_role: (req.query.actor_role as string) || "SYSTEM"
+  };
+  const result = generateFinancialCloseReport(db, { outlet_id, tanggal, actor });
+  if (result.status === "success" || result.data) writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/financial-close/report", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, actor_id, actor_name, actor_role } = req.body || {};
+  const actor = {
+    actor_id: actor_id || "SYS-01",
+    actor_name: actor_name || "System",
+    actor_role: actor_role || "SYSTEM"
+  };
+  const result = generateFinancialCloseReport(db, { outlet_id, tanggal, actor });
+  if (result.status === "success" || result.data) writeDb(db);
+  return res.json(result);
+});
+
+app.get("/api/financial-close/evidence/:id", (req, res) => {
+  const db = readDb();
+  const parts = req.params.id.split("-");
+  if (parts.length < 3) return res.status(400).json({ status: "error", message: "Invalid ID format" });
+  const outlet_id = parts[1];
+  const tanggal = parts.slice(2).join("-");
+  const actor_id = (req.query.actor_id as string) as string;
+  const actor_name = req.query.actor_name as string;
+  const actor_role = (req.query.actor_role as string) as string;
+  const actor = {
+    actor_id: actor_id || "SYS-01",
+    actor_name: actor_name || "System",
+    actor_role: actor_role || "SYSTEM"
+  };
+  const result = accessEvidence(db, { outlet_id, tanggal, actor });
+  if (result.status === "success" || result.data) writeDb(db);
+  return res.json(result);
+});
+
+app.get("/api/financial-close/evidence/:id/transactions", (req, res) => {
+  const db = readDb();
+  const parts = req.params.id.split("-");
+  if (parts.length < 3) return res.status(400).json({ status: "error", message: "Invalid ID format" });
+  const outlet_id = parts[1];
+  const tanggal = parts.slice(2).join("-");
+  const allTxs = (db.MASTER_TRANSAKSI || []).filter((tx) => tx.outlet_id === outlet_id && tx.tanggal_transaksi === tanggal);
+  return res.json({ status: "success", data: allTxs });
+});
+
+app.get("/api/financial-close/evidence/:id/audit", (req, res) => {
+  const db = readDb();
+  const parts = req.params.id.split("-");
+  if (parts.length < 3) return res.status(400).json({ status: "error", message: "Invalid ID format" });
+  const outlet_id = parts[1];
+  const tanggal = parts.slice(2).join("-");
+  const auditLogs = db.AuditLogs || [];
+  const periodLogs = auditLogs.filter((log) => log.outlet_id === outlet_id && (log.tanggal === tanggal || (log.entity_id && log.entity_id.includes(tanggal))));
+  return res.json({ status: "success", data: periodLogs });
+});
+
+
+// === PHASE 35 MANAGEMENT CONTROL TOWER ENDPOINTS ===
+
+app.get("/api/control-tower/summary", (req, res) => {
+  const db = readDb();
+  const outlet_id = req.query.outlet_id as string;
+  const tanggal = req.query.tanggal as string;
+  const result = getControlTowerSummary(db, { outlet_id, tanggal });
+  return res.json(result);
+});
+
+app.get("/api/control-tower/matrix", (req, res) => {
+  const db = readDb();
+  const tanggal = req.query.tanggal as string;
+  const result = getControlTowerMatrix(db, { tanggal });
+  return res.json(result);
+});
+
+app.get("/api/control-tower/trend", (req, res) => {
+  const db = readDb();
+  const outlet_id = req.query.outlet_id as string;
+  const end_date = req.query.end_date as string;
+  const daysStr = req.query.days as string;
+  const result = getControlTowerTrend(db, { outlet_id, end_date, days: parseInt(daysStr || "7", 10) });
+  return res.json(result);
+});
+
+
+// === PHASE 36 MANAGEMENT DECISION ENDPOINTS ===
+
+app.post("/api/management/decisions/sync", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal } = req.body;
+  syncAllDecisions(db, outlet_id, tanggal);
+  writeDb(db);
+  return res.json({ status: "success" });
+});
+
+app.get("/api/management/decisions", (req, res) => {
+  const db = readDb();
+  const outlet_id = (req.query.outlet_id as string) as string;
+  const role = req.query.role as string;
+  // Automatically sync before returning
+  const tanggal = (req.query.tanggal as string) as string;
+  if (outlet_id && tanggal) {
+    syncAllDecisions(db, outlet_id, tanggal);
+    writeDb(db);
+  }
+  const result = getDecisions(db, { outlet_id: outlet_id as string, role: role as string });
+  return res.json({ status: "success", data: result });
+});
+
+app.post("/api/management/decision/acknowledge", (req, res) => {
+  const db = readDb();
+  const result = acknowledgeDecision(db, { decision_id: req.body.decision_id as string, actor_id: req.body.actor_id as string, actor_name: req.body.actor_name as string, actor_role: req.body.actor_role as string, reason: req.body.reason as string });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/management/decision/assign", (req, res) => {
+  const db = readDb();
+  const result = assignDecision(db, { decision_id: req.body.decision_id as string, assigned_to: req.body.assigned_to as string, actor_id: req.body.actor_id as string, actor_name: req.body.actor_name as string, actor_role: req.body.actor_role as string, reason: req.body.reason as string });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/management/decision/start", (req, res) => {
+  const db = readDb();
+  const result = startDecision(db, { decision_id: req.body.decision_id as string, actor_id: req.body.actor_id as string, actor_name: req.body.actor_name as string, actor_role: req.body.actor_role as string, reason: req.body.reason as string });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/management/decision/resolve", (req, res) => {
+  const db = readDb();
+  const result = resolveDecision(db, { decision_id: req.body.decision_id as string, actor_id: req.body.actor_id as string, actor_name: req.body.actor_name as string, actor_role: req.body.actor_role as string, reason: req.body.reason as string, resolution_type: req.body.resolution_type as "RESOLVED"|"ACCEPTED" });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/management/decision/reopen", (req, res) => {
+  const db = readDb();
+  const result = reopenDecision(db, { decision_id: req.body.decision_id as string, actor_id: req.body.actor_id as string, actor_name: req.body.actor_name as string, actor_role: req.body.actor_role as string, reason: req.body.reason as string });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/management/decision/escalate", (req, res) => {
+  const db = readDb();
+  const result = escalateDecision(db, { decision_id: req.body.decision_id as string, actor_id: req.body.actor_id as string, actor_name: req.body.actor_name as string, actor_role: req.body.actor_role as string, reason: req.body.reason as string });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+
+// === PHASE 36 OPERATIONAL CONTROL & EXCEPTION ACTION ENDPOINTS ===
+
+app.get("/api/control/actions", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, role, actor_id } = req.query;
+  const result = getControlActions(db, {
+    outlet_id: outlet_id as string,
+    tanggal: tanggal as string,
+    role: role as string,
+    actor_id: actor_id as string
+  });
+  return res.json({ status: "success", data: result });
+});
+
+app.post("/api/control/action/execute", (req, res) => {
+  const db = readDb();
+  const { action_id, action_type, actor, outlet_id, tanggal, correlation_id, reason, entity_id, entity_type, params } = req.body;
+  const actorObj = actor || {
+    actor_id: req.body.actor_id || "SYSTEM",
+    actor_name: req.body.actor_name || "System",
+    actor_role: req.body.actor_role || "ADMIN",
+    outlet_id: req.body.actor_outlet_id
+  };
+  const result = executeControlAction(db, {
+    action_id,
+    action_type,
+    actor: actorObj,
+    outlet_id,
+    tanggal,
+    correlation_id,
+    reason,
+    entity_id,
+    entity_type,
+    params
+  });
+  if (result.status === "SUCCESS" || result.status === "ACTION_ALREADY_COMPLETED") {
+    writeDb(db);
+  }
+  return res.json(result);
+});
+
+app.get("/api/control/action/history", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal } = req.query;
+  const logs = (db.AuditLogs || []).filter((l: any) => {
+    const isControlEvent = l.event_type && l.event_type.startsWith("CONTROL_ACTION_");
+    const matchOutlet = !outlet_id || l.outlet_id === outlet_id;
+    const matchDate = !tanggal || (l.created_at && l.created_at.startsWith(tanggal as string));
+    return isControlEvent && matchOutlet && matchDate;
+  });
+  return res.json({ status: "success", data: logs });
+});
+
+app.get("/api/control/action/:id", (req, res) => {
+  const db = readDb();
+  const actionId = req.params.id;
+  const actionsRes = getControlActions(db, {});
+  const action = actionsRes.actions.find(a => a.action_id === actionId);
+  if (!action) {
+    return res.status(404).json({ status: "error", message: `Action '${actionId}' tidak ditemukan.` });
+  }
+  return res.json({ status: "success", data: action });
+});
+
+
+// === PHASE 37 OPERATIONAL WORKFLOW & SLA CONTROL ENDPOINTS ===
+
+app.get("/api/workflow/list", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, role, actor_id, status, priority, sla_status } = req.query;
+  const list = getWorkflowList(db, {
+    outlet_id: outlet_id as string,
+    tanggal: tanggal as string,
+    role: role as string,
+    actor_id: actor_id as string,
+    status: status as string,
+    priority: priority as string,
+    sla_status: sla_status as string
+  });
+  return res.json({ status: "success", data: list });
+});
+
+app.get("/api/workflow/detail/:id", (req, res) => {
+  const db = readDb();
+  const workflow_id = req.params.id;
+  const actor = {
+    actor_id: (req.query.actor_id as string) || "SYS-01",
+    actor_name: (req.query.actor_name as string) || "System",
+    actor_role: (req.query.actor_role as string) || "OWNER",
+    outlet_id: req.query.outlet_id as string
+  };
+  const detail = getWorkflowDetail(db, workflow_id, actor);
+  if (!detail) {
+    return res.status(404).json({ status: "error", message: `Workflow case '${workflow_id}' tidak ditemukan atau tidak diakses.` });
+  }
+  return res.json({ status: "success", data: detail });
+});
+
+app.post("/api/workflow/create", (req, res) => {
+  const db = readDb();
+  const { action_id, source_type, source_id, outlet_id, transaksi_id, priority, severity, title, description, assigned_to, assigned_role, created_at, actor } = req.body;
+  const actorObj = actor || {
+    actor_id: req.body.actor_id || "SYS-01",
+    actor_name: req.body.actor_name || "System",
+    actor_role: req.body.actor_role || "ADMIN",
+    outlet_id: req.body.outlet_id
+  };
+  const result = createWorkflowCase(db, {
+    action_id,
+    source_type,
+    source_id,
+    outlet_id,
+    transaksi_id,
+    priority,
+    severity,
+    title,
+    description,
+    assigned_to,
+    assigned_role,
+    created_at,
+    actor: actorObj
+  });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/workflow/assign", (req, res) => {
+  const db = readDb();
+  const { workflow_id, assigned_to, assigned_role, actor } = req.body;
+  const actorObj = actor || {
+    actor_id: req.body.actor_id || "SYS-01",
+    actor_name: req.body.actor_name || "System",
+    actor_role: req.body.actor_role || "ADMIN"
+  };
+  const result = assignWorkflowCase(db, { workflow_id, assigned_to, assigned_role, actor: actorObj });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/workflow/start", (req, res) => {
+  const db = readDb();
+  const { workflow_id, actor } = req.body;
+  const actorObj = actor || {
+    actor_id: req.body.actor_id || "SYS-01",
+    actor_name: req.body.actor_name || "System",
+    actor_role: req.body.actor_role || "ADMIN"
+  };
+  const result = startWorkflowCase(db, { workflow_id, actor: actorObj });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/workflow/resolve", (req, res) => {
+  const db = readDb();
+  const { workflow_id, resolution_code, resolution_note, evidence, actor } = req.body;
+  const actorObj = actor || {
+    actor_id: req.body.actor_id || "SYS-01",
+    actor_name: req.body.actor_name || "System",
+    actor_role: req.body.actor_role || "ADMIN"
+  };
+  const result = resolveWorkflowCase(db, { workflow_id, resolution_code, resolution_note, evidence, actor: actorObj });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/workflow/verify", (req, res) => {
+  const db = readDb();
+  const { workflow_id, verification_result, verification_note, actor } = req.body;
+  const actorObj = actor || {
+    actor_id: req.body.actor_id || "SYS-01",
+    actor_name: req.body.actor_name || "System",
+    actor_role: req.body.actor_role || "OWNER"
+  };
+  const result = verifyWorkflowCase(db, { workflow_id, verification_result, verification_note, actor: actorObj });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/workflow/reopen", (req, res) => {
+  const db = readDb();
+  const { workflow_id, reason, actor } = req.body;
+  const actorObj = actor || {
+    actor_id: req.body.actor_id || "SYS-01",
+    actor_name: req.body.actor_name || "System",
+    actor_role: req.body.actor_role || "ADMIN"
+  };
+  const result = reopenWorkflowCase(db, { workflow_id, reason, actor: actorObj });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.post("/api/workflow/close", (req, res) => {
+  const db = readDb();
+  const { workflow_id, actor } = req.body;
+  const actorObj = actor || {
+    actor_id: req.body.actor_id || "SYS-01",
+    actor_name: req.body.actor_name || "System",
+    actor_role: req.body.actor_role || "ADMIN"
+  };
+  const result = closeWorkflowCase(db, { workflow_id, actor: actorObj });
+  if (result.status === "success") writeDb(db);
+  return res.json(result);
+});
+
+app.get("/api/workflow/summary", (req, res) => {
+  const db = readDb();
+  const outlet_id = req.query.outlet_id as string;
+  const tanggal = req.query.tanggal as string;
+  const result = getWorkflowSummary(db, { outlet_id, tanggal });
+  return res.json({ status: "success", data: result });
+});
+
+app.get("/api/workflow/sla", (req, res) => {
+  const db = readDb();
+  const outlet_id = req.query.outlet_id as string;
+  const tanggal = req.query.tanggal as string;
+  const summary = getWorkflowSummary(db, { outlet_id, tanggal });
+  return res.json({ status: "success", data: summary.sla_health });
+});
+
+app.get("/api/workflow/history/:id", (req, res) => {
+  const db = readDb();
+  const workflow_id = req.params.id;
+  const logs = (db.AuditLogs || []).filter((l: any) => l.entity_id === workflow_id && l.entity_type === "WORKFLOW_CASE");
+  return res.json({ status: "success", data: logs });
+});
+
 // === PRODUCTION STANDALONE INTEGRATION ===
+
+
+
 
 if (!isVercel && process.env.NODE_ENV === "production") {
   const distPath = path.join(process.cwd(), "dist");

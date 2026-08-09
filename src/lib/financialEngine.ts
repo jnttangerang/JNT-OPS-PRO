@@ -31,23 +31,33 @@ export function calculateFinancialSummary(tx: any) {
   const packing = safeNum(tx.packing || tx.biaya_packing);
   
   // Total Uang Dibayar Customer
-  const total_customer = safeNum(tx.total_customer || tx.total_dibayar_customer);
+  const total_customer = safeNum(tx.grand_total || tx.total_customer || tx.total_dibayar_customer);
   
   // Biaya Dasar Layanan
   const biayaDasarLayanan = ongkir_customer + asuransi + biaya_lain;
   
-  // Pembulatan (Rounding)
-  let rounding = total_customer - biayaDasarLayanan;
-  if (rounding < 0) rounding = 0;
-  
   // Surcharges / Kas Operasional Outlet
   const biayaTambahan = amplop + packing;
+
+  // Subtotal sebelum pembulatan
+  const subtotal = biayaDasarLayanan + biayaTambahan;
+  
+  // Pembulatan (Rounding)
+  let rounding = 0;
+  if (total_customer > 0) {
+    rounding = total_customer - subtotal;
+    if (rounding < 0) rounding = 0;
+  } else {
+    rounding = safeNum(tx.pembulatan);
+  }
   
   // Setoran Ke Owner = Biaya Dasar Layanan + Pembulatan
-  const owner_deposit = biayaDasarLayanan + rounding;
+  const owner_deposit = tx.wajib_setor_owner !== undefined && tx.wajib_setor_owner !== null && safeNum(tx.wajib_setor_owner) > 0 && Math.abs(safeNum(tx.wajib_setor_owner) - (biayaDasarLayanan + rounding)) <= 0.01
+    ? safeNum(tx.wajib_setor_owner)
+    : (biayaDasarLayanan + rounding);
   
   // Customer Payment Total
-  const customer_payment = owner_deposit + biayaTambahan;
+  const customer_payment = total_customer > 0 ? total_customer : (owner_deposit + biayaTambahan);
   
   return {
     customer_payment: customer_payment,

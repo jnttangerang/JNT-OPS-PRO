@@ -90,8 +90,8 @@ export function logAuditEvent(db: any, input: AuditEventInput) {
     actor_id: input.actor_id || "SYSTEM",
     actor_name: input.actor_name || "System",
     actor_role: input.actor_role || "SYSTEM",
-    outlet_id: input.outlet_id || "",
-    outlet_name: input.outlet_name || "",
+    outlet_id: input.outlet_id || (input.metadata && input.metadata.outlet_id) || "",
+    outlet_name: input.outlet_name || (input.metadata && input.metadata.outlet_name) || "",
     entity_type: input.entity_type,
     entity_id: entityId,
     transaksi_id: input.transaksi_id || (input.entity_type === "TRANSACTION" ? entityId : ""),
@@ -159,7 +159,7 @@ export function getAuditTrail(db: any, filters: {
     logs = logs.filter((l: any) => l.entity_type === filters.entity_type);
   }
   if (filters.outlet_id) {
-    logs = logs.filter((l: any) => l.outlet_id === filters.outlet_id);
+    logs = logs.filter((l: any) => l.outlet_id === filters.outlet_id || (l.metadata && l.metadata.outlet_id === filters.outlet_id));
   }
   if (filters.result) {
     logs = logs.filter((l: any) => l.result === filters.result);

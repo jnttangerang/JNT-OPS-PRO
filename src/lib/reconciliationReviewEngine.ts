@@ -143,27 +143,9 @@ export function syncReconciliationExceptions(db: any, reconciliationResult: Reco
       db.ReconciliationExceptions.push(newRecord);
       syncedList.push(newRecord);
     } else {
-      // Re-run behavior: if exception was previously marked RESOLVED or ACCEPTED, but re-appeared on re-run, REOPEN it.
-      if (existing.status === "RESOLVED" || existing.status === "ACCEPTED") {
-        const prevStatus = existing.status;
-        existing.status = "REOPENED";
+      // Re-run behavior: preserve human resolution (RESOLVED / ACCEPTED) if present
+      if (existing.status !== "RESOLVED" && existing.status !== "ACCEPTED") {
         existing.detected_at = new Date().toISOString();
-
-        logAuditEvent(db, {
-          event_type: "RECONCILIATION_EXCEPTION_REOPENED",
-          action: "AUTO_REOPEN_ON_RERUN",
-          entity_type: "RECONCILIATION_EXCEPTION",
-          entity_id: existing.exception_id,
-          transaksi_id: existing.transaksi_id,
-          previous_status: prevStatus,
-          new_status: "REOPENED",
-          reason: "Discrepancy re-detected during re-run reconciliation execution",
-          result: "WARNING",
-          actor_id: "SYSTEM_RECONCILIATION",
-          actor_name: "Reconciliation Engine",
-          actor_role: "SYSTEM",
-          correlation_id: reconciliationResult.reconciliation_id
-        });
       }
       syncedList.push(existing);
     }
@@ -177,7 +159,7 @@ export function syncReconciliationExceptions(db: any, reconciliationResult: Reco
  */
 export function checkReviewPermission(role?: string, action?: string): boolean {
   const upperRole = (role || "").toUpperCase();
-  if (upperRole === "OWNER" || upperRole === "SUPER_ADMIN") return true;
+  if (upperRole === "OWNER") return true;
   if (action === "reopen") return false; // Only Owner/Super Admin can reopen manually
   if (upperRole === "ADMIN" || upperRole === "OPERATOR" || upperRole === "STAFF") return true;
   return true; // Default fallback for system/admin operations
@@ -286,8 +268,8 @@ export function resolveException(
     return { status: "error", message: `Exception ID '${exception_id}' tidak ditemukan.` };
   }
 
-  // Idempotency: if already resolved with exact same status and reason, return success
-  if (exc.status === resolution && exc.resolution_reason === resolution_reason.trim()) {
+  // Idempotency: if already resolved with target status, return success
+  if (exc.status === resolution) {
     return { status: "success", message: `Exception sudah berstatus ${resolution}.`, data: exc };
   }
 
@@ -360,7 +342,7 @@ export function reopenException(
     return { status: "error", message: "Identitas reviewer (actor) wajib disertakan." };
   }
 
-  // Strict permission: manual reopen requires OWNER or SUPER_ADMIN
+  // Strict permission: manual reopen requires OWNER
   if (!checkReviewPermission(actor.actor_role, "reopen")) {
     return { status: "error", message: "Akses ditolak. Wewenang Owner atau Super Admin diperlukan untuk reopen exception." };
   }

@@ -1,3 +1,4 @@
+import ManagementControlTowerPage from "./components/owner/ManagementControlTowerPage";
 import React, { useState, useEffect } from "react";
 import { 
   Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2, Tags, Wallet, Users, Terminal, Upload
@@ -21,7 +22,7 @@ import DailyClosingPage from "./components/owner/DailyClosingPage";
 import ReportingPage from "./components/owner/ReportingPage";
 import OwnerAIAssistantPage from "./components/owner/OwnerAIAssistantPage";
 import KeuanganOutletPage from "./components/owner/KeuanganOutletPage";
-import { Lock, Shield, BarChart3, Bot, Sparkles } from "lucide-react";
+import { Lock, Shield, BarChart3, Bot, Sparkles, Activity } from "lucide-react";
 import ToastContainer from "./components/ToastContainer";
 import QuickAction from "./components/QuickAction";
 import { SessionData, Outlet } from "./types";
@@ -157,6 +158,7 @@ export default function App() {
             { id: "transaksi", label: "Resi & Bayar", icon: FileText },            
             { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
             { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
+            { id: "daily-closing", label: "Daily Closing", icon: Lock },
           ]
         },
         {
@@ -471,6 +473,15 @@ export default function App() {
           />
         )}
 
+        {session && currentView === "control-tower" && (
+          <ManagementControlTowerPage
+            session={session}
+            outlets={outlets}
+            activeOutletId={activeOutletId}
+            onChangeActiveOutlet={handleActiveOutletChange}
+            onNavigate={setCurrentView}
+          />
+        )}
         {session && currentView === "dashboard" && (
           <DashboardPage
             session={session}
@@ -510,6 +521,8 @@ export default function App() {
           <DailyClosingPage
             session={session}
             outlets={outlets}
+            activeOutletId={activeOutletId}
+            onChangeActiveOutlet={handleActiveOutletChange}
           />
         )}
 

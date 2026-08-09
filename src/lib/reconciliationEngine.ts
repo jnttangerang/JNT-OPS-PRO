@@ -201,6 +201,20 @@ export function reconcileTransaction(db: any, transaksiId: string): Reconciliati
     // C. Snapshot Consistency Check
     if (matchingShips.length > 0) {
       const ship = matchingShips[0];
+      if (tx.outlet_id && ship.outlet_id && tx.outlet_id !== ship.outlet_id) {
+        exceptions.push({
+          id: "EXC-" + Math.floor(Math.random() * 100000),
+          type: "CROSS_OUTLET_DATA_LEAK",
+          severity: "CRITICAL",
+          entity_type: "TRANSACTION",
+          entity_id: tx.id,
+          transaksi_id: tx.id,
+          reason: `Transaction '${tx.id}' belongs to outlet '${tx.outlet_id}' but shipment belongs to outlet '${ship.outlet_id}'.`,
+          source_a: "MASTER_TRANSAKSI",
+          source_b: "MASTER_PENGIRIMAN",
+          recommendation: "Ensure shipment and transaction outlet_id match."
+        });
+      }
       if (
         (tx.snapshot_nama_pengirim && ship.snapshot_nama_pengirim && tx.snapshot_nama_pengirim !== ship.snapshot_nama_pengirim) ||
         (tx.snapshot_nama_penerima && ship.snapshot_nama_penerima && tx.snapshot_nama_penerima !== ship.snapshot_nama_penerima)
@@ -504,15 +518,11 @@ export function reconcileDaily(db: any, dateStr: string, outletId?: string): Rec
     return true;
   });
 
-  // Cross-outlet leak check: verify no transactions from other outlets contaminate requested outletId
+  // Cross-outlet leak check: verify no transactions in dailyTx belong to a different outlet
   if (outletId && outletId !== "ALL") {
-    const allDateTx = allTx.filter((tx: any) => {
-      const d = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
-      return d === dateStr;
-    });
-    const otherOutletTx = allDateTx.filter((t: any) => t.outlet_id && t.outlet_id !== outletId);
-    if (otherOutletTx.length > 0) {
-      for (const leak of otherOutletTx) {
+    const leakedTx = dailyTx.filter((t: any) => t.outlet_id && t.outlet_id !== outletId);
+    if (leakedTx.length > 0) {
+      for (const leak of leakedTx) {
         allExceptions.push({
           id: "EXC-" + Math.floor(Math.random() * 100000),
           type: "CROSS_OUTLET_DATA_LEAK",
@@ -524,6 +534,33 @@ export function reconcileDaily(db: any, dateStr: string, outletId?: string): Rec
           source_a: "MASTER_TRANSAKSI",
           recommendation: "Isolate outlet query filters to prevent cross-outlet data leak."
         });
+      }
+    }
+  }
+
+  // Check cross-outlet shipment/transaction mismatches for requested outletId
+  if (outletId && outletId !== "ALL") {
+    const outletShips = allShip.filter((s: any) => {
+      const d = s.created_at ? s.created_at.split("T")[0] : (s.tanggal_pengiriman || "");
+      return d === dateStr && s.outlet_id === outletId;
+    });
+    for (const ship of outletShips) {
+      if (ship.transaksi_id) {
+        const matchingTx = allTx.find((t: any) => t.id === ship.transaksi_id);
+        if (matchingTx && matchingTx.outlet_id && matchingTx.outlet_id !== outletId) {
+          allExceptions.push({
+            id: "EXC-" + Math.floor(Math.random() * 100000),
+            type: "CROSS_OUTLET_DATA_LEAK",
+            severity: "CRITICAL",
+            entity_type: "TRANSACTION",
+            entity_id: matchingTx.id,
+            transaksi_id: matchingTx.id,
+            reason: `Shipment '${ship.id}' belongs to outlet '${outletId}' but linked transaction '${matchingTx.id}' belongs to outlet '${matchingTx.outlet_id}'.`,
+            source_a: "MASTER_PENGIRIMAN",
+            source_b: "MASTER_TRANSAKSI",
+            recommendation: "Ensure shipment and transaction outlet_id match."
+          });
+        }
       }
     }
   }
