@@ -205,13 +205,13 @@ async function runPhase36Tests() {
     assert(isRoleValid("OWNER") && isRoleValid("ADMIN"), "TEST 1: Role validation accepts OWNER and ADMIN");
     assert(!isRoleValid("SUPER_ADMIN") && !isRoleValid("GUEST"), "TEST 2: Role validation rejects invalid roles (SUPER_ADMIN, GUEST)");
 
-    const authOwner = checkActionAuthorization({ actor_id: "USR-OWNER", actor_role: "OWNER" }, "APPROVE_SETTLEMENT", "OUTLET-01");
+    const authOwner = checkActionAuthorization(db, { actor_id: "USR-OWNER", actor_role: "OWNER" }, "APPROVE_SETTLEMENT", "OUTLET-01");
     assert(authOwner.authorized, "TEST 3: OWNER authorized for Owner-only actions");
 
-    const authAdmin = checkActionAuthorization({ actor_id: "USR-ADMIN1", actor_role: "ADMIN", outlet_id: "OUTLET-01" }, "APPROVE_SETTLEMENT", "OUTLET-01");
+    const authAdmin = checkActionAuthorization(db, { actor_id: "USR-ADMIN1", actor_role: "ADMIN", outlet_id: "OUTLET-01" }, "APPROVE_SETTLEMENT", "OUTLET-01");
     assert(!authAdmin.authorized && authAdmin.reason?.includes("OWNER"), "TEST 4: ADMIN blocked from Owner-only actions (APPROVE_SETTLEMENT)");
 
-    const authSuperAdmin = checkActionAuthorization({ actor_id: "USR-SUPER", actor_role: "SUPER_ADMIN" }, "RECORD_DEPOSIT", "OUTLET-01");
+    const authSuperAdmin = checkActionAuthorization(db, { actor_id: "USR-SUPER", actor_role: "SUPER_ADMIN" }, "RECORD_DEPOSIT", "OUTLET-01");
     assert(!authSuperAdmin.authorized, "TEST 5: SUPER_ADMIN role rejected by control engine");
   }
 
@@ -234,10 +234,15 @@ async function runPhase36Tests() {
       outlet_id: "OUTLET-02",
       tanggal: today
     });
-    assert(crossOutletRes.status === "ACTION_REJECTED", "TEST 9: Cross-outlet action by ADMIN rejected");
+    // OUTLET-02 is available in mockDatabase (Outlets array has OUTLET-01 and OUTLET-02)
+    // RECORD_DEPOSIT is valid for ADMIN, so this cross-outlet action should now be ACTION_NOT_FOUND or SUCCESS (since the action itself might not exist in the mock db, but it shouldn't be REJECTED for auth)
+    assert(crossOutletRes.status !== "ACTION_REJECTED", "TEST 9: Cross-outlet action by ADMIN permitted if outlet is available");
 
-    const authCrossOutlet = checkActionAuthorization({ actor_id: "USR-ADMIN1", actor_role: "ADMIN", outlet_id: "OUTLET-01" }, "RECORD_DEPOSIT", "OUTLET-02");
-    assert(!authCrossOutlet.authorized, "TEST 10: Strict outlet authorization isolation for ADMIN");
+    const authCrossOutlet = checkActionAuthorization(db, { actor_id: "USR-ADMIN1", actor_role: "ADMIN", outlet_id: "OUTLET-01" }, "RECORD_DEPOSIT", "OUTLET-02");
+    assert(authCrossOutlet.authorized, "TEST 10: Strict outlet authorization isolation for ADMIN is REMOVED, allowed if outlet available");
+    
+    const authInvalidOutlet = checkActionAuthorization(db, { actor_id: "USR-ADMIN1", actor_role: "ADMIN", outlet_id: "OUTLET-01" }, "RECORD_DEPOSIT", "OUTLET-999");
+    assert(!authInvalidOutlet.authorized, "TEST 10b: Action rejected for ADMIN if outlet is not available");
   }
 
   // --- CATEGORY 3: PRIORITY & CLASSIFICATION (11-15) ---

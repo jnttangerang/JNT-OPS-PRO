@@ -111,6 +111,7 @@ export function isRoleValid(role?: string): boolean {
 }
 
 export function checkWorkflowAuthorization(
+  db: any,
   actor: ActorInfo,
   targetOutletId: string,
   requiresOwner: boolean = false
@@ -131,11 +132,13 @@ export function checkWorkflowAuthorization(
     };
   }
 
-  if (role === "ADMIN") {
-    if (actor.outlet_id && actor.outlet_id !== targetOutletId) {
+  if (role === "ADMIN") { 
+    const outlets = db?.MASTER_OUTLET || db?.Outlets || [];
+    const isOutletAvailable = outlets.some((o: any) => o.outlet_id === targetOutletId || o.id === targetOutletId);
+    if (!isOutletAvailable && targetOutletId !== "ALL" && targetOutletId) {
       return {
         authorized: false,
-        reason: `Akses ditolak: ADMIN outlet '${actor.outlet_id}' tidak dapat mengelola outlet '${targetOutletId}'.`
+        reason: `Akses ditolak: Outlet '${targetOutletId}' tidak tersedia atau tidak diizinkan untuk ADMIN.`
       };
     }
   }
@@ -349,7 +352,7 @@ export function createWorkflowCase(
     actor: ActorInfo;
   }
 ): { status: "success" | "error"; message: string; data?: WorkflowCaseRecord; error_code?: string } {
-  const auth = checkWorkflowAuthorization(input.actor, input.outlet_id);
+  const auth = checkWorkflowAuthorization(db, input.actor, input.outlet_id);
   if (!auth.authorized) {
     return { status: "error", message: auth.reason || "Unauthorized", error_code: "UNAUTHORIZED" };
   }
@@ -453,7 +456,7 @@ export function assignWorkflowCase(
     return { status: "error", message: `Workflow case '${input.workflow_id}' tidak ditemukan.`, error_code: "NOT_FOUND" };
   }
 
-  const auth = checkWorkflowAuthorization(input.actor, wf.outlet_id);
+  const auth = checkWorkflowAuthorization(db, input.actor, wf.outlet_id);
   if (!auth.authorized) {
     return { status: "error", message: auth.reason || "Unauthorized", error_code: "UNAUTHORIZED" };
   }
@@ -507,7 +510,7 @@ export function startWorkflowCase(
     return { status: "error", message: `Workflow case '${input.workflow_id}' tidak ditemukan.`, error_code: "NOT_FOUND" };
   }
 
-  const auth = checkWorkflowAuthorization(input.actor, wf.outlet_id);
+  const auth = checkWorkflowAuthorization(db, input.actor, wf.outlet_id);
   if (!auth.authorized) {
     return { status: "error", message: auth.reason || "Unauthorized", error_code: "UNAUTHORIZED" };
   }
@@ -564,7 +567,7 @@ export function resolveWorkflowCase(
     return { status: "error", message: `Workflow case '${input.workflow_id}' tidak ditemukan.`, error_code: "NOT_FOUND" };
   }
 
-  const auth = checkWorkflowAuthorization(input.actor, wf.outlet_id);
+  const auth = checkWorkflowAuthorization(db, input.actor, wf.outlet_id);
   if (!auth.authorized) {
     return { status: "error", message: auth.reason || "Unauthorized", error_code: "UNAUTHORIZED" };
   }
@@ -633,7 +636,7 @@ export function verifyWorkflowCase(
 
   // Verification requires OWNER if case is P0 or financial
   const requiresOwner = wf.priority === "P0" || wf.source_type === "FINANCIAL_CERTIFICATION";
-  const auth = checkWorkflowAuthorization(input.actor, wf.outlet_id, requiresOwner);
+  const auth = checkWorkflowAuthorization(db, input.actor, wf.outlet_id, requiresOwner);
   if (!auth.authorized) {
     return { status: "error", message: auth.reason || "Unauthorized", error_code: "UNAUTHORIZED" };
   }
@@ -728,7 +731,7 @@ export function reopenWorkflowCase(
     return { status: "error", message: `Workflow case '${input.workflow_id}' tidak ditemukan.`, error_code: "NOT_FOUND" };
   }
 
-  const auth = checkWorkflowAuthorization(input.actor, wf.outlet_id);
+  const auth = checkWorkflowAuthorization(db, input.actor, wf.outlet_id);
   if (!auth.authorized) {
     return { status: "error", message: auth.reason || "Unauthorized", error_code: "UNAUTHORIZED" };
   }
@@ -781,7 +784,7 @@ export function closeWorkflowCase(
     return { status: "error", message: `Workflow case '${input.workflow_id}' tidak ditemukan.`, error_code: "NOT_FOUND" };
   }
 
-  const auth = checkWorkflowAuthorization(input.actor, wf.outlet_id);
+  const auth = checkWorkflowAuthorization(db, input.actor, wf.outlet_id);
   if (!auth.authorized) {
     return { status: "error", message: auth.reason || "Unauthorized", error_code: "UNAUTHORIZED" };
   }
@@ -903,7 +906,7 @@ export function getWorkflowDetail(db: any, workflow_id: string, actor: ActorInfo
 
   if (!wf) return null;
 
-  const auth = checkWorkflowAuthorization(actor, wf.outlet_id);
+  const auth = checkWorkflowAuthorization(db, actor, wf.outlet_id);
   if (!auth.authorized) return null;
 
   const evalData = evaluateSLAAndAgeing(wf, Date.now());

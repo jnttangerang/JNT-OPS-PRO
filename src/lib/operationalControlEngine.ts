@@ -82,6 +82,7 @@ export function isRoleValid(role?: string): boolean {
  * Checks if actor is authorized to perform action.
  */
 export function checkActionAuthorization(
+  db: any,
   actor: ActorInfo,
   actionType: string,
   targetOutletId: string
@@ -96,12 +97,20 @@ export function checkActionAuthorization(
     };
   }
 
-  // Outlet isolation check for ADMIN
+  // Active outlet availability check for ADMIN
   if (role === "ADMIN") {
-    if (actor.outlet_id && actor.outlet_id !== targetOutletId) {
+    if (!targetOutletId) {
       return {
         authorized: false,
-        reason: `Pelanggaran isolasi outlet: ADMIN outlet '${actor.outlet_id}' tidak dapat melakukan aksi pada outlet '${targetOutletId}'.`
+        reason: "Akses ditolak: target outlet_id wajib diisi untuk role ADMIN."
+      };
+    }
+    const outlets = db?.MASTER_OUTLET || db?.Outlets || [];
+    const isOutletAvailable = outlets.some((o: any) => o.outlet_id === targetOutletId || o.id === targetOutletId);
+    if (!isOutletAvailable && targetOutletId !== "ALL") {
+      return {
+        authorized: false,
+        reason: `Akses ditolak: Outlet '${targetOutletId}' tidak tersedia atau tidak diizinkan untuk ADMIN.`
       };
     }
   }
@@ -408,7 +417,7 @@ export function executeControlAction(
   });
 
   // 2. Authorization & Isolation Validation
-  const authRes = checkActionAuthorization(actor, action_type, outlet_id);
+  const authRes = checkActionAuthorization(db, actor, action_type, outlet_id);
   if (!authRes.authorized) {
     logAuditEvent(db, {
       event_type: "CONTROL_ACTION_REJECTED",

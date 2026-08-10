@@ -28,6 +28,16 @@ import {
   closeWorkflowCase,
   getWorkflowSummary
 } from "./src/lib/operationalWorkflowEngine";
+import { getManagementIntelligence } from "./src/lib/managementIntelligenceEngine";
+import { 
+  getManagementReviewSummary,
+  getManagementReviewDetail,
+  createManagementReview,
+  analyzeManagementReview,
+  addManagementDecision,
+  completeManagementReview,
+  reopenManagementReview
+} from "./src/lib/managementReviewEngine";
 import {
   getControlTowerSummary,
   getControlTowerMatrix,
@@ -6192,6 +6202,165 @@ app.get("/api/workflow/history/:id", (req, res) => {
   const workflow_id = req.params.id;
   const logs = (db.AuditLogs || []).filter((l: any) => l.entity_id === workflow_id && l.entity_type === "WORKFLOW_CASE");
   return res.json({ status: "success", data: logs });
+});
+
+// === PHASE 38 MANAGEMENT INTELLIGENCE ENDPOINTS ===
+
+app.get("/api/intelligence/summary", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, role, actor_id, end_date } = req.query;
+  try {
+    const intel = getManagementIntelligence(db, {
+      outlet_id: outlet_id as string,
+      tanggal: tanggal as string,
+      end_date: end_date as string,
+      role: (role as "OWNER" | "ADMIN") || "OWNER",
+      actor_id: actor_id as string || "SYS"
+    });
+    return res.json({ status: "success", data: intel });
+  } catch (err: any) {
+    return res.status(403).json({ status: "error", message: err.message });
+  }
+});
+
+// === PHASE 39 MANAGEMENT REVIEW ENDPOINTS ===
+
+app.get("/api/management-review/summary", (req, res) => {
+  const db = readDb();
+  const { outlet_id, tanggal, role, actor_id } = req.query;
+  try {
+    const reviews = getManagementReviewSummary(db, {
+      outlet_id: outlet_id as string,
+      tanggal: tanggal as string,
+      role: (role as "OWNER" | "ADMIN") || "OWNER",
+      actor_id: actor_id as string || "SYS"
+    });
+    return res.json({ status: "success", data: reviews });
+  } catch (err: any) {
+    return res.status(403).json({ status: "error", message: err.message });
+  }
+});
+
+app.get("/api/management-review/detail/:id", (req, res) => {
+  const db = readDb();
+  const { role, actor_id, outlet_id } = req.query;
+  try {
+    const review = getManagementReviewDetail(db, req.params.id, {
+      role: (role as "OWNER" | "ADMIN") || "OWNER",
+      actor_id: actor_id as string || "SYS",
+      outlet_id: outlet_id as string
+    });
+    return res.json({ status: "success", data: review });
+  } catch (err: any) {
+    const status = err.message.startsWith("NOT_FOUND") ? 404 : 403;
+    return res.status(status).json({ status: "error", message: err.message });
+  }
+});
+
+app.post("/api/management-review/create", (req, res) => {
+  const db = readDb();
+  const { outlet_id, period, tanggal, role, actor_id } = req.body;
+  try {
+    const review = createManagementReview(db, {
+      outlet_id,
+      period,
+      tanggal
+    }, {
+      role: (role as "OWNER" | "ADMIN") || "OWNER",
+      actor_id: actor_id as string || "SYS",
+      outlet_id: role === "ADMIN" ? outlet_id : undefined
+    });
+    writeDb(db);
+    return res.json({ status: "success", data: review });
+  } catch (err: any) {
+    return res.status(403).json({ status: "error", message: err.message });
+  }
+});
+
+app.post("/api/management-review/analyze", (req, res) => {
+  const db = readDb();
+  const { review_id, role, actor_id, outlet_id } = req.body;
+  try {
+    const review = analyzeManagementReview(db, { review_id }, {
+      role: (role as "OWNER" | "ADMIN") || "OWNER",
+      actor_id: actor_id as string || "SYS",
+      outlet_id
+    });
+    writeDb(db);
+    return res.json({ status: "success", data: review });
+  } catch (err: any) {
+    return res.status(403).json({ status: "error", message: err.message });
+  }
+});
+
+app.post("/api/management-review/decision", (req, res) => {
+  const db = readDb();
+  const { review_id, decision_type, reason, source_type, source_id, priority, role, actor_id, outlet_id } = req.body;
+  try {
+    const decision = addManagementDecision(db, {
+      review_id, decision_type, reason, source_type, source_id, priority
+    }, {
+      role: (role as "OWNER" | "ADMIN") || "OWNER",
+      actor_id: actor_id as string || "SYS",
+      outlet_id
+    });
+    writeDb(db);
+    return res.json({ status: "success", data: decision });
+  } catch (err: any) {
+    return res.status(403).json({ status: "error", message: err.message });
+  }
+});
+
+app.post("/api/management-review/complete", (req, res) => {
+  const db = readDb();
+  const { review_id, role, actor_id, outlet_id } = req.body;
+  try {
+    const review = completeManagementReview(db, { review_id }, {
+      role: (role as "OWNER" | "ADMIN") || "OWNER",
+      actor_id: actor_id as string || "SYS",
+      outlet_id
+    });
+    writeDb(db);
+    return res.json({ status: "success", data: review });
+  } catch (err: any) {
+    return res.status(403).json({ status: "error", message: err.message });
+  }
+});
+
+app.post("/api/management-review/reopen", (req, res) => {
+  const db = readDb();
+  const { review_id, role, actor_id, outlet_id } = req.body;
+  try {
+    const review = reopenManagementReview(db, { review_id }, {
+      role: (role as "OWNER" | "ADMIN") || "OWNER",
+      actor_id: actor_id as string || "SYS",
+      outlet_id
+    });
+    writeDb(db);
+    return res.json({ status: "success", data: review });
+  } catch (err: any) {
+    return res.status(403).json({ status: "error", message: err.message });
+  }
+});
+
+app.get("/api/management-review/history/:id", (req, res) => {
+  const db = readDb();
+  const { role, actor_id, outlet_id } = req.query;
+  try {
+    const review = getManagementReviewDetail(db, req.params.id, {
+      role: (role as "OWNER" | "ADMIN") || "OWNER",
+      actor_id: actor_id as string || "SYS",
+      outlet_id: outlet_id as string
+    });
+    
+    // Get Audit Trail specifically for this review
+    const logs = (db.AuditLogs || []).filter((a: any) => a.entity_id === req.params.id && a.entity_type === "MANAGEMENT_REVIEW")
+      .sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
+    return res.json({ status: "success", data: logs });
+  } catch (err: any) {
+    return res.status(403).json({ status: "error", message: err.message });
+  }
 });
 
 // === PRODUCTION STANDALONE INTEGRATION ===

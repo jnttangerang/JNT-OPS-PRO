@@ -35,6 +35,8 @@ export default function ManagementControlTowerPage({
   const [loading, setLoading] = useState(true);
   const [summaryData, setSummaryData] = useState<any>(null);
   const [workflowSummary, setWorkflowSummary] = useState<any>(null);
+  const [intelligenceData, setIntelligenceData] = useState<any>(null);
+  const [reviewData, setReviewData] = useState<any[]>([]);
   const [decisions, setDecisions] = useState<any[]>([]);
   const [matrixData, setMatrixData] = useState<any[]>([]);
   const [trendData, setTrendData] = useState<any[]>([]);
@@ -45,12 +47,14 @@ export default function ManagementControlTowerPage({
     setLoading(true);
     setError(null);
     try {
-      const [summaryRes, matrixRes, trendRes, decisionsRes, workflowRes] = await Promise.all([
+      const [summaryRes, matrixRes, trendRes, decisionsRes, workflowRes, intelRes, reviewRes] = await Promise.all([
         fetch(`/api/control-tower/summary?outlet_id=${activeOutletId}&tanggal=${tanggal}`).then(res => res.json()),
         fetch(`/api/control-tower/matrix?tanggal=${tanggal}`).then(res => res.json()),
         fetch(`/api/control-tower/trend?outlet_id=${activeOutletId}&end_date=${tanggal}&days=7`).then(res => res.json()),
         fetch(`/api/management/decisions?outlet_id=${session.role === "OWNER" ? "" : activeOutletId}&role=${session.role}&tanggal=${tanggal}`).then(res => res.json()),
-        fetch(`/api/workflow/summary?outlet_id=${activeOutletId}&tanggal=${tanggal}`).then(res => res.json())
+        fetch(`/api/workflow/summary?outlet_id=${activeOutletId}&tanggal=${tanggal}`).then(res => res.json()),
+        fetch(`/api/intelligence/summary?outlet_id=${activeOutletId}&tanggal=${tanggal}&role=${session.role}&actor_id=${session.user?.id || "SYS"}`).then(res => res.json()),
+        fetch(`/api/management-review/summary?outlet_id=${activeOutletId}&tanggal=${tanggal}&role=${session.role}&actor_id=${session.user?.id || "SYS"}`).then(res => res.json())
       ]);
 
       if (summaryRes.status === "error") throw new Error(summaryRes.message);
@@ -61,6 +65,12 @@ export default function ManagementControlTowerPage({
       setDecisions(decisionsRes.data || []);
       if (workflowRes.status === "success" || workflowRes.data) {
         setWorkflowSummary(workflowRes.data);
+      }
+      if (intelRes.status === "success" || intelRes.data) {
+        setIntelligenceData(intelRes.data);
+      }
+      if (reviewRes.status === "success" || reviewRes.data) {
+        setReviewData(reviewRes.data || []);
       }
       setLastUpdated(new Date());
     } catch (err: any) {
@@ -258,6 +268,59 @@ export default function ManagementControlTowerPage({
             </div>
           )}
 
+          {/* MANAGEMENT REVIEW QUEUE */}
+          {reviewData && reviewData.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-indigo-600" />
+                <h3 className="font-black text-gray-900 tracking-tight text-sm uppercase">Management Review Cycle</h3>
+                <span className="ml-auto bg-indigo-100 text-indigo-700 text-[10px] font-black px-2 py-0.5 rounded-full">
+                  {reviewData.length} REVIEWS
+                </span>
+              </div>
+              <div className="divide-y divide-gray-100 bg-white">
+                {reviewData.map((review: any) => (
+                  <div key={review.review_id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-gray-50/50 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${
+                          review.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-700 border-emerald-200' :
+                          review.status === 'ACTION_REQUIRED' ? 'bg-red-100 text-red-700 border-red-200' :
+                          review.status === 'ACTION_IN_PROGRESS' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                          review.status === 'VERIFICATION_REQUIRED' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' :
+                          'bg-blue-100 text-blue-700 border-blue-200'
+                        }`}>
+                          {review.status}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="font-bold text-gray-900 text-sm">{review.review_id} <span className="text-gray-400 font-normal ml-1">({review.period})</span></p>
+                        <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
+                          <span className="flex items-center gap-1 font-medium"><Building2 className="h-3 w-3"/> {outlets.find(o => o.outlet_id === review.outlet_id)?.nama_outlet || review.outlet_id}</span>
+                          <span className="flex items-center gap-1"><Calendar className="h-3 w-3"/> {review.tanggal}</span>
+                          {review.deviations?.length > 0 && (
+                            <span className="flex items-center gap-1 text-red-600 font-bold"><AlertTriangle className="h-3 w-3"/> {review.deviations.length} Deviations</span>
+                          )}
+                          {review.insights?.length > 0 && (
+                            <span className="flex items-center gap-1 text-blue-600 font-medium"><Activity className="h-3 w-3"/> {review.insights.length} Insights</span>
+                          )}
+                          {review.decisions?.length > 0 && (
+                            <span className="flex items-center gap-1 text-indigo-600 font-bold"><Shield className="h-3 w-3"/> {review.decisions.length} Decisions</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                       <button className="px-4 py-1.5 bg-white border border-gray-200 shadow-sm rounded-lg text-xs font-bold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-all">
+                         View Details
+                       </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* WORKFLOW & SLA HEALTH CONTROL PANEL */}
           {workflowSummary && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -356,6 +419,160 @@ export default function ManagementControlTowerPage({
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* PHASE 38 - MANAGEMENT INTELLIGENCE SECTIONS */}
+          {intelligenceData && (
+            <div className="space-y-4">
+              
+              {/* OPERATIONAL INTELLIGENCE */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* BOTTLENECKS */}
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                   <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-3">Top Bottleneck</h3>
+                   {intelligenceData.bottlenecks?.length > 0 ? (
+                     <div className="space-y-2">
+                       {intelligenceData.bottlenecks.map((b: any, idx: number) => (
+                         <div key={idx} className="bg-red-50 p-3 rounded-lg border border-red-100 flex items-start gap-3">
+                           <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
+                           <div>
+                             <h4 className="text-sm font-bold text-red-900">{b.bottleneck_type.replace(/_/g, " ")}</h4>
+                             <p className="text-xs text-red-700">{b.evidence}</p>
+                             <div className="mt-2 text-xs font-bold text-red-800 bg-red-100 px-2 py-0.5 rounded inline-block">Action: {b.recommended_action}</div>
+                           </div>
+                         </div>
+                       ))}
+                     </div>
+                   ) : (
+                     <div className="text-xs text-gray-500 italic bg-gray-50 p-3 rounded-lg text-center">No major bottlenecks detected.</div>
+                   )}
+                </div>
+
+                {/* MANAGEMENT INSIGHTS & RECURRING EXCEPTIONS */}
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm flex flex-col gap-4">
+                   <div>
+                     <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-3">Management Insights</h3>
+                     {intelligenceData.management_insights?.length > 0 ? (
+                       <div className="space-y-2">
+                         {intelligenceData.management_insights.map((ins: any, idx: number) => (
+                           <div key={idx} className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+                             <div className="flex justify-between items-center mb-1">
+                               <h4 className="text-xs font-bold text-orange-900">{ins.type.replace(/_/g, " ")}</h4>
+                               <span className="text-[10px] font-bold text-orange-700 uppercase bg-orange-100 px-1.5 py-0.5 rounded">{ins.direction}</span>
+                             </div>
+                             <p className="text-xs text-orange-800 mb-1">{ins.explanation}</p>
+                             <div className="text-[10px] text-gray-600 font-medium">Recommended: <span className="font-bold text-gray-900">{ins.recommended_action}</span></div>
+                           </div>
+                         ))}
+                       </div>
+                     ) : (
+                       <div className="text-xs text-gray-500 italic bg-gray-50 p-2 rounded-lg text-center">No critical insights.</div>
+                     )}
+                   </div>
+                   
+                   <div>
+                     <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-3">Recurring Exceptions</h3>
+                     {intelligenceData.recurring_exceptions?.length > 0 ? (
+                       <div className="space-y-2">
+                         {intelligenceData.recurring_exceptions.slice(0, 3).map((re: any, idx: number) => (
+                           <div key={idx} className="bg-gray-50 p-2 rounded-lg border border-gray-200 flex justify-between items-center">
+                             <div>
+                               <div className="text-xs font-bold text-gray-900">{re.exception_type}</div>
+                               <div className="text-[10px] text-gray-500">{re.classification} ({re.occurrence}x occurrences)</div>
+                             </div>
+                             <div className="text-right">
+                               <div className="text-[10px] font-bold text-red-600">{re.open_count} Open</div>
+                               <div className="text-[10px] text-gray-500">{re.resolved_count} Resolved</div>
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     ) : (
+                       <div className="text-xs text-gray-500 italic bg-gray-50 p-2 rounded-lg text-center">No recurring exceptions detected.</div>
+                     )}
+                   </div>
+                </div>
+              </div>
+
+              {/* OUTLET HEALTH (OWNER ONLY) */}
+              {session.role === "OWNER" && intelligenceData.outlet_health?.length > 0 && (
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                  <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-3">Outlet Health & Performance</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-100 bg-gray-50/50">
+                          <th className="py-2 px-3 text-[10px] font-black text-gray-500 uppercase">Outlet</th>
+                          <th className="py-2 px-3 text-[10px] font-black text-gray-500 uppercase text-center">Score</th>
+                          <th className="py-2 px-3 text-[10px] font-black text-gray-500 uppercase text-center">Volume</th>
+                          <th className="py-2 px-3 text-[10px] font-black text-gray-500 uppercase text-center">Open Exc</th>
+                          <th className="py-2 px-3 text-[10px] font-black text-gray-500 uppercase text-center">Closing</th>
+                          <th className="py-2 px-3 text-[10px] font-black text-gray-500 uppercase text-center">Overdue Wf</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {intelligenceData.outlet_health.map((oh: any, idx: number) => (
+                          <tr key={idx} className="border-b border-gray-50 hover:bg-gray-50">
+                            <td className="py-2 px-3 text-xs font-bold text-gray-900">{oh.outlet_id}</td>
+                            <td className="py-2 px-3 text-center">
+                              <span className={`text-xs font-black px-2 py-0.5 rounded ${
+                                oh.health_score >= 80 ? 'bg-emerald-100 text-emerald-800' :
+                                oh.health_score >= 60 ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'
+                              }`}>{oh.health_score}</span>
+                            </td>
+                            <td className="py-2 px-3 text-xs text-center font-mono">{oh.transaction_volume}</td>
+                            <td className="py-2 px-3 text-xs text-center font-mono">{oh.open_exceptions}</td>
+                            <td className="py-2 px-3 text-xs text-center font-mono">{oh.closing_status}</td>
+                            <td className="py-2 px-3 text-xs text-center font-mono">{oh.overdue_workflow}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* ADMIN PERFORMANCE */}
+              {intelligenceData.admin_performance?.length > 0 && (
+                <div className="bg-white p-5 rounded-xl border border-gray-100 shadow-sm">
+                  <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-3">Admin Workload & Performance</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {intelligenceData.admin_performance.map((ap: any, idx: number) => (
+                      <div key={idx} className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-gray-200">
+                          <div className="font-bold text-sm text-gray-900">{ap.admin_id}</div>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                            ap.workload_classification === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                            ap.workload_classification === 'HIGH' ? 'bg-orange-100 text-orange-800' :
+                            ap.workload_classification === 'NORMAL' ? 'bg-blue-100 text-blue-800' :
+                            'bg-emerald-100 text-emerald-800'
+                          }`}>{ap.workload_classification} WORKLOAD</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                          <div>
+                            <div className="text-[10px] text-gray-500 uppercase">Volume</div>
+                            <div className="font-mono font-bold text-gray-900">{ap.total_resi}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-gray-500 uppercase">Backlog</div>
+                            <div className="font-mono font-bold text-gray-900">{ap.open_backlog}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-gray-500 uppercase">Resolved</div>
+                            <div className="font-mono font-bold text-emerald-700">{ap.workflow_resolved}</div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] text-gray-500 uppercase">SLA Breach</div>
+                            <div className="font-mono font-bold text-red-600">{ap.sla_breach}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
 
