@@ -1,606 +1,531 @@
-import ManagementControlTowerPage from "./components/owner/ManagementControlTowerPage";
-import React, { useState, useEffect } from "react";
-import { 
-  Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2, Tags, Wallet, Users, Terminal, Upload
-} from "lucide-react";
-import useAppsScript from "./hooks/useAppsScript";
-import LoginPage from "./components/LoginPage";
-import PreInputPage from "./components/PreInputPage";
-import TransaksiPage from "./components/TransaksiPage";
-import DashboardPage from "./components/DashboardPage";
-import AdminDashboardPage from "./components/admin/AdminDashboardPage";
-import { LayoutDashboard, Settings } from "lucide-react";
-import RiwayatTransaksiPage from "./components/RiwayatTransaksiPage";
-import UlasanMapsPage from "./components/UlasanMapsPage";
-import CustomerPage from "./components/CustomerPage";
-import ImportCustomerPage from "./components/customer/ImportCustomerPage";
-import DeveloperPage from "./components/DeveloperPage";
-import SettingsPage from "./components/owner/SettingsPage";
-import SetoranOwnerPage from "./components/owner/SetoranOwnerPage";
-import OwnerAuditPage from "./components/owner/OwnerAuditPage";
-import DailyClosingPage from "./components/owner/DailyClosingPage";
-import ReportingPage from "./components/owner/ReportingPage";
-import OwnerAIAssistantPage from "./components/owner/OwnerAIAssistantPage";
-import KeuanganOutletPage from "./components/owner/KeuanganOutletPage";
-import { Lock, Shield, BarChart3, Bot, Sparkles, Activity } from "lucide-react";
-import ToastContainer from "./components/ToastContainer";
-import QuickAction from "./components/QuickAction";
-import { SessionData, Outlet } from "./types";
-import { toast } from "./utils/toast";
+import { SellerService } from './utils/sellerService';
+import { Config, CONFIG_KEYS } from './utils/config';
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { useState, useEffect, useRef } from "react";
+import { AppView, ScanRecord } from "./types";
+import { Header } from "./components/Header";
+import { WelcomeScreen } from "./components/WelcomeScreen";
+import { ScannerScreen } from "./components/ScannerScreen";
+import { OwnerScreen } from "./components/OwnerScreen";
+import { dbService } from "./utils/db";
+import { motion, AnimatePresence } from "motion/react";
+import { AlertCircle, AlertTriangle, X, Bell, RefreshCw, Check, HelpCircle, Layers } from "lucide-react";
+import { Toaster, toast } from "sonner";
 
 export default function App() {
-  const { callBackend } = useAppsScript();
-
-  // Authentication State
-  const [session, setSession] = useState<SessionData | null>(null);
-  
-  // Navigation State
-  const [currentView, setCurrentView] = useState<string>("login");
-
-  // Mobile Sidebar Drawer Toggle State
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
-  // Outlet State
-  const [outlets, setOutlets] = useState<Outlet[]>([]);
-  const [activeOutletId, setActiveOutletId] = useState<string>("");
-
-  // Loading indicator for initial settings
-  const [loadingConfig, setLoadingConfig] = useState(false);
-
-  // Load active session from localStorage on start
-  useEffect(() => {
-    const savedSession = localStorage.getItem("jnt_session");
-    if (savedSession) {
-      try {
-        const parsed = JSON.parse(savedSession) as SessionData;
-        setSession(parsed);
-        setActiveOutletId(parsed.outlet_id_home);
-        setCurrentView(parsed.role.toUpperCase() === "OWNER" ? "dashboard" : parsed.role.toUpperCase() === "ADMIN" ? "admin-dashboard" : "pre-input");
-      } catch (e) {
-        localStorage.removeItem("jnt_session");
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const isSilentSyncingRef = useRef(false);
+  const [currentView, setView] = useState<AppView>(() => {
+    const savedView = Config.get(CONFIG_KEYS.CURRENT_VIEW) as AppView;
+    if (savedView === "SCANNER") {
+      const savedOut = Config.get(CONFIG_KEYS.SAVED_OUTLET) || "";
+      const savedSel = Config.get(CONFIG_KEYS.SAVED_SELLER) || "";
+      const savedOp = Config.get(CONFIG_KEYS.SAVED_OPERATOR) || "";
+      if (savedOut && savedSel && savedOp) {
+        return "SCANNER";
       }
     }
-  }, []);
+    if (savedView === "OWNER_DASHBOARD" && Config.get(CONFIG_KEYS.OWNER_AUTHENTICATED) === "true") {
+      return "OWNER_DASHBOARD";
+    }
+    return "WELCOME";
+  });
 
-  // Keyboard shortcut listener for Ctrl+F focus search
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
-        const searchInput = document.querySelector<HTMLInputElement>(
-          'input[type="text"][placeholder*="Cari"], input[type="text"][placeholder*="cari"], input[data-search="true"]'
-        );
-        if (searchInput) {
-          e.preventDefault();
-          searchInput.focus();
-          searchInput.select();
-        }
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  const changeView = (view: AppView) => {
+    setView(view);
+    Config.set(CONFIG_KEYS.CURRENT_VIEW, String(view));
+  };
 
-  // Fetch Outlets from backend to populate tasks
+  // Selection state
+  const [selectedOutlet, setSelectedOutlet] = useState("");
+  const [selectedSeller, setSelectedSeller] = useState("");
+  const [selectedOperator, setSelectedOperator] = useState("");
+
+  // Sync state
+  const [isOffline, setIsOffline] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatusText, setSyncStatusText] = useState("");
+  const [isPulling, setIsPulling] = useState(false);
+  const [isCloudDataFresh, setIsCloudDataFresh] = useState<boolean>(() => {
+    return Config.get(CONFIG_KEYS.IS_CLOUD_DATA_FRESH) === "true";
+  });
+
   useEffect(() => {
-    const fetchOutlets = async () => {
-      setLoadingConfig(true);
-      try {
-        const response = await callBackend("getOutlets");
-        if (response.status === "success" && response.data) {
-          setOutlets(response.data);
-          // If session exists, pre-set task location
-          if (session) {
-            setActiveOutletId(session.outlet_id_home);
-          } else if (response.data.length > 0) {
-            setActiveOutletId(response.data[0].outlet_id);
+    Config.set(CONFIG_KEYS.IS_CLOUD_DATA_FRESH, String(String(isCloudDataFresh)));
+  }, [isCloudDataFresh]);
+
+  // Push notification state for "Order Cancelled" and system updates
+  const [notifications, setNotifications] = useState<{ id: string; message: string; timestamp: string; type?: "success" | "error" | "warning"; title?: string }[]>([]);
+
+  // Acknowledge retake state to avoid duplicate notifications
+  const [acknowledgedRetakes, setAcknowledgedRetakes] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("jt_acknowledged_retakes");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleAcknowledgeRetake = (resi: string) => {
+    setAcknowledgedRetakes(prev => {
+      const updated = [...new Set([...prev, resi])];
+      localStorage.setItem("jt_acknowledged_retakes", JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const pullDatabaseFromCloud = async () => {
+    const config = dbService.getCloudConfig();
+    const hasAppsScript = config.appsScriptUrl && 
+      !config.appsScriptUrl.includes("Example_Apps_Script_Web_App") && 
+      !config.appsScriptUrl.includes("AKfycbz_Example");
+
+    if (!hasAppsScript) return;
+
+    setIsPulling(true);
+    const timeStr = new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+    try {
+      await dbService.pullMasters();
+      await dbService.pullRecords();
+      updatePendingCount();
+      setIsCloudDataFresh(true);
+      
+      // Push positive sync confirmation notification
+      toast.success("SINKRONISASI SUKSES", {
+        description: "Berhasil menarik data terupdate dari Google Spreadsheet! List Seller, Operator, Outlet dan seluruh histori paket pickup kini sinkron.",
+      });
+    } catch (err: any) {
+      console.warn("Manual pull from cloud failed", err);
+      setIsCloudDataFresh(false);
+      
+      // Push error sync notification
+      toast.error("SINKRONISASI GAGAL", {
+        description: `Gagal menarik data dari Google Sheets: ${err?.message || err || "Koneksi terputus."}. Pastikan Apps Script Web App URL valid.`,
+      });
+    } finally {
+      setIsPulling(false);
+    }
+  };
+
+  // Show retake notifications at the operator level (WELCOME or SCANNER views)
+  useEffect(() => {
+    if (currentView === "OWNER_LOGIN" || currentView === "OWNER_DASHBOARD") {
+      return;
+    }
+
+    const allRecords = dbService.getRecords();
+    const retakeRequests = allRecords.filter(
+      (r) => r.RetakeStatus === "PENDING" && !acknowledgedRetakes.includes(r.Resi)
+    );
+
+    if (retakeRequests.length > 0) {
+      // Find the first unacknowledged retake request
+      const topRetake = retakeRequests[0];
+      
+      toast.warning("FOTO ULANG (RETAKE)", {
+        description: `Butuh Foto Ulang: Resi ${topRetake.Resi} (Seller: ${topRetake.Seller}) ditandai BURAM oleh Owner! Harap foto ulang paket tersebut.`,
+        duration: 15000,
+        id: `retake-toast-${topRetake.Resi}`, // unique ID to prevent duplicate toast spam
+        action: {
+          label: "Mengerti",
+          onClick: () => {
+            handleAcknowledgeRetake(topRetake.Resi);
           }
         }
-      } catch (err) {
-        console.error("Failed to load outlets configuration", err);
-      } finally {
-        setLoadingConfig(false);
+      });
+    }
+  }, [currentView, acknowledgedRetakes, pendingCount, isSyncing, isPulling, isOffline]);
+
+  // Load state on mount
+  useEffect(() => {
+    // Use actual browser online status on mount
+    const isBrowserOnline = window.navigator.onLine;
+    const initialOffline = !isBrowserOnline;
+    setIsOffline(initialOffline);
+    
+    // Also sync the preference to match reality so it doesn't get stuck
+    if (isBrowserOnline) {
+      dbService.setOfflinePreference(false);
+    }
+
+    const handleOnline = () => {
+      setIsOffline(false);
+      dbService.setOfflinePreference(false);
+      Config.sync();
+      SellerService.sync();
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      dbService.setOfflinePreference(true);
+    };
+    
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    
+    if (window.navigator.onLine) {
+      Config.sync();
+      SellerService.sync();
+    }
+
+    // Retrieve previous selected batch setup
+    const savedOut = Config.get(CONFIG_KEYS.SAVED_OUTLET) || "";
+    const savedSel = Config.get(CONFIG_KEYS.SAVED_SELLER) || "";
+    const savedOp = Config.get(CONFIG_KEYS.SAVED_OPERATOR) || "";
+
+    setSelectedOutlet(savedOut);
+    setSelectedSeller(savedSel);
+    setSelectedOperator(savedOp);
+
+    updatePendingCount();
+
+    // Auto pull data from Spreadsheet on startup if online and appsScriptUrl is configured
+    const autoPullData = async () => {
+      const config = dbService.getCloudConfig();
+      const hasAppsScript = config.appsScriptUrl && 
+        !config.appsScriptUrl.includes("Example_Apps_Script_Web_App") && 
+        !config.appsScriptUrl.includes("AKfycbz_Example");
+      
+      if (hasAppsScript && !initialOffline) {
+        setIsPulling(true);
+        try {
+          await Config.sync(); // Also sync DATA_MASTER
+          await SellerService.sync(); // Load Seller Master
+          await dbService.pullMasters();
+          await dbService.pullRecords();
+          updatePendingCount();
+          setIsCloudDataFresh(true);
+        } catch (err) {
+          console.warn("Auto pull on startup failed, using local cache", err);
+          setIsCloudDataFresh(false);
+        } finally {
+          setIsPulling(false);
+        }
+      } else {
+        setIsCloudDataFresh(false);
       }
     };
 
-    fetchOutlets();
-  }, [session]);
+    autoPullData();
 
-  const handleLoginSuccess = (userSession: SessionData) => {
-    setSession(userSession);
-    setActiveOutletId(userSession.outlet_id_home);
-    localStorage.setItem("jnt_session", JSON.stringify(userSession));
-    setCurrentView(userSession.role.toUpperCase() === "OWNER" ? "dashboard" : userSession.role.toUpperCase() === "ADMIN" ? "admin-dashboard" : "pre-input");
+    // Setup event listener for background retry backoff indicators
+    const handleRetryEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      toast.warning(`KONEKSI TERGANGGU (${detail.attempt}/${detail.maxAttempts})`, {
+        description: `Mencoba kirim ulang data otomatis dalam ${Math.round(detail.nextDelay / 1000)} detik...`,
+        duration: 4000,
+      });
+    };
+
+    window.addEventListener("sync-retry-attempt", handleRetryEvent);
+
+    // Set up a periodic background sync simulation if online
+    const interval = setInterval(() => {
+      if (!isOffline && !isSyncing) {
+        // Look for any pending check to auto sync
+        const pending = dbService.getRecords().filter(r => r.SyncStatus === "PENDING").length;
+        if (pending > 0) {
+          silentSyncPending();
+        }
+      }
+    }, 15000); // check ever 15 seconds
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("sync-retry-attempt", handleRetryEvent);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [isOffline, isSyncing]);
+
+  const updatePendingCount = () => {
+    const records = dbService.getRecords();
+    const pending = records.filter((r) => r.SyncStatus === "PENDING").length;
+    setPendingCount(pending);
+
+    // Automatically trigger upload if in online mode and records are pending and not already syncing
+    if (!isOffline && pending > 0 && !isSyncing && !isSilentSyncingRef.current) {
+      silentSyncPending();
+    }
   };
 
-  const handleLogout = () => {
-    setSession(null);
-    localStorage.removeItem("jnt_session");
-    localStorage.removeItem("pending_transaksi_id");
-    setCurrentView("login");
-    toast.info("Anda telah berhasil keluar dari akun.");
+  const handleRecordAdded = () => {
+    setIsCloudDataFresh(false);
+    updatePendingCount();
   };
 
-  // Restrict Admin override options based on role lock
-  const handleActiveOutletChange = (newId: string) => {
-    if (!session) return;
+  // Handles manual batch upload trigger ("Upload Sekarang")
+  const triggerSync = async () => {
+    if (isSyncing || pendingCount === 0) return;
     
-    // ADMIN can only override if tasking is allowed, but we allow full dropdown selection 
-    // per prompt instructions: "ADMIN: outlet_id_home terkunci, tapi ada Lokasi Tugas Aktif dropdown..."
-    setActiveOutletId(newId);
-  };
+    setIsSyncing(true);
+    setSyncStatusText("Menghubungkan ke Google Apps Script API...");
 
-  const handleClearCache = () => {
-    if (confirm("Apakah Anda yakin ingin menghapus seluruh cache dan data lokal aplikasi? Anda akan dialihkan ke halaman login.")) {
-      localStorage.clear();
-      sessionStorage.clear();
-      setSession(null);
-      setCurrentView("login");
-      toast.success("Cache dan data lokal berhasil dibersihkan!");
-      setTimeout(() => {
-        window.location.reload();
-      }, 500);
+    try {
+      // Simulate real-time upload latency with visual alerts
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setSyncStatusText("Mengupload foto resi terkompresi ke Google Drive...");
+      
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setSyncStatusText("Menyisipkan entri rekaman data ke Google Spreadsheet 'Pickup Ecommerce'...");
+
+      const stats = await dbService.syncPendingRecords();
+      setSyncStatusText(`Sukses mensinkronkan ${stats.successCount} data paket pickup!`);
+      setIsCloudDataFresh(true);
+      
+      // Keep successful prompt briefly
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (err) {
+      console.error("Sync error", err);
+      toast.error("Gagal mengupload", { description: "Pastikan konektivitas internet aktif." });
+    } finally {
+      setIsSyncing(false);
+      setSyncStatusText("");
+      updatePendingCount();
     }
   };
 
-  type NavItem = { id: string; label: string; icon: React.ComponentType<any>; iconColor?: string };
-  type NavGroup = { title: string; items: NavItem[] };
-  
-  const navGroups: NavGroup[] = [];
-  
-  if (session) {
-    if (session.role === "ADMIN") {
-      navGroups.push(
-        {
-          title: "OPERASIONAL",
-          items: [
-            { id: "admin-dashboard", label: "Dashboard", icon: Landmark },
-            { id: "pre-input", label: "Pre-Input & Workspace", icon: Clipboard },
-            { id: "transaksi", label: "Resi & Bayar", icon: FileText },            
-            { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
-            { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
-            { id: "daily-closing", label: "Daily Closing", icon: Lock },
-          ]
-        },
-        {
-          title: "CUSTOMER",
-          items: [
-            { id: "dashboard-customer", label: "Dashboard Customer", icon: BarChart3 },
-            { id: "customer", label: "Data Customer", icon: Users },
-            { id: "analisa-customer", label: "Analisa Customer", icon: Star },
-          ]
-        },
-        {
-          title: "PENGATURAN",
-          items: [
-            { id: "settings", label: "Pengaturan Akun", icon: Settings }
-          ]
-        }
-      );
-    } else if (session.role === "OWNER") {
-      navGroups.push(
-        {
-          title: "OPERASIONAL",
-          items: [
-            { id: "dashboard", label: "Dashboard", icon: Landmark },
-            { id: "pre-input", label: "Pre-Input", icon: Clipboard },
-            { id: "transaksi", label: "Resi & Bayar", icon: FileText },            
-            { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
-            { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
-          ]
-        },
-        {
-          title: "CUSTOMER",
-          items: [
-            { id: "dashboard-customer", label: "Dashboard Customer", icon: BarChart3 },
-            { id: "customer", label: "Data Customer", icon: Users },
-            { id: "import-customer", label: "Import Customer", icon: Upload },
-            { id: "analisa-customer", label: "Analisa Customer", icon: Star },
-          ]
-        },
-        {
-          title: "MONITORING",
-          items: [
-            { id: "ai-assistant", label: "AI Audit Assistant", icon: Bot, iconColor: "text-amber-500" },
-            { id: "reporting", label: "Laporan & Analitik", icon: BarChart3 },
-            { id: "ulasan-maps", label: "Ulasan Maps", icon: Star, iconColor: "text-yellow-500 fill-yellow-500" },
-          ]
-        },
-        {
-          title: "KEUANGAN",
-          items: [
-            { id: "setoran-owner", label: "Persetujuan Setoran", icon: Clipboard },
-            { id: "owner-audit", label: "Audit Engine", icon: Shield },
-            { id: "daily-closing", label: "Daily Closing", icon: Lock },
-          ]
-        },
-        {
-          title: "PENGATURAN",
-          items: [
-            { id: "settings", label: "Pengaturan & Konfigurasi", icon: Settings },
-            { id: "developer", label: "Developer", icon: Terminal, iconColor: "text-blue-600" },
-          ]
-        }
-      );
+  // Auto/Silent Sync in background
+  const silentSyncPending = async () => {
+    if (isSilentSyncingRef.current) return;
+    isSilentSyncingRef.current = true;
+    try {
+      const stats = await dbService.syncPendingRecords();
+      if (stats && stats.successCount > 0) {
+        setIsCloudDataFresh(true);
+      }
+    } catch (e) {
+      console.warn("Silent background sync failed, will retry", e);
+    } finally {
+      isSilentSyncingRef.current = false;
+      // Safeguard against recursive call loops: read direct from store and update state to refresh badges
+      const records = dbService.getRecords();
+      const pending = records.filter((r) => r.SyncStatus === "PENDING").length;
+      setPendingCount(pending);
     }
-  }
+  };
 
-  const renderNavLinks = (onItemClick?: () => void) => {
-    return navGroups.map((group, gIdx) => (
-      <div key={gIdx} className="mb-6 last:mb-0">
-        <h3 className="px-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">{group.title}</h3>
-        <div className="space-y-1">
-          {group.items.map((item) => {
-            const Icon = item.icon;
-            const isActive = currentView === item.id;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setCurrentView(item.id);
-                  if (onItemClick) onItemClick();
-                }}
-                className={`w-full text-left py-2.5 px-4 rounded-xl flex items-center gap-3 transition-all text-xs font-bold cursor-pointer ${
-                  isActive 
-                    ? "bg-red-50 text-[#E4002B] border-l-4 border-[#E4002B] pl-3" 
-                    : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                }`}
-              >
-                <Icon className={`h-4.5 w-4.5 ${item.iconColor || ""}`} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    ));
+  const handleStartScanning = (config: {
+    outlet: string;
+    seller: string;
+    operator: string;
+  }) => {
+    // Cache setup parameters
+    setSelectedOutlet(config.outlet);
+    setSelectedSeller(config.seller);
+    setSelectedOperator(config.operator);
+
+    Config.set(CONFIG_KEYS.SAVED_OUTLET, config.outlet);
+    Config.set(CONFIG_KEYS.SAVED_SELLER, config.seller);
+    Config.set(CONFIG_KEYS.SAVED_OPERATOR, config.operator);
+
+    changeView("SCANNER");
+    updatePendingCount();
+  };
+
+  // Owner marked order as cancelled or requested retake -> inform operators immediately!
+  const handleOwnerUpdatedStatus = () => {
+    updatePendingCount();
+  };
+
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/50 flex flex-col font-sans">
-      <ToastContainer />
-      
-      {/* DESKTOP SIDEBAR (md:flex) */}
-      {session && (
-        <aside className="hidden md:flex fixed top-0 left-0 bottom-0 w-64 bg-white border-r border-gray-150 z-30 flex-col justify-between shadow-sm">
-          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
-            {/* Header branding */}
-            <div className="p-6 border-b border-gray-100 flex items-center gap-3">
-              <div className="bg-[#E4002B] p-2 rounded-xl text-white shadow-md shadow-red-500/10">
-                <Truck className="h-5 w-5 stroke-[2.5]" />
-              </div>
-              <div>
-                <span className="text-sm font-extrabold text-gray-800 tracking-tight font-sans">
-                  J&T OPS PRO
-                </span>
-                <p className="text-[10px] text-gray-400 font-medium">Sistem Manajemen Outlet</p>
-              </div>
-            </div>
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col font-sans select-none selection:bg-red-650 selection:text-white">
+      <Toaster 
+        position="top-center" 
+        richColors 
+        toastOptions={{
+          style: {
+            background: "#18181b", // zinc-900
+            border: "1px solid #27272a", // zinc-800
+            color: "#f4f4f5", // zinc-100
+            fontFamily: "Inter, sans-serif",
+            borderRadius: "0.75rem",
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)",
+          },
+        }}
+      />
+      {/* Header bar component */}
+      <Header
+        currentView={currentView}
+        setView={(view) => {
+          changeView(view);
+          updatePendingCount();
+        }}
+        isOffline={isOffline}
+        setIsOffline={setIsOffline}
+        pendingCount={pendingCount}
+        triggerSync={triggerSync}
+        isSyncing={isSyncing}
+        selectedOperator={selectedOperator}
+        isPulling={isPulling}
+        onPullFromCloud={pullDatabaseFromCloud}
+        isCloudDataFresh={isCloudDataFresh}
+      />
 
-            {/* Profile Info Card inside Sidebar */}
-            <div className="p-4 border-b border-gray-50 bg-slate-50/50 m-4 rounded-2xl border border-slate-100">
-              <div className="flex items-center gap-3">
-                <div className="bg-[#E4002B]/10 p-2.5 rounded-xl text-[#E4002B]">
-                  <User className="h-4 w-4" />
-                </div>
-                <div className="overflow-hidden">
-                  <p className="text-xs font-bold text-gray-800 truncate" title={session.nama_lengkap || session.username}>
-                    {session.nama_lengkap || session.username}
-                  </p>
-                  <span className="inline-block mt-0.5 bg-[#E4002B]/10 text-[#E4002B] text-[8px] font-extrabold font-mono px-1.5 py-0.5 rounded uppercase tracking-wider">
-                    {session.role}
-                  </span>
-                </div>
-              </div>
+      {/* Main Content Area */}
+      <main className="flex-grow py-6 relative">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={currentView}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.15 }}
+            className="w-full"
+          >
+            {/* View routing router */}
+            {currentView === "WELCOME" && (
+              <WelcomeScreen
+                onStartScanning={handleStartScanning}
+                savedOutlet={selectedOutlet}
+                savedSeller={selectedSeller}
+                savedOperator={selectedOperator}
+                isPulling={isPulling}
+              />
+            )}
 
-              {/* Active Task Info */}
-              <div className="mt-4 pt-3 border-t border-slate-200/40 space-y-1">
-                <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
-                  <MapPin className="h-3.5 w-3.5 text-gray-400" />
-                  <span>Lokasi Tugas:</span>
-                </div>
-                <p className="text-[11px] font-bold text-gray-700 font-mono pl-5 truncate">
-                  {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
-                </p>
-              </div>
-            </div>
-
-            {/* Nav Menu Links */}
-            <nav className="px-4 py-2 space-y-1">
-              {renderNavLinks()}
-            </nav>
-          </div>
-
-          {/* Bottom logout and cache clear section */}
-          <div className="p-4 border-t border-gray-100 bg-gray-50/50 space-y-1">
-            <button
-              onClick={handleClearCache}
-              className="w-full py-2.5 px-4 text-left text-xs font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
-            >
-              <Trash2 className="h-4.5 w-4.5 text-red-500" />
-              <span>Hapus Cache</span>
-            </button>
-            <button
-              onClick={handleLogout}
-              className="w-full py-2.5 px-4 text-left text-xs font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl flex items-center gap-3 transition-colors cursor-pointer"
-            >
-              <LogOut className="h-4.5 w-4.5" />
-              <span>Keluar Akun</span>
-            </button>
-          </div>
-        </aside>
-      )}
-
-      {/* MOBILE STICKY HEADER (md:hidden) */}
-      {session && (
-        <header className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-150 z-30 px-4 flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setMobileSidebarOpen(true)}
-              className="p-2 -ml-2 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-all cursor-pointer"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-
-            {/* Tiny Logo */}
-            <div className="flex items-center gap-2">
-              <div className="bg-[#E4002B] p-1.5 rounded-lg text-white">
-                <Truck className="h-4 w-4" />
-              </div>
-              <span className="text-xs font-black text-gray-800 tracking-tight">
-                J&T OPS PRO
-              </span>
-              <span className="bg-red-50 text-[#E4002B] text-[8px] font-black px-1 rounded uppercase tracking-wider">
-                {session.role}
-              </span>
-            </div>
-          </div>
-
-          {/* Active Location Display on mobile right */}
-          <div className="flex items-center gap-1.5 text-[10px] bg-gray-50 py-1.5 px-2.5 rounded-lg border border-gray-100 max-w-[140px] truncate">
-            <MapPin className="h-3 w-3 text-red-500 shrink-0" />
-            <span className="font-bold text-gray-700 truncate">
-              {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
-            </span>
-          </div>
-        </header>
-      )}
-
-      {/* MOBILE DRAWER OVERLAY */}
-      {session && mobileSidebarOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
-          {/* Backdrop */}
-          <div 
-            onClick={() => setMobileSidebarOpen(false)}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-          />
-
-          {/* Drawer panel */}
-          <div className="relative flex w-64 max-w-xs flex-col bg-white h-full shadow-2xl animate-in slide-in-from-left duration-200">
-            {/* Header / close */}
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="bg-[#E4002B] p-2 rounded-xl text-white">
-                  <Truck className="h-5 w-5" />
-                </div>
-                <span className="text-sm font-extrabold text-gray-800">
-                  J&T OPS PRO
-                </span>
-              </div>
-              <button
-                onClick={() => setMobileSidebarOpen(false)}
-                className="p-1.5 rounded-lg hover:bg-gray-50 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {/* User Profile */}
-            <div className="p-4 border-b border-gray-50 bg-slate-50/50 m-3 rounded-xl border border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="bg-[#E4002B]/10 p-2 rounded-lg text-[#E4002B]">
-                  <User className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-xs font-bold text-gray-800">{session.nama_lengkap || session.username}</p>
-                  <span className="bg-gray-150 text-gray-600 text-[8px] font-extrabold font-mono px-1 py-0.5 rounded uppercase tracking-wider">
-                    {session.role}
-                  </span>
-                </div>
-              </div>
-              <div className="mt-3 pt-2.5 border-t border-slate-200/40 text-[10px] text-gray-500">
-                <span className="font-semibold text-gray-400">Lokasi Tugas:</span>
-                <p className="font-bold text-gray-700 font-mono mt-0.5">
-                  {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
-                </p>
-              </div>
-            </div>
-
-            {/* Menu Links */}
-            <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto">
-              {renderNavLinks(() => setMobileSidebarOpen(false))}
-            </nav>
-
-            {/* Footer / logout and cache clear inside drawer */}
-            <div className="p-4 border-t border-gray-100 bg-gray-50/50 space-y-1">
-              <button
-                onClick={() => {
-                  setMobileSidebarOpen(false);
-                  handleClearCache();
+            {currentView === "SCANNER" && (
+              <ScannerScreen
+                config={{
+                  outlet: selectedOutlet,
+                  seller: selectedSeller,
+                  operator: selectedOperator
                 }}
-                className="w-full py-2 px-4 text-left text-xs font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-3 transition-colors cursor-pointer"
-              >
-                <Trash2 className="h-4 w-4 text-red-500" />
-                <span>Hapus Cache</span>
-              </button>
-              <button
-                onClick={() => {
-                  setMobileSidebarOpen(false);
-                  handleLogout();
+                onBack={() => changeView("WELCOME")}
+                isOffline={isOffline}
+                pendingCount={pendingCount}
+                triggerSync={triggerSync}
+                isSyncing={isSyncing}
+                onRecordAdded={handleRecordAdded}
+                isPulling={isPulling}
+                isCloudDataFresh={isCloudDataFresh}
+              />
+            )}
+
+            {currentView === "OWNER_LOGIN" && (
+              <OwnerScreen
+                isPulling={isPulling}
+                onStatusChanged={() => {
+                  handleOwnerUpdatedStatus();
                 }}
-                className="w-full py-2 px-4 text-left text-xs font-semibold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-3 transition-colors cursor-pointer"
-              >
-                <LogOut className="h-4 w-4" />
-                <span>Keluar Akun</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+              />
+            )}
 
-      {/* BODY CONTENT - CONDITIONALLY RENDER VIEW */}
-      <main className={`flex-1 pb-24 ${session ? "md:pl-64 pt-16 md:pt-0" : ""}`}>
-        {currentView === "login" && !session && (
-          <LoginPage onLoginSuccess={handleLoginSuccess} />
-        )}
-
-        {session && currentView === "pre-input" && (
-          <PreInputPage
-            session={session}
-            activeOutletId={activeOutletId}
-            onChangeActiveOutlet={handleActiveOutletChange}
-            outlets={outlets}
-            onNavigate={setCurrentView}
-          />
-        )}
-
-        {session && currentView === "transaksi" && (
-          <TransaksiPage
-            session={session}
-            activeOutletId={activeOutletId}
-            onChangeActiveOutlet={handleActiveOutletChange}
-            outlets={outlets}
-            onNavigate={setCurrentView}
-          />
-        )}
-
-        {session && currentView === "control-tower" && (
-          <ManagementControlTowerPage
-            session={session}
-            outlets={outlets}
-            activeOutletId={activeOutletId}
-            onChangeActiveOutlet={handleActiveOutletChange}
-            onNavigate={setCurrentView}
-          />
-        )}
-        {session && currentView === "dashboard" && (
-          <DashboardPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "ai-assistant" && (
-          <OwnerAIAssistantPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "reporting" && (
-          <ReportingPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-        
-        {session && currentView === "setoran-owner" && (
-          <SetoranOwnerPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "owner-audit" && (
-          <OwnerAuditPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "daily-closing" && (
-          <DailyClosingPage
-            session={session}
-            outlets={outlets}
-            activeOutletId={activeOutletId}
-            onChangeActiveOutlet={handleActiveOutletChange}
-          />
-        )}
-
-
-        {session && currentView === "keuangan-outlet" && (
-          <KeuanganOutletPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-        
-        {session && currentView === "admin-dashboard" && (
-          <AdminDashboardPage
-            session={session}
-            activeOutletId={activeOutletId}
-            outlets={outlets}
-            onNavigate={setCurrentView}
-            onChangeActiveOutlet={handleActiveOutletChange}
-          />
-        )}
-
-        {session && currentView === "riwayat-transaksi" && (
-          <RiwayatTransaksiPage
-            session={session}
-            outlets={outlets}
-            activeOutletId={activeOutletId}
-          />
-        )}
-
-        {session && currentView === "ulasan-maps" && (
-          <UlasanMapsPage />
-        )}
-
-        {session && currentView === "settings" && (
-          <SettingsPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "customer" && (
-          <CustomerPage
-            outlets={outlets}
-          />
-        )}
-        {session && currentView === "import-customer" && session.role === "OWNER" && (
-          <ImportCustomerPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "dashboard-customer" && (
-          <div className="p-8 text-center text-gray-500">Halaman Dashboard Customer sedang dalam pengembangan.</div>
-        )}
-        
-        {session && currentView === "analisa-customer" && (
-          <div className="p-8 text-center text-gray-500">Halaman Analisa Customer sedang dalam pengembangan.</div>
-        )}
-
-        {session && currentView === "developer" && (
-          <DeveloperPage />
-        )}
-
+            {currentView === "OWNER_DASHBOARD" && (
+              <OwnerScreen
+                isPulling={isPulling}
+                onStatusChanged={() => {
+                  handleOwnerUpdatedStatus();
+                }}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
-      {/* FOOTER */}
-      <footer className="bg-white border-t border-gray-150 py-4 text-center text-[10px] text-gray-400 font-mono">
-        <div>
-          J&T OPS PRO © 2026. Dikembangkan untuk efisiensi operasional J&T Express & J&T Cargo.
+      {/* Syncing Global Modal HUD Overlay Block */}
+      {isSyncing && (
+        <div className="fixed inset-0 z-50 bg-zinc-950/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 max-w-sm w-full space-y-4 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="relative h-14 w-14 mx-auto flex items-center justify-center bg-amber-500/10 text-amber-500 rounded-full border border-amber-500/20">
+              <RefreshCw className="h-6 w-6 animate-spin" />
+            </div>
+            
+            <div className="space-y-1">
+              <h3 className="text-zinc-150 font-bold uppercase tracking-wider text-xs">Singkronisasi Data</h3>
+              <p className="text-[11px] text-zinc-400 font-mono">{syncStatusText}</p>
+            </div>
+
+            {/* Custom loader bar */}
+            <div className="w-full bg-zinc-950 h-2 rounded-full overflow-hidden p-0.5 border border-zinc-850">
+              <div className="bg-amber-500 h-full rounded-full animate-[loading_2s_infinite] w-2/3" />
+            </div>
+
+            <p className="text-[10px] text-zinc-550 leading-relaxed pt-1">
+              Data ditarik dari local storage, kemudian ditiupkan ke baris Google Sheet & Drive Cloud. Hal ini menghapus cache pending dan menghemat sisa memori HP.
+            </p>
+          </div>
         </div>
-        <div className="mt-1 font-bold">
-          Sistem Operasional & Pakar Alamat AI Aktif.
+      )}
+
+      {/* Deep workspace credit footnotes with respect to guidelines (Architechtural Honesty - No telemetry clutters, Humble and clean footer layout) */}
+      <footer className="py-6 border-t border-zinc-900 text-center text-[11px] text-zinc-650 font-mono mt-8">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col items-center justify-center gap-4">
+          <button
+            onClick={() => {
+              setShowResetConfirm(true);
+            }}
+            className="flex items-center space-x-1.5 px-4 py-2 rounded-lg text-[10px] font-semibold bg-zinc-900 hover:bg-zinc-800 text-zinc-400 border border-zinc-800 transition-colors cursor-pointer"
+          >
+            <Layers className="h-4 w-4" />
+            <span>Hapus Cache & Restart</span>
+          </button>
+          
+          <div className="flex flex-col items-center gap-1 mt-2">
+            <span>© 2026 J&T Express Tangerang Barat. All rights reserved.</span>
+            <span className="bg-zinc-900 border border-zinc-850 px-2 py-0.5 rounded text-[10px] text-zinc-500 font-bold font-sans mt-1">
+              SERVER-SIDE AUTO ENGINE
+            </span>
+          </div>
         </div>
       </footer>
 
-      {session && (
-        <QuickAction onNavigate={setCurrentView} currentRole={session.role} />
+      {/* Custom Beautified Reset Cache Confirmation Modal */}
+      {showResetConfirm && (
+        <div 
+          className="fixed inset-0 z-50 bg-zinc-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200"
+          id="custom-reset-cache-modal"
+        >
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-sm p-6 text-center space-y-4 shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="bg-red-500/10 text-red-500 rounded-full h-14 w-14 flex items-center justify-center mx-auto border border-red-500/20 shadow">
+              <AlertTriangle className="h-7 w-7 text-red-500" />
+            </div>
+            
+            <div className="space-y-1.5">
+              <h3 className="text-base font-bold text-zinc-100 tracking-wider uppercase">
+                HAPUS CACHE & RESTART?
+              </h3>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Tindakan ini akan menghapus seluruh data scan lokal dari perangkat ini dan memuat ulang halaman aplikasi.
+              </p>
+            </div>
+
+            <div className="bg-zinc-950/60 p-3 rounded-xl border border-zinc-850 text-left text-[10px] text-zinc-500 space-y-1 font-mono">
+              <div className="text-red-400 font-bold uppercase tracking-wider mb-1">⚠️ PERINGATAN KERAS:</div>
+              <p>• Data yang belum disinkronkan (<span className="text-amber-500 font-semibold">Stale/Pending</span>) akan hilang.</p>
+              <p>• Pastikan status koneksi sudah <span className="text-emerald-500 font-semibold">SYNCED</span> sebelum melanjutkan.</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-2">
+              <button
+                onClick={() => setShowResetConfirm(false)}
+                className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs py-3 px-4 rounded-xl transition-all active:scale-95 cursor-pointer uppercase"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  // Save crucial configurations and customized master data before clearing cache
+                  localStorage.clear(); Config.clearSessionCache(); Config.saveCache();
+
+                  window.location.reload();
+                }}
+                className="bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs py-3 px-4 rounded-xl transition-all shadow-[0_0_15px_rgba(220,38,38,0.25)] active:scale-95 cursor-pointer uppercase"
+              >
+                Hapus & Restart
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
