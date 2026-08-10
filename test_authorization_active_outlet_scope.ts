@@ -139,10 +139,10 @@ function runAuthorizationScopeTests() {
       actor: owner
     });
 
-    const listA = getWorkflowList(db, { outlet_id: "OUTLET-A" }, adminA);
+    const listA = getWorkflowList(db, { outlet_id: "OUTLET-A" });
     assert.ok(listA.every(w => w.outlet_id === "OUTLET-A"));
 
-    const listB = getWorkflowList(db, { outlet_id: "OUTLET-B" }, adminA);
+    const listB = getWorkflowList(db, { outlet_id: "OUTLET-B" });
     assert.ok(listB.every(w => w.outlet_id === "OUTLET-B"));
   });
 
@@ -153,7 +153,9 @@ function runAuthorizationScopeTests() {
       transaksi_id: "TX-NEW-1",
       outlet_id: "OUTLET-B",
       admin_id: "ADMIN-A",
-      tanggal: "2026-08-10"
+      tanggal: "2026-08-10",
+      total_dibayar_customer: 10000,
+      status_transaksi: "COMPLETED"
     };
     db.MASTER_TRANSAKSI.push(newTx);
     assert.strictEqual(newTx.outlet_id, "OUTLET-B");
@@ -210,7 +212,7 @@ function runAuthorizationScopeTests() {
 
   // TEST 15: Regression existing workflow
   runTest("TEST 15: Existing workflow execution preserves invariants", () => {
-    const wfList = getWorkflowList(db, { outlet_id: "OUTLET-A" }, owner);
+    const wfList = getWorkflowList(db, { outlet_id: "OUTLET-A" });
     assert.ok(Array.isArray(wfList));
   });
 

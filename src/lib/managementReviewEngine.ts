@@ -328,7 +328,7 @@ export function addManagementDecision(
       severity: "WARNING",
       title: `Management Decision: ${params.decision_type}`,
       description: params.reason,
-      actor: { actor_id: actor.actor_id, actor_role: actor.role as any, outlet_id: actor.outlet_id, actor_name: actor.name }
+      actor: { actor_id: actor.actor_id, actor_role: ((actor as any).actor_role || actor.role) as any, outlet_id: actor.outlet_id, actor_name: ((actor as any).actor_name || actor.name) }
     });
     if (wfRes.status === "success" && wfRes.data) {
       decision.action_ref = wfRes.data.workflow_id;

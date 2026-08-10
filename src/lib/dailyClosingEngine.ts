@@ -352,7 +352,7 @@ export function executeDailyClosing(
     };
   }
 
-  const record = existing || valRes.data!;
+  const record = getDailyClosingRecord(db, outlet_id, tanggal) || valRes.data!;
   const now = new Date().toISOString();
 
   record.status = "CLOSED";
