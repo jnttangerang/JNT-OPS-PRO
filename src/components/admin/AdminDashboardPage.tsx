@@ -401,8 +401,8 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
             <tbody className="divide-y divide-gray-100">
               {data.recentTransactions?.length === 0 ? (
                 <tr><td colSpan={7} className="text-center p-6 text-xs text-gray-400 font-medium">Belum ada transaksi hari ini.</td></tr>
-              ) : data.recentTransactions?.map((r: any) => (
-                <tr key={r.resi_id} className="hover:bg-gray-50/50">
+              ) : data.recentTransactions?.map((r: any, i: number) => (
+                <tr key={r.id || r.resi_id || r.transaksi_id || i} className="hover:bg-gray-50/50">
                   <td className="p-3 font-bold text-gray-800">{r.resi_id}</td>
                   <td className="p-3">
                     <span className={`px-2 py-1 rounded font-bold text-[10px] ${r.tipe_layanan === 'Express' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
@@ -436,8 +436,8 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
           <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
             {statusSetoranList.length === 0 ? (
               <p className="text-center text-xs text-gray-400 py-6 font-medium">Belum ada setoran.</p>
-            ) : statusSetoranList.map((s:any) => (
-              <div key={s.date} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border border-gray-100 rounded-lg gap-2">
+            ) : statusSetoranList.map((s:any, i: number) => (
+              <div key={s.date || i} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border border-gray-100 rounded-lg gap-2">
                 <div>
                   <p className="font-bold text-gray-800 text-sm">{s.date}</p>
                   <p className="text-[10px] text-gray-500">{s.transaksi.length} Transaksi</p>
@@ -469,8 +469,8 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
           <div className="space-y-3 max-h-64 overflow-y-auto pr-2 text-xs">
             {pembatalanLogs.length === 0 ? (
               <p className="text-center text-xs text-gray-400 py-6 font-medium">Belum ada riwayat pembatalan.</p>
-            ) : pembatalanLogs.map((l:any) => (
-              <div key={l.log_id} className="p-3 bg-red-50/50 border border-red-100 rounded-lg">
+            ) : pembatalanLogs.map((l:any, i: number) => (
+              <div key={l.log_id || i} className="p-3 bg-red-50/50 border border-red-100 rounded-lg">
                 <div className="flex justify-between font-bold text-gray-800 mb-1">
                   <span>{l.nama_lengkap}</span>
                   <span className="text-gray-500 font-normal">{new Date(l.timestamp).toLocaleString("id-ID")}</span>
@@ -490,8 +490,8 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
         <div className="space-y-2 max-h-60 overflow-y-auto text-xs pr-2">
           {aktivitasLogs.length === 0 ? (
             <p className="text-center text-gray-400 py-6 font-medium">Belum ada log aktivitas tercatat.</p>
-          ) : aktivitasLogs.map((log:any) => (
-            <div key={log.log_id} className="flex justify-between items-center p-2.5 hover:bg-gray-50 rounded-lg border-b border-gray-50 last:border-0">
+          ) : aktivitasLogs.map((log:any, i: number) => (
+            <div key={log.log_id || i} className="flex justify-between items-center p-2.5 hover:bg-gray-50 rounded-lg border-b border-gray-50 last:border-0">
               <div className="flex items-center gap-3">
                 <span className={`px-2 py-1 rounded font-bold text-[9px] ${
                   log.aksi.includes('BATAL') ? 'bg-red-100 text-red-700' :
