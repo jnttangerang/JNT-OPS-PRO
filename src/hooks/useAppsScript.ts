@@ -113,7 +113,7 @@ export function useAppsScript() {
         "updateKeuanganOutlet",
         "deleteKeuanganOutlet"
       ];
-      const isNodeOnlyAction = true; // Force local processing for all actions (backend is fully migrated to Node.js)
+      const isNodeOnlyAction = nodeOnlyActions.some((act) => action === act || action.startsWith(act + "/"));
 
       // Check if we are running in the Google Sheets Apps Script environment
       const isGoogleScript =

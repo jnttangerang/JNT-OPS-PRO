@@ -1529,9 +1529,50 @@ const UTILITY_ACTIONS = new Set([
 ]);
 
 app.use("/api/:action", async (req, res, next) => {
-  // All actions run locally on Node/Express server without database dependency
-  // The proxy to Apps Script has been fully deprecated and removed.
-  return next();
+  const action = req.params.action;
+
+  // Utility actions run locally on Node/Express server without database dependency
+  if (UTILITY_ACTIONS.has(action)) {
+    return next();
+  }
+
+  if (req.headers["x-test-mode"] === "true") {
+    return next();
+  }
+
+  const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
+
+  if (appsScriptUrl && appsScriptUrl.trim()) {
+    try {
+      // Compatibility mapping
+      const targetAction = action === "getDashboardData" ? "getAdminDashboardData" : action;
+      
+      const response = await fetch(appsScriptUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: targetAction, data: req.body || {} })
+      });
+      const text = await response.text();
+      let json: any;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        console.log(`Apps Script response for ${action} was not valid JSON (HTML received), falling back to local route handler...`);
+        return next();
+      }
+      if (json && json.status === "error") {
+        console.log(`Apps Script returned error for ${action} (${json.message}), falling back to local route handler...`);
+        return next();
+      }
+      return res.json(json);
+    } catch (err: any) {
+      console.error(`Apps Script proxy error for ${action}:`, err.message);
+      console.warn(`Falling back to local route handler for ${action}...`);
+      return next();
+    }
+  }
+
+  next();
 });
 
 app.post("/api/ping", (req, res) => {
@@ -3054,7 +3095,7 @@ app.post("/api/getDashboardData", (req, res) => {
   // Pre-populate with all outlets
   db.Outlets.forEach((o: any) => {
     outletOmsetMap[o.outlet_id] = {
-      nama: o.nama_outlet.replace("J&T Express - ", "").replace("J&T Cargo - ", ""),
+      nama: String(o.nama_outlet || "").replace("J&T Express - ", "").replace("J&T Cargo - ", ""),
       omset: 0,
       setoran: 0,
       kas: 0,
@@ -3086,7 +3127,7 @@ app.post("/api/getDashboardData", (req, res) => {
   // Daily transaction trends (past 7 days or matching date range)
   const dailyMap: { [key: string]: { date: string; Express: number; Cargo: number; total: number } } = {};
   filtered.forEach((r: any) => {
-    const dateStr = r.timestamp.split("T")[0]; // YYYY-MM-DD
+    const dateStr = (r.timestamp || r.tanggal_transaksi || r.created_at || new Date().toISOString()).split("T")[0]; // YYYY-MM-DD
     if (!dailyMap[dateStr]) {
       dailyMap[dateStr] = { date: dateStr, Express: 0, Cargo: 0, total: 0 };
     }
@@ -3127,18 +3168,18 @@ app.post("/api/getDashboardData", (req, res) => {
   // Monthly reports
   const monthlyMap: { [key: string]: { month: string; total_omset: number; outletsMap: { [oid: string]: { outlet_id: string; nama_outlet: string; omset: number; transaksi: number } } } } = {};
   filtered.forEach((r: any) => {
-    const monthStr = r.timestamp.substring(0, 7); // YYYY-MM
+    const monthStr = (r.timestamp || r.tanggal_transaksi || r.created_at || new Date().toISOString()).substring(0, 7); // YYYY-MM
     if (!monthlyMap[monthStr]) {
       monthlyMap[monthStr] = { month: monthStr, total_omset: 0, outletsMap: {} };
     }
     monthlyMap[monthStr].total_omset += r.grand_total || 0;
     
-    const outId = r.outlet_id_input;
+    const outId = r.outlet_id_input || r.outlet_id || "UNKNOWN";
     if (!monthlyMap[monthStr].outletsMap[outId]) {
       const outletName = db.Outlets.find((o: any) => o.outlet_id === outId)?.nama_outlet || outId;
       monthlyMap[monthStr].outletsMap[outId] = {
         outlet_id: outId,
-        nama_outlet: outletName.replace("J&T Express - ", "").replace("J&T Cargo - ", ""),
+        nama_outlet: String(outletName || "").replace("J&T Express - ", "").replace("J&T Cargo - ", ""),
         omset: 0,
         transaksi: 0
       };
