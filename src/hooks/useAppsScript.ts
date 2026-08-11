@@ -60,9 +60,60 @@ export function useAppsScript() {
     async <T = any>(action: string, params: any = {}): Promise<T> => {
       setLoading(true);
 
-      // Utility actions that are handled locally on Node/Express server (AI processing, photo OCR, file uploads, admin dashboard)
-      const nodeOnlyActions = ["analyzeResiPhoto", "perbaikiAlamatAI", "ping", "testConnection", "uploadFile", "getAdminDashboardData"];
-      const isNodeOnlyAction = nodeOnlyActions.includes(action);
+      // Utility and financial engine actions that are handled locally on Node/Express server
+      const nodeOnlyActions = [
+        "analyzeResiPhoto",
+        "perbaikiAlamatAI",
+        "ping",
+        "testConnection",
+        "uploadFile",
+        "getAdminDashboardData",
+        "dailyClosing",
+        "reconciliation",
+        "auditTrail",
+        "getAuditTrail",
+        "settlement",
+        "financialClose",
+        "financial-close",
+        "control",
+        "workflow",
+        "managementReview",
+        "management-review",
+        "management",
+        "managementIntelligence",
+        "controlTower",
+        "reconcileTransaction",
+        "reconcileDaily",
+        "reconcileOutlet",
+        "getReconciliationSummary",
+        "getAuditTrailByTransaction",
+        "getAuditTrailByCustomer",
+        "getAuditTrailByImport",
+        "auditTransaction",
+        "getAuditData",
+        "updateAuditDecision",
+        "validateClosing",
+        "executeClosing",
+        "getReportingSummary",
+        "getReportingTransactions",
+        "getReportingSettlement",
+        "getReportingAudit",
+        "dailySummary",
+        "apiDailySummary",
+        "detectAnomalies",
+        "apiDetectAnomalies",
+        "askAssistant",
+        "apiAskAssistant",
+        "getKategoriKeuangan",
+        "saveKategoriKeuangan",
+        "updateKategoriKeuangan",
+        "setKategoriAktif",
+        "getKeuanganOutlet",
+        "saveKeuanganOutlet",
+        "updateKeuanganOutlet",
+        "deleteKeuanganOutlet"
+      ];
+      const isNodeOnlyAction = true; // Force local processing for all actions (backend is fully migrated to Node.js)
 
       // Check if we are running in the Google Sheets Apps Script environment
       const isGoogleScript =

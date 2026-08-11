@@ -1468,52 +1468,57 @@ const UTILITY_ACTIONS = new Set([
   "deleteReview",
   "analyzeReview",
   "getAdminDashboardData",
-  "apps-script"
+  "apps-script",
+  "dailyClosing",
+  "reconciliation",
+  "auditTrail",
+  "getAuditTrail",
+  "settlement",
+  "financialClose",
+  "financial-close",
+  "control",
+  "workflow",
+  "managementReview",
+  "management-review",
+  "management",
+  "managementIntelligence",
+  "controlTower",
+  "reconcileTransaction",
+  "reconcileDaily",
+  "reconcileOutlet",
+  "getReconciliationSummary",
+  "getAuditTrailByTransaction",
+  "getAuditTrailByCustomer",
+  "getAuditTrailByImport",
+  "auditTransaction",
+  "getAuditData",
+  "updateAuditDecision",
+  "validateClosing",
+  "executeClosing",
+  "getReportingSummary",
+  "getReportingTransactions",
+  "getReportingSettlement",
+  "getReportingAudit",
+  "dailySummary",
+  "apiDailySummary",
+  "detectAnomalies",
+  "apiDetectAnomalies",
+  "askAssistant",
+  "apiAskAssistant",
+  "getKategoriKeuangan",
+  "saveKategoriKeuangan",
+  "updateKategoriKeuangan",
+  "setKategoriAktif",
+  "getKeuanganOutlet",
+  "saveKeuanganOutlet",
+  "updateKeuanganOutlet",
+  "deleteKeuanganOutlet"
 ]);
 
 app.use("/api/:action", async (req, res, next) => {
-  const action = req.params.action;
-
-  // Utility actions run locally on Node/Express server without database dependency
-  if (UTILITY_ACTIONS.has(action)) {
-    return next();
-  }
-
-  if (req.headers["x-test-mode"] === "true") {
-    return next();
-  }
-
-  const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
-
-  if (appsScriptUrl && appsScriptUrl.trim()) {
-    try {
-      const targetAction = action === "getDashboardData" ? "getAdminDashboardData" : action;
-      const response = await fetch(appsScriptUrl.trim(), {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: targetAction, data: req.body || {} })
-      });
-      const text = await response.text();
-      let json: any;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        console.log(`Apps Script response for ${action} was not valid JSON (HTML received), falling back to local route handler...`);
-        return next();
-      }
-      if (json && json.status === "error") {
-        console.log(`Apps Script returned error for ${action} (${json.message}), falling back to local route handler...`);
-        return next();
-      }
-      return res.json(json);
-    } catch (err: any) {
-      console.error(`Apps Script proxy error for ${action}:`, err.message);
-      console.warn(`Falling back to local route handler for ${action}...`);
-      return next();
-    }
-  }
-
-  next();
+  // All actions run locally on Node/Express server without database dependency
+  // The proxy to Apps Script has been fully deprecated and removed.
+  return next();
 });
 
 app.post("/api/ping", (req, res) => {
