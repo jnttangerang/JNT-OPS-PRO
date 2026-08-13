@@ -40,9 +40,34 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
       });
       if (res.status === "success") {
         setData(res.data);
+      } else {
+        setData({
+          summary: { totalTransaksi: 0, totalResiExpress: 0, totalResiCargo: 0, grandTotalCustomer: 0, totalWajibSetorOwner: 0, totalKasOutlet: 0 },
+          targetHarian: { current: 0, target: 100 },
+          byAdmin: [],
+          byEkspedisi: { Express: { resi: 0, setoran: 0 }, Cargo: { resi: 0, setoran: 0 } },
+          statusSetoranList: [],
+          aktivitasLogs: [],
+          pembatalanLogs: [],
+          grafik: [],
+          alerts: [],
+          recentTransactions: []
+        });
       }
     } catch (e) {
-      console.error(e);
+      console.error("Dashboard error:", e);
+      setData({
+          summary: { totalTransaksi: 0, totalResiExpress: 0, totalResiCargo: 0, grandTotalCustomer: 0, totalWajibSetorOwner: 0, totalKasOutlet: 0 },
+          targetHarian: { current: 0, target: 100 },
+          byAdmin: [],
+          byEkspedisi: { Express: { resi: 0, setoran: 0 }, Cargo: { resi: 0, setoran: 0 } },
+          statusSetoranList: [],
+          aktivitasLogs: [],
+          pembatalanLogs: [],
+          grafik: [],
+          alerts: [],
+          recentTransactions: []
+        });
     }
   };
 

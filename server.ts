@@ -1422,6 +1422,20 @@ function readDb() {
       syncExistingDataToThreeLayers(parsed);
       updated = true;
     }
+
+    // Ensure all critical arrays exist
+    const criticalArrays = [
+      "Users", "Outlets", "EXP_Resi", "CRG_Resi", "PreInput_Backup", "MASTER_TRANSAKSI",
+      "Master_Setoran", "SetoranData", "AuditLogs", "KeuanganOutlet", "MASTER_CUSTOMER",
+      "MASTER_PENGIRIMAN", "DailyClosing", "Exceptions", "SettlementRecords", "FinancialCertifications", "WorkflowCases",
+      "ManagementReviews"
+    ];
+    for (const key of criticalArrays) {
+      if (!parsed[key] || !Array.isArray(parsed[key])) {
+        parsed[key] = [];
+        updated = true;
+      }
+    }
     
     if (!parsed.Users || !Array.isArray(parsed.Users)) {
       parsed.Users = initialDb.Users;
