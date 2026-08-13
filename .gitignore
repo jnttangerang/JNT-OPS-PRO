@@ -6,3 +6,10 @@ coverage/
 *.log
 .env*
 !.env.example
+db.json
+patch_*.js
+test-*.js
+test_*.js
+fix_*.js
+remove_*.js
+*dashboard.txt

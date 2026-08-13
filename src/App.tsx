@@ -1,5 +1,6 @@
 import ManagementControlTowerPage from "./components/owner/ManagementControlTowerPage";
 import React, { useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { 
   Truck, LogOut, User, MapPin, Clipboard, FileText, Landmark, BookOpen, AlertCircle, List, Star, Menu, X, Trash2, Tags, Wallet, Users, Terminal, Upload
 } from "lucide-react";
@@ -28,15 +29,14 @@ import QuickAction from "./components/QuickAction";
 import { SessionData, Outlet } from "./types";
 import { toast } from "./utils/toast";
 
-export default function App() {
+function AppContent() {
   const { callBackend } = useAppsScript();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Authentication State
   const [session, setSession] = useState<SessionData | null>(null);
   
-  // Navigation State
-  const [currentView, setCurrentView] = useState<string>("login");
-
   // Mobile Sidebar Drawer Toggle State
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
@@ -55,10 +55,15 @@ export default function App() {
         const parsed = JSON.parse(savedSession) as SessionData;
         setSession(parsed);
         setActiveOutletId(parsed.outlet_id_home);
-        setCurrentView(parsed.role.toUpperCase() === "OWNER" ? "dashboard" : parsed.role.toUpperCase() === "ADMIN" ? "admin-dashboard" : "pre-input");
+        if (location.pathname === '/' || location.pathname === '/login') {
+          navigate(parsed.role.toUpperCase() === "OWNER" ? "/dashboard" : parsed.role.toUpperCase() === "ADMIN" ? "/admin-dashboard" : "/pre-input");
+        }
       } catch (e) {
         localStorage.removeItem("jnt_session");
+        navigate("/login");
       }
+    } else if (location.pathname !== '/login') {
+       navigate("/login");
     }
   }, []);
 
@@ -109,23 +114,19 @@ export default function App() {
     setSession(userSession);
     setActiveOutletId(userSession.outlet_id_home);
     localStorage.setItem("jnt_session", JSON.stringify(userSession));
-    setCurrentView(userSession.role.toUpperCase() === "OWNER" ? "dashboard" : userSession.role.toUpperCase() === "ADMIN" ? "admin-dashboard" : "pre-input");
+    navigate(userSession.role.toUpperCase() === "OWNER" ? "/dashboard" : userSession.role.toUpperCase() === "ADMIN" ? "/admin-dashboard" : "/pre-input");
   };
 
   const handleLogout = () => {
     setSession(null);
     localStorage.removeItem("jnt_session");
     localStorage.removeItem("pending_transaksi_id");
-    setCurrentView("login");
+    navigate("/login");
     toast.info("Anda telah berhasil keluar dari akun.");
   };
 
-  // Restrict Admin override options based on role lock
   const handleActiveOutletChange = (newId: string) => {
     if (!session) return;
-    
-    // ADMIN can only override if tasking is allowed, but we allow full dropdown selection 
-    // per prompt instructions: "ADMIN: outlet_id_home terkunci, tapi ada Lokasi Tugas Aktif dropdown..."
     setActiveOutletId(newId);
   };
 
@@ -134,7 +135,7 @@ export default function App() {
       localStorage.clear();
       sessionStorage.clear();
       setSession(null);
-      setCurrentView("login");
+      navigate("/login");
       toast.success("Cache dan data lokal berhasil dibersihkan!");
       setTimeout(() => {
         window.location.reload();
@@ -231,12 +232,12 @@ export default function App() {
         <div className="space-y-1">
           {group.items.map((item) => {
             const Icon = item.icon;
-            const isActive = currentView === item.id;
+            const isActive = location.pathname.includes(item.id);
             return (
               <button
                 key={item.id}
                 onClick={() => {
-                  setCurrentView(item.id);
+                  navigate(`/${item.id}`);
                   if (onItemClick) onItemClick();
                 }}
                 className={`w-full text-left py-2.5 px-4 rounded-xl flex items-center gap-3 transition-all text-xs font-bold cursor-pointer ${
@@ -449,144 +450,119 @@ export default function App() {
 
       {/* BODY CONTENT - CONDITIONALLY RENDER VIEW */}
       <main className={`flex-1 pb-24 ${session ? "md:pl-64 pt-16 md:pt-0" : ""}`}>
-        {currentView === "login" && !session && (
-          <LoginPage onLoginSuccess={handleLoginSuccess} />
-        )}
+        <Routes>
+          <Route path="/login" element={
+            !session ? <LoginPage onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/" replace />
+          } />
+          
+          {session && (
+            <>
+              <Route path="/pre-input" element={
+                <PreInputPage
+                  session={session}
+                  activeOutletId={activeOutletId}
+                  onChangeActiveOutlet={handleActiveOutletChange}
+                  outlets={outlets}
+                />
+              } />
+              
+              <Route path="/transaksi" element={
+                <TransaksiPage
+                  session={session}
+                  activeOutletId={activeOutletId}
+                  onChangeActiveOutlet={handleActiveOutletChange}
+                  outlets={outlets}
+                />
+              } />
+              
+              <Route path="/control-tower" element={
+                <ManagementControlTowerPage
+                  session={session}
+                  outlets={outlets}
+                  activeOutletId={activeOutletId}
+                  onChangeActiveOutlet={handleActiveOutletChange}
+                />
+              } />
 
-        {session && currentView === "pre-input" && (
-          <PreInputPage
-            session={session}
-            activeOutletId={activeOutletId}
-            onChangeActiveOutlet={handleActiveOutletChange}
-            outlets={outlets}
-            onNavigate={setCurrentView}
-          />
-        )}
+              <Route path="/dashboard" element={
+                <DashboardPage session={session} outlets={outlets} />
+              } />
+              
+              <Route path="/ai-assistant" element={
+                <OwnerAIAssistantPage session={session} outlets={outlets} />
+              } />
+              
+              <Route path="/reporting" element={
+                <ReportingPage session={session} outlets={outlets} />
+              } />
+              
+              <Route path="/setoran-owner" element={
+                <SetoranOwnerPage session={session} outlets={outlets} />
+              } />
+              
+              <Route path="/owner-audit" element={
+                <OwnerAuditPage session={session} outlets={outlets} />
+              } />
+              
+              <Route path="/daily-closing" element={
+                <DailyClosingPage
+                  session={session}
+                  outlets={outlets}
+                  activeOutletId={activeOutletId}
+                  onChangeActiveOutlet={handleActiveOutletChange}
+                />
+              } />
+              
+              <Route path="/keuangan-outlet" element={
+                <KeuanganOutletPage session={session} outlets={outlets} />
+              } />
+              
+              <Route path="/admin-dashboard" element={
+                <AdminDashboardPage
+                  session={session}
+                  activeOutletId={activeOutletId}
+                  outlets={outlets}
+                  onChangeActiveOutlet={handleActiveOutletChange}
+                />
+              } />
+              
+              <Route path="/riwayat-transaksi" element={
+                <RiwayatTransaksiPage
+                  session={session}
+                  outlets={outlets}
+                  activeOutletId={activeOutletId}
+                />
+              } />
+              
+              <Route path="/ulasan-maps" element={<UlasanMapsPage />} />
+              
+              <Route path="/settings" element={<SettingsPage session={session} outlets={outlets} />} />
+              
+              <Route path="/customer" element={<CustomerPage outlets={outlets} />} />
+              
+              {session.role === "OWNER" && (
+                <Route path="/import-customer" element={
+                  <ImportCustomerPage session={session} outlets={outlets} />
+                } />
+              )}
+              
+              <Route path="/dashboard-customer" element={
+                <div className="p-8 text-center text-gray-500">Halaman Dashboard Customer sedang dalam pengembangan.</div>
+              } />
+              
+              <Route path="/analisa-customer" element={
+                <div className="p-8 text-center text-gray-500">Halaman Analisa Customer sedang dalam pengembangan.</div>
+              } />
+              
+              <Route path="/developer" element={<DeveloperPage />} />
+              
+              <Route path="/" element={<Navigate to={session.role.toUpperCase() === "OWNER" ? "/dashboard" : session.role.toUpperCase() === "ADMIN" ? "/admin-dashboard" : "/pre-input"} replace />} />
+            </>
+          )}
 
-        {session && currentView === "transaksi" && (
-          <TransaksiPage
-            session={session}
-            activeOutletId={activeOutletId}
-            onChangeActiveOutlet={handleActiveOutletChange}
-            outlets={outlets}
-            onNavigate={setCurrentView}
-          />
-        )}
-
-        {session && currentView === "control-tower" && (
-          <ManagementControlTowerPage
-            session={session}
-            outlets={outlets}
-            activeOutletId={activeOutletId}
-            onChangeActiveOutlet={handleActiveOutletChange}
-            onNavigate={setCurrentView}
-          />
-        )}
-        {session && currentView === "dashboard" && (
-          <DashboardPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "ai-assistant" && (
-          <OwnerAIAssistantPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "reporting" && (
-          <ReportingPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-        
-        {session && currentView === "setoran-owner" && (
-          <SetoranOwnerPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "owner-audit" && (
-          <OwnerAuditPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "daily-closing" && (
-          <DailyClosingPage
-            session={session}
-            outlets={outlets}
-            activeOutletId={activeOutletId}
-            onChangeActiveOutlet={handleActiveOutletChange}
-          />
-        )}
-
-
-        {session && currentView === "keuangan-outlet" && (
-          <KeuanganOutletPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-        
-        {session && currentView === "admin-dashboard" && (
-          <AdminDashboardPage
-            session={session}
-            activeOutletId={activeOutletId}
-            outlets={outlets}
-            onNavigate={setCurrentView}
-            onChangeActiveOutlet={handleActiveOutletChange}
-          />
-        )}
-
-        {session && currentView === "riwayat-transaksi" && (
-          <RiwayatTransaksiPage
-            session={session}
-            outlets={outlets}
-            activeOutletId={activeOutletId}
-          />
-        )}
-
-        {session && currentView === "ulasan-maps" && (
-          <UlasanMapsPage />
-        )}
-
-        {session && currentView === "settings" && (
-          <SettingsPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "customer" && (
-          <CustomerPage
-            outlets={outlets}
-          />
-        )}
-        {session && currentView === "import-customer" && session.role === "OWNER" && (
-          <ImportCustomerPage
-            session={session}
-            outlets={outlets}
-          />
-        )}
-
-        {session && currentView === "dashboard-customer" && (
-          <div className="p-8 text-center text-gray-500">Halaman Dashboard Customer sedang dalam pengembangan.</div>
-        )}
-        
-        {session && currentView === "analisa-customer" && (
-          <div className="p-8 text-center text-gray-500">Halaman Analisa Customer sedang dalam pengembangan.</div>
-        )}
-
-        {session && currentView === "developer" && (
-          <DeveloperPage />
-        )}
-
+          {/* Catch all route - redirect to login if not authenticated or root if authenticated */}
+          <Route path="*" element={<Navigate to={session ? "/" : "/login"} replace />} />
+        </Routes>
       </main>
 
       {/* FOOTER */}
@@ -600,8 +576,16 @@ export default function App() {
       </footer>
 
       {session && (
-        <QuickAction onNavigate={setCurrentView} currentRole={session.role} />
+        <QuickAction currentRole={session.role} />
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
   );
 }

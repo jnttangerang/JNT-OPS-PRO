@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
+import authRoutes from "./src/server/routes/authRoutes";
 import {
   syncAllDecisions,
   getDecisions,
@@ -1583,41 +1584,7 @@ app.post("/api/testConnection", (req, res) => {
   return res.json({ status: "success", message: "Connection OK" });
 });
 
-// 1. LOGIN API
-app.post("/api/login", (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ status: "error", message: "Username & Password wajib diisi" });
-  }
-
-  const db = readDb();
-  // We check against the database
-  const user = db.Users.find(
-    (u: any) => u.username.toLowerCase() === username.toLowerCase()
-  );
-
-  const isPassValid = user && (user.password_hash === simulateHash(password) || user.password_hash === password);
-  if (!user || !isPassValid) {
-    return res.status(401).json({ status: "error", message: "Username atau Password salah" });
-  }
-
-  if (user.status_aktif !== "AKTIF") {
-    return res.status(403).json({ status: "error", message: "Akun Anda dinonaktifkan" });
-  }
-
-  // Record audit log
-  addAuditLog(user.user_id, "LOGIN", `Pengguna '${user.nama_lengkap}' berhasil masuk.`, user.outlet_id_home);
-
-  const session = {
-    user_id: user.user_id,
-    username: user.username,
-    role: user.role,
-    outlet_id_home: user.outlet_id_home,
-    nama_lengkap: user.nama_lengkap
-  };
-
-  return res.json({ status: "success", message: "Login berhasil", data: session });
-});
+app.use("/api", authRoutes);
 
 // 2. GET OUTLETS API
 
