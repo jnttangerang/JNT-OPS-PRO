@@ -1,11 +1,20 @@
-import React, { useState } from "react";
-import { LogIn, ShieldAlert, Truck, Lock, User, Briefcase, TrendingUp, UserCheck, Eye, EyeOff } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { LogIn, ShieldAlert, Truck, Lock, User, Briefcase, TrendingUp, UserCheck, Eye, EyeOff, ChevronDown, RefreshCw } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData } from "../types";
 import { toast } from "../utils/toast";
 
 interface LoginPageProps {
   onLoginSuccess: (session: SessionData) => void;
+}
+
+interface AdminUser {
+  user_id?: string;
+  username: string;
+  nama_lengkap?: string;
+  role?: string;
+  status_aktif?: string;
+  outlet_id_home?: string;
 }
 
 export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
@@ -15,13 +24,38 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [adminList, setAdminList] = useState<AdminUser[]>([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(false);
+
+  const fetchActiveAdmins = async () => {
+    setLoadingAdmins(true);
+    try {
+      const res = await callBackend("getUsers");
+      if (res && res.status === "success" && Array.isArray(res.data)) {
+        const activeAdmins: AdminUser[] = res.data.filter((u: any) => {
+          const isActive = (u.status_aktif || "AKTIF").toString().toUpperCase() === "AKTIF";
+          const role = (u.role || "ADMIN").toString().toUpperCase();
+          return isActive && role !== "OWNER";
+        });
+        setAdminList(activeAdmins);
+      }
+    } catch (err) {
+      console.error("Gagal mengambil daftar admin:", err);
+    } finally {
+      setLoadingAdmins(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchActiveAdmins();
+  }, [callBackend]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     if (!username || !password) {
-      setError("Username dan password wajib diisi!");
+      setError(selectedRole === "ADMIN" ? "Pilih admin dan masukkan password!" : "Username dan password wajib diisi!");
       return;
     }
 
@@ -95,10 +129,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               type="button"
               onClick={() => {
                 setSelectedRole("ADMIN");
-                if (username === "" || username === "owner1") {
-                  setUsername("admin1");
-                  setPassword("admin123");
-                }
+                setUsername("");
+                setPassword("");
               }}
               className={`flex-1 py-2.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
                 selectedRole === "ADMIN"
@@ -113,10 +145,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               type="button"
               onClick={() => {
                 setSelectedRole("OWNER");
-                if (username === "" || username === "admin1") {
-                  setUsername("owner1");
-                  setPassword("owner123");
-                }
+                setUsername("owner1");
+                setPassword("owner123");
               }}
               className={`flex-1 py-2.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
                 selectedRole === "OWNER"
@@ -150,25 +180,72 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Username
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  <User className="h-5 w-5" />
-                </div>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className={`w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent text-sm text-gray-800 transition-all duration-200 ${
-                    selectedRole === "ADMIN" ? "focus:ring-[#E4002B]" : "focus:ring-[#171717]"
-                  }`}
-                  placeholder={selectedRole === "ADMIN" ? "Masukkan username" : "Masukkan username"}
-                  autoFocus
-                  disabled={loading}
-                />
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  {selectedRole === "ADMIN" ? "Nama Admin" : "Username"}
+                </label>
+                {selectedRole === "ADMIN" && (
+                  <button
+                    type="button"
+                    onClick={fetchActiveAdmins}
+                    disabled={loadingAdmins}
+                    className="text-[11px] text-gray-400 hover:text-[#E4002B] flex items-center gap-1 transition-colors"
+                    title="Segarkan daftar admin dari spreadsheet"
+                  >
+                    <RefreshCw className={`h-3 w-3 ${loadingAdmins ? "animate-spin text-[#E4002B]" : ""}`} />
+                    <span>{loadingAdmins ? "Memuat..." : "Refresh"}</span>
+                  </button>
+                )}
               </div>
+
+              {selectedRole === "ADMIN" ? (
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <select
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full pl-10 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E4002B] focus:border-transparent text-sm text-gray-800 transition-all duration-200 cursor-pointer appearance-none disabled:opacity-60"
+                    disabled={loading || loadingAdmins}
+                  >
+                    {loadingAdmins ? (
+                      <option value="">Memuat daftar pegawai...</option>
+                    ) : adminList.length === 0 ? (
+                      <option value="">-- Tidak ada pegawai aktif --</option>
+                    ) : (
+                      <>
+                        <option value="" disabled hidden>
+                          - Pilih nama pegawai -
+                        </option>
+                        {adminList.map((adm) => (
+                          <option key={adm.username} value={adm.username}>
+                            {adm.nama_lengkap || adm.username}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-gray-400">
+                    <ChevronDown className="h-4 w-4" />
+                  </div>
+                </div>
+              ) : (
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                    <User className="h-5 w-5" />
+                  </div>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#171717] focus:border-transparent text-sm text-gray-800 transition-all duration-200"
+                    placeholder="Masukkan username"
+                    autoFocus
+                    disabled={loading}
+                  />
+                </div>
+              )}
             </div>
 
             <div>

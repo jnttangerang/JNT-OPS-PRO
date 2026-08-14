@@ -321,6 +321,33 @@ function apiGetOutlets() {
 }
 
 /**
+ * Ambil Daftar Pengguna Aktif
+ */
+function apiGetUsers() {
+  var rows = DatabaseService.getSheetData("Users");
+  if (!rows || rows.length <= 1) return { status: "success", data: [] };
+  var headers = rows[0];
+  var users = [];
+  for (var i = 1; i < rows.length; i++) {
+    var obj = rowToObject_(headers, rows[i]);
+    if (!obj.user_id && !obj.username) continue;
+    var status = (obj.status_aktif || "AKTIF").toString().toUpperCase();
+    if (status === "AKTIF") {
+      users.push({
+        user_id: (obj.user_id || "").toString(),
+        username: (obj.username || "").toString(),
+        nama_lengkap: (obj.nama_lengkap || obj.username || "").toString(),
+        role: (obj.role || "ADMIN").toString(),
+        outlet_id_home: (obj.outlet_id_home || "").toString(),
+        status_aktif: status,
+        no_wa: (obj.no_wa || "").toString()
+      });
+    }
+  }
+  return { status: "success", data: users };
+}
+
+/**
  * 2. Search Customer Parsial
  */
 function apiSearchCustomer(params) {
