@@ -83,6 +83,8 @@ function handleRouting(action, params) {
       return apiDeletePreInputDraft(params);
     case "saveTransaksi":
       return apiSaveTransaksi(params);
+    case "getDetailTransaksi":
+      return apiGetDetailTransaksi(params);
     case "updateTransaksi":
       return apiUpdateTransaksi(params);
     case "perbaikiAlamatAI":
@@ -1031,6 +1033,161 @@ function apiDeleteTransaksi(params) {
     return { status: "success", message: result.message };
   } catch (err) {
     return { status: "error", message: err.message };
+  }
+}
+
+/**
+ * Ambil Detail Lengkap Transaksi
+ */
+function apiGetDetailTransaksi(params) {
+  var resiId = params.resi_id;
+  var txId = params.transaksi_id;
+  if (!resiId && !txId) {
+    return { status: "error", message: "resi_id atau transaksi_id diperlukan" };
+  }
+
+  var dbExp = DatabaseService.getSheetData("EXP_Resi");
+  var dbCrg = DatabaseService.getSheetData("CRG_Resi");
+  var dbBackup = DatabaseService.getSheetData("PreInput_Backup");
+  var dbOutlets = DatabaseService.getSheetData("Outlets");
+  var dbUsers = DatabaseService.getSheetData("Users");
+
+  var expHeaders = dbExp ? dbExp[0] : [];
+  var crgHeaders = dbCrg ? dbCrg[0] : [];
+  var backupHeaders = dbBackup ? dbBackup[0] : [];
+
+  var resiObj = null;
+  var tipe = "Express";
+
+  if (dbExp && dbExp.length > 1) {
+    for (var i = 1; i < dbExp.length; i++) {
+      var rowE = rowToObject_(expHeaders, dbExp[i]);
+      if ((resiId && rowE.resi_id === resiId) || (txId && rowE.transaksi_id === txId)) {
+        resiObj = rowE;
+        tipe = "Express";
+        if (!txId) txId = rowE.transaksi_id;
+        break;
+      }
+    }
+  }
+
+  if (!resiObj && dbCrg && dbCrg.length > 1) {
+    for (var j = 1; j < dbCrg.length; j++) {
+      var rowC = rowToObject_(crgHeaders, dbCrg[j]);
+      if ((resiId && rowC.resi_id === resiId) || (txId && rowC.transaksi_id === txId)) {
+        resiObj = rowC;
+        tipe = "Cargo";
+        if (!txId) txId = rowC.transaksi_id;
+        break;
+      }
+    }
+  }
+
+  var preObj = null;
+  if (txId && dbBackup && dbBackup.length > 1) {
+    for (var k = 1; k < dbBackup.length; k++) {
+      var rowP = rowToObject_(backupHeaders, dbBackup[k]);
+      if (rowP.transaksi_id === txId) {
+        preObj = rowP;
+        break;
+      }
+    }
+  }
+
+  var outletMap = {};
+  for (var o = 1; o < dbOutlets.length; o++) outletMap[dbOutlets[o][0].toString()] = dbOutlets[o][1].toString();
+
+  var userMap = {};
+  for (var u = 1; u < dbUsers.length; u++) userMap[dbUsers[u][0].toString()] = dbUsers[u][1].toString();
+
+  var outId = (resiObj && resiObj.outlet_id_input) || (preObj && preObj.outlet_id_tugas) || "";
+  var adminId = (resiObj && resiObj.admin_id_pencatat) || (preObj && preObj.admin_id) || "";
+
+  var detail = {
+    resi_id: (resiObj && resiObj.resi_id) || resiId || "",
+    transaksi_id: txId || "",
+    timestamp: (resiObj && resiObj.timestamp) || (preObj && preObj.timestamp) || new Date().toISOString(),
+    tipe: tipe,
+    tipe_produk: (resiObj && resiObj.tipe_produk) || "EZ",
+    admin_id: adminId,
+    admin_name: userMap[adminId] || adminId,
+    outlet_id: outId,
+    outlet_name: outletMap[outId] || outId,
+    nama_pengirim: (preObj && preObj.nama_pengirim) || "",
+    hp_pengirim: (preObj && preObj.hp_pengirim) || "",
+    alamat_pengirim: (preObj && preObj.alamat_pengirim) || "",
+    nama_penerima: (preObj && preObj.nama_penerima) || "",
+    hp_penerima: (preObj && preObj.hp_penerima) || "",
+    alamat_penerima: (preObj && preObj.alamat_penerima) || "",
+    nama_barang: (preObj && preObj.nama_barang) || "",
+    berat_kg: Number((resiObj && resiObj.berat_kg) || (preObj && preObj.berat_kg) || 1),
+    ongkir_dasar: Number((resiObj && resiObj.ongkir_dasar) || 0),
+    biaya_asuransi: Number((resiObj && resiObj.biaya_asuransi) || 0),
+    biaya_packing: Number((resiObj && resiObj.biaya_packing) || 0),
+    biaya_amplop: Number((resiObj && resiObj.biaya_amplop) || 0),
+    biaya_lain: Number((resiObj && resiObj.biaya_lain) || 0),
+    grand_total: Number((resiObj && resiObj.grand_total) || 0),
+    setoran_ke_owner: Number((resiObj && resiObj.setoran_ke_owner) || 0),
+    kas_operasional: Number((resiObj && resiObj.kas_operasional) || 0),
+    metode_bayar: (resiObj && resiObj.metode_bayar) || "Tunai",
+    status_resi: (resiObj && resiObj.status_resi) || "AKTIF",
+    catatan: (preObj && preObj.catatan_admin) || ""
+  };
+
+  return { status: "success", data: detail };
+}
+
+/**
+ * Edit / Update Transaksi oleh Owner
+ */
+function apiUpdateTransaksi(params) {
+  try {
+    var targetResi = params.old_resi_id || params.resi_id;
+    var txId = params.transaksi_id;
+    if (!targetResi && !txId) {
+      return { status: "error", message: "resi_id atau transaksi_id diperlukan" };
+    }
+
+    var resiUpdate = {};
+    if (params.resi_id) resiUpdate.resi_id = params.resi_id;
+    if (params.tipe_produk) resiUpdate.tipe_produk = params.tipe_produk;
+    if (params.berat_kg !== undefined) resiUpdate.berat_kg = Number(params.berat_kg) || 0;
+    if (params.metode_bayar) resiUpdate.metode_bayar = params.metode_bayar;
+    if (params.grand_total !== undefined) resiUpdate.grand_total = Number(params.grand_total) || 0;
+    if (params.ongkir_dasar !== undefined) resiUpdate.ongkir_dasar = Number(params.ongkir_dasar) || 0;
+    if (params.biaya_packing !== undefined) resiUpdate.biaya_packing = Number(params.biaya_packing) || 0;
+    if (params.biaya_asuransi !== undefined) resiUpdate.biaya_asuransi = Number(params.biaya_asuransi) || 0;
+    if (params.biaya_amplop !== undefined) resiUpdate.biaya_amplop = Number(params.biaya_amplop) || 0;
+    if (params.setoran_ke_owner !== undefined) resiUpdate.setoran_ke_owner = Number(params.setoran_ke_owner) || 0;
+    if (params.kas_operasional !== undefined) resiUpdate.kas_operasional = Number(params.kas_operasional) || 0;
+    if (params.status_resi) resiUpdate.status_resi = params.status_resi;
+
+    if (targetResi) {
+      DatabaseService.updateRowByColumn("EXP_Resi", "resi_id", targetResi, resiUpdate);
+      DatabaseService.updateRowByColumn("CRG_Resi", "resi_id", targetResi, resiUpdate);
+    }
+
+    if (txId) {
+      var preUpdate = {};
+      if (params.nama_pengirim) preUpdate.nama_pengirim = params.nama_pengirim;
+      if (params.hp_pengirim) preUpdate.hp_pengirim = params.hp_pengirim;
+      if (params.alamat_pengirim) preUpdate.alamat_pengirim = params.alamat_pengirim;
+      if (params.nama_penerima) preUpdate.nama_penerima = params.nama_penerima;
+      if (params.hp_penerima) preUpdate.hp_penerima = params.hp_penerima;
+      if (params.alamat_penerima) preUpdate.alamat_penerima = params.alamat_penerima;
+      if (params.nama_barang) preUpdate.nama_barang = params.nama_barang;
+      if (params.berat_kg !== undefined) preUpdate.berat_kg = Number(params.berat_kg) || 0;
+      if (params.catatan !== undefined) preUpdate.catatan_admin = params.catatan;
+      if (params.status_resi) preUpdate.status = params.status_resi === "BATAL" ? "BATAL" : "SELESAI";
+
+      DatabaseService.updateRowByColumn("PreInput_Backup", "transaksi_id", txId, preUpdate);
+    }
+
+    logAudit(params.user_id || "OWNER", "EDIT_TRANSAKSI", "Owner mengedit transaksi resi " + targetResi + (params.resi_id && params.resi_id !== targetResi ? " -> " + params.resi_id : ""), params.outlet_id || "ALL");
+
+    return { status: "success", message: "Transaksi berhasil diperbarui!" };
+  } catch (err) {
+    return { status: "error", message: err.message || err.toString() };
   }
 }
 

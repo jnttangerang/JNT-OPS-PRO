@@ -3527,6 +3527,187 @@ app.post("/api/deleteTransaksi", (req, res) => {
   });
 });
 
+// 10.8 GET TRANSACTION DETAIL (FOR DETAIL & EDIT)
+app.post("/api/getDetailTransaksi", (req, res) => {
+  const db = readDb();
+  const { resi_id, transaksi_id } = req.body || {};
+
+  if (!resi_id && !transaksi_id) {
+    return res.status(400).json({ status: "error", message: "resi_id atau transaksi_id diperlukan" });
+  }
+
+  const exp = (db.EXP_Resi || []).find((r: any) => (resi_id && r.resi_id === resi_id) || (transaksi_id && r.transaksi_id === transaksi_id));
+  const crg = (db.CRG_Resi || []).find((r: any) => (resi_id && r.resi_id === resi_id) || (transaksi_id && r.transaksi_id === transaksi_id));
+  const resiObj = exp || crg;
+  const txId = transaksi_id || resiObj?.transaksi_id || "";
+
+  const pre = (db.PreInput_Backup || []).find((p: any) => p.transaksi_id === txId);
+  const masterTx = (db.MASTER_TRANSAKSI || []).find((m: any) => m.id === txId || m.transaksi_id === txId || (resi_id && m.no_resi === resi_id));
+
+  const outlet = (db.Outlets || []).find((o: any) => o.outlet_id === (resiObj?.outlet_id_input || masterTx?.outlet_id || pre?.outlet_id_tugas));
+  const user = (db.Users || []).find((u: any) => u.user_id === (resiObj?.admin_id_pencatat || masterTx?.admin_id || pre?.admin_id));
+
+  const detail = {
+    resi_id: resiObj?.resi_id || masterTx?.no_resi || resi_id || "",
+    transaksi_id: txId,
+    timestamp: resiObj?.timestamp || masterTx?.tanggal_transaksi || pre?.timestamp || new Date().toISOString(),
+    tipe: crg ? "Cargo" : "Express",
+    tipe_produk: resiObj?.tipe_produk || masterTx?.tipe_produk || "EZ",
+    admin_id: resiObj?.admin_id_pencatat || masterTx?.admin_id || pre?.admin_id || "",
+    admin_name: user?.nama_lengkap || user?.username || resiObj?.admin_id_pencatat || "",
+    outlet_id: resiObj?.outlet_id_input || masterTx?.outlet_id || pre?.outlet_id_tugas || "",
+    outlet_name: outlet?.nama_outlet || resiObj?.outlet_id_input || "",
+    nama_pengirim: pre?.nama_pengirim || masterTx?.snapshot_nama_pengirim || "",
+    hp_pengirim: pre?.hp_pengirim || masterTx?.snapshot_hp_pengirim || "",
+    alamat_pengirim: pre?.alamat_pengirim || masterTx?.snapshot_alamat_pengirim || "",
+    nama_penerima: pre?.nama_penerima || masterTx?.snapshot_nama_penerima || "",
+    hp_penerima: pre?.hp_penerima || masterTx?.snapshot_hp_penerima || "",
+    alamat_penerima: pre?.alamat_penerima || masterTx?.snapshot_alamat_penerima || "",
+    nama_barang: pre?.nama_barang || masterTx?.nama_barang || "",
+    berat_kg: Number(resiObj?.berat_kg ?? pre?.berat_kg ?? masterTx?.berat_barang ?? 1),
+    ongkir_dasar: Number(resiObj?.ongkir_dasar ?? masterTx?.ongkir_customer ?? 0),
+    biaya_asuransi: Number(resiObj?.biaya_asuransi ?? masterTx?.asuransi ?? 0),
+    biaya_packing: Number(resiObj?.biaya_packing ?? masterTx?.packing ?? 0),
+    biaya_amplop: Number(resiObj?.biaya_amplop ?? masterTx?.amplop ?? 0),
+    biaya_lain: Number(resiObj?.biaya_lain ?? masterTx?.biaya_lain ?? 0),
+    grand_total: Number(resiObj?.grand_total ?? masterTx?.total_customer ?? 0),
+    setoran_ke_owner: Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner ?? 0),
+    kas_operasional: Number(resiObj?.kas_operasional ?? masterTx?.kas_outlet ?? 0),
+    metode_bayar: resiObj?.metode_bayar || masterTx?.metode_bayar || "Tunai",
+    status_resi: resiObj?.status || resiObj?.status_resi || masterTx?.status || "AKTIF",
+    catatan: pre?.catatan_admin || masterTx?.catatan || "",
+    foto_paket_url: pre?.foto_paket_url || resiObj?.foto_paket_url || masterTx?.foto_barang || "",
+    foto_resi_url: pre?.foto_resi_url || resiObj?.foto_resi_url || masterTx?.foto_resi || "",
+    bukti_bayar_url: resiObj?.bukti_bayar_url || ""
+  };
+
+  return res.json({ status: "success", data: detail });
+});
+
+// 10.9 UPDATE TRANSAKSI (FOR OWNER EDIT)
+app.post("/api/updateTransaksi", (req, res) => {
+  const db = readDb();
+  const { 
+    resi_id, 
+    old_resi_id,
+    transaksi_id, 
+    user_id, 
+    outlet_id, 
+    tipe,
+    nama_pengirim,
+    hp_pengirim,
+    alamat_pengirim,
+    nama_penerima,
+    hp_penerima,
+    alamat_penerima,
+    nama_barang,
+    berat_kg,
+    tipe_produk,
+    metode_bayar,
+    grand_total,
+    ongkir_dasar,
+    biaya_packing,
+    biaya_asuransi,
+    biaya_amplop,
+    setoran_ke_owner,
+    kas_operasional,
+    status_resi,
+    catatan
+  } = req.body;
+
+  const targetResi = old_resi_id || resi_id;
+  if (!targetResi && !transaksi_id) {
+    return res.status(400).json({ status: "error", message: "resi_id atau transaksi_id diperlukan" });
+  }
+
+  let exp = (db.EXP_Resi || []).find((r: any) => r.resi_id === targetResi || (transaksi_id && r.transaksi_id === transaksi_id));
+  let crg = (db.CRG_Resi || []).find((r: any) => r.resi_id === targetResi || (transaksi_id && r.transaksi_id === transaksi_id));
+  let pre = (db.PreInput_Backup || []).find((p: any) => (transaksi_id && p.transaksi_id === transaksi_id) || (exp && p.transaksi_id === exp.transaksi_id) || (crg && p.transaksi_id === crg.transaksi_id));
+
+  if (exp) {
+    if (resi_id) exp.resi_id = resi_id;
+    if (tipe_produk) exp.tipe_produk = tipe_produk;
+    if (berat_kg !== undefined) exp.berat_kg = Number(berat_kg) || 0;
+    if (metode_bayar) exp.metode_bayar = metode_bayar;
+    if (grand_total !== undefined) exp.grand_total = Number(grand_total) || 0;
+    if (ongkir_dasar !== undefined) exp.ongkir_dasar = Number(ongkir_dasar) || 0;
+    if (biaya_packing !== undefined) exp.biaya_packing = Number(biaya_packing) || 0;
+    if (biaya_asuransi !== undefined) exp.biaya_asuransi = Number(biaya_asuransi) || 0;
+    if (biaya_amplop !== undefined) exp.biaya_amplop = Number(biaya_amplop) || 0;
+    if (setoran_ke_owner !== undefined) exp.setoran_ke_owner = Number(setoran_ke_owner) || 0;
+    if (kas_operasional !== undefined) exp.kas_operasional = Number(kas_operasional) || 0;
+    if (status_resi) exp.status_resi = status_resi;
+  }
+
+  if (crg) {
+    if (resi_id) crg.resi_id = resi_id;
+    if (tipe_produk) crg.tipe_produk = tipe_produk;
+    if (berat_kg !== undefined) crg.berat_kg = Number(berat_kg) || 0;
+    if (metode_bayar) crg.metode_bayar = metode_bayar;
+    if (grand_total !== undefined) crg.grand_total = Number(grand_total) || 0;
+    if (ongkir_dasar !== undefined) crg.ongkir_dasar = Number(ongkir_dasar) || 0;
+    if (biaya_packing !== undefined) crg.biaya_packing = Number(biaya_packing) || 0;
+    if (biaya_asuransi !== undefined) crg.biaya_asuransi = Number(biaya_asuransi) || 0;
+    if (biaya_amplop !== undefined) crg.biaya_amplop = Number(biaya_amplop) || 0;
+    if (setoran_ke_owner !== undefined) crg.setoran_ke_owner = Number(setoran_ke_owner) || 0;
+    if (kas_operasional !== undefined) crg.kas_operasional = Number(kas_operasional) || 0;
+    if (status_resi) crg.status_resi = status_resi;
+  }
+
+  if (pre) {
+    if (nama_pengirim) pre.nama_pengirim = nama_pengirim;
+    if (hp_pengirim) pre.hp_pengirim = hp_pengirim;
+    if (alamat_pengirim) pre.alamat_pengirim = alamat_pengirim;
+    if (nama_penerima) pre.nama_penerima = nama_penerima;
+    if (hp_penerima) pre.hp_penerima = hp_penerima;
+    if (alamat_penerima) pre.alamat_penerima = alamat_penerima;
+    if (nama_barang) pre.nama_barang = nama_barang;
+    if (berat_kg !== undefined) pre.berat_kg = Number(berat_kg) || 0;
+    if (catatan !== undefined) pre.catatan_admin = catatan;
+    if (status_resi) pre.status = status_resi === "BATAL" ? "BATAL" : "SELESAI";
+  }
+
+  const finalTxId = transaksi_id || exp?.transaksi_id || crg?.transaksi_id || "";
+  if (finalTxId && db.MASTER_TRANSAKSI) {
+    const masterTx = db.MASTER_TRANSAKSI.find((m: any) => m.id === finalTxId || m.transaksi_id === finalTxId || m.no_resi === targetResi);
+    if (masterTx) {
+      if (resi_id) masterTx.no_resi = resi_id;
+      if (nama_pengirim) masterTx.snapshot_nama_pengirim = nama_pengirim;
+      if (hp_pengirim) masterTx.snapshot_hp_pengirim = hp_pengirim;
+      if (alamat_pengirim) masterTx.snapshot_alamat_pengirim = alamat_pengirim;
+      if (nama_penerima) masterTx.snapshot_nama_penerima = nama_penerima;
+      if (hp_penerima) masterTx.snapshot_hp_penerima = hp_penerima;
+      if (alamat_penerima) masterTx.snapshot_alamat_penerima = alamat_penerima;
+      if (nama_barang) masterTx.nama_barang = nama_barang;
+      if (berat_kg !== undefined) masterTx.berat_barang = Number(berat_kg) || 0;
+      if (tipe_produk) masterTx.tipe_produk = tipe_produk;
+      if (metode_bayar) masterTx.metode_bayar = metode_bayar;
+      if (grand_total !== undefined) masterTx.total_customer = Number(grand_total) || 0;
+      if (ongkir_dasar !== undefined) masterTx.ongkir_customer = Number(ongkir_dasar) || 0;
+      if (biaya_packing !== undefined) masterTx.packing = Number(biaya_packing) || 0;
+      if (biaya_asuransi !== undefined) masterTx.asuransi = Number(biaya_asuransi) || 0;
+      if (biaya_amplop !== undefined) masterTx.amplop = Number(biaya_amplop) || 0;
+      if (setoran_ke_owner !== undefined) masterTx.wajib_setor_owner = Number(setoran_ke_owner) || 0;
+      if (kas_operasional !== undefined) masterTx.kas_outlet = Number(kas_operasional) || 0;
+      if (status_resi) masterTx.status = status_resi;
+    }
+  }
+
+  // Audit Log
+  if (!db.AuditLogs) db.AuditLogs = [];
+  db.AuditLogs.unshift({
+    log_id: "LOG-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user_id: user_id || "OWNER",
+    aksi: "EDIT_TRANSAKSI",
+    detail: `Owner mengedit transaksi resi ${targetResi}${resi_id && resi_id !== targetResi ? ` -> ${resi_id}` : ""}`,
+    outlet_id: outlet_id || "ALL"
+  });
+
+  writeDb(db);
+  return res.json({ status: "success", message: "Transaksi berhasil diperbarui!" });
+});
+
 // === MAPS REVIEWS API ENDPOINTS ===
 
 // Get all reviews

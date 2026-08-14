@@ -69,6 +69,8 @@ export function useAppsScript() {
         "uploadFile",
         "getAdminDashboardData",
         "getDashboardData",
+        "getDetailTransaksi",
+        "updateTransaksi",
         "getCustomerDetailFull",
         "getCustomerHistory",
         "deleteBulkCustomers",
