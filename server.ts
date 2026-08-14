@@ -1889,10 +1889,132 @@ app.post("/api/getBukuPenerima", (req, res) => {
   return res.json({ status: "success", data: list });
 });
 
+app.post("/api/deleteBulkCustomers", async (req, res) => {
+  const { ids, sheetName } = req.body;
+  if (!ids || !sheetName) return res.status(400).json({ status: "error", message: "Missing required parameters" });
+  
+  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  
+  try {
+    const asRes = await fetch(targetUrl, {
+      method: "POST",
+      body: JSON.stringify({ action: "deleteBulkCustomers", data: { ids, sheetName } })
+    });
+    const asData = await asRes.json();
+    
+    if (asData.status === "success") {
+      const db = readDb();
+      let updated = false;
+
+      const targetArr = db[sheetName];
+      if (Array.isArray(targetArr)) {
+        db[sheetName] = targetArr.filter((item: any) => !ids.includes(item.id) && !ids.includes(item.customer_id));
+        updated = true;
+      }
+
+      // Audit Logging
+      if (!db.AuditLogs) db.AuditLogs = [];
+      db.AuditLogs.push({
+        id: `AUD-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user: "System",
+        action: "DELETE_BULK_CUSTOMERS",
+        details: `Deleted ${ids.length} customers from ${sheetName}`,
+        target: sheetName
+      });
+      updated = true;
+
+      if (updated) writeDb(db);
+    }
+    return res.json(asData);
+  } catch(e: any) {
+    return res.status(500).json({ status: "error", message: e.message || "Gagal proxy ke Apps Script" });
+  }
+});
+
+app.post("/api/updateCustomer", async (req, res) => {
+  const { id, sheetName, updatedData } = req.body;
+  if (!id || !sheetName || !updatedData) return res.status(400).json({ status: "error", message: "Missing required parameters" });
+
+  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  
+  try {
+    const asRes = await fetch(targetUrl, {
+      method: "POST",
+      body: JSON.stringify({ action: "updateCustomer", data: { id, sheetName, updatedData } })
+    });
+    const asData = await asRes.json();
+
+    if (asData.status === "success") {
+      const db = readDb();
+      let updated = false;
+      
+      const targetArr = db[sheetName];
+      if (Array.isArray(targetArr)) {
+        const index = targetArr.findIndex((item: any) => item.id === id || item.customer_id === id);
+        if (index !== -1) {
+          targetArr[index] = { ...targetArr[index], ...updatedData, updated_at: new Date().toISOString() };
+          updated = true;
+        }
+      }
+
+      // Audit Logging
+      if (!db.AuditLogs) db.AuditLogs = [];
+      db.AuditLogs.push({
+        id: `AUD-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        user: "System",
+        action: "UPDATE_CUSTOMER",
+        details: `Updated customer ${id} in ${sheetName}`,
+        target: sheetName
+      });
+      updated = true;
+
+      if (updated) writeDb(db);
+    }
+    return res.json(asData);
+  } catch(e: any) {
+    return res.status(500).json({ status: "error", message: e.message || "Gagal proxy ke Apps Script" });
+  }
+});
+
 // 3.9. GET CUSTOMERS MASTER
 app.post("/api/getCustomersMaster", (req, res) => {
   const db = readDb();
-  const customers = db.MASTER_CUSTOMER || [];
+  const pengirimRows = db.MASTER_PENGIRIM || [];
+  const penerimaRows = db.MASTER_PENERIMA || [];
+  
+  const customerMap = new Map();
+  const addCustomer = (row, source) => {
+    const id = row.id || row.customer_id || "";
+    const nama = row.nama || row.nama_pengirim || row.nama_penerima || "";
+    const telepon = row.telepon || row.no_hp || row.no_hp_penerima || "";
+    const alamat = row.alamat || row.alamat_pengirim || row.alamat_penerima || "";
+    const status = row.status || "AKTIF";
+    const created = row.created_at || row.last_updated || new Date().toISOString();
+    const updated = row.updated_at || created;
+    const outlet = row.outlet_id_asal || "";
+    
+    if (!telepon) return;
+    
+    if (customerMap.has(telepon)) {
+      const existing = customerMap.get(telepon);
+      if (status === "AKTIF" && existing.status !== "AKTIF") {
+        customerMap.set(telepon, { customer_id: id, id, nama, telepon, alamat, status, created_at: created, updated_at: updated, outlet_id_asal: outlet, sumber: source });
+      }
+      else if (status === "AKTIF" && existing.status === "AKTIF" && new Date(updated) > new Date(existing.updated_at)) {
+        customerMap.set(telepon, { customer_id: id, id, nama, telepon, alamat, status, created_at: created, updated_at: updated, outlet_id_asal: outlet, sumber: source });
+      }
+    } else {
+      customerMap.set(telepon, { customer_id: id, id, nama, telepon, alamat, status, created_at: created, updated_at: updated, outlet_id_asal: outlet, sumber: source });
+    }
+  };
+  
+  pengirimRows.forEach(r => addCustomer(r, "PENGIRIM"));
+  penerimaRows.forEach(r => addCustomer(r, "PENERIMA"));
+  
+  const customers = Array.from(customerMap.values());
+
   const preInputs = db.PreInput_Backup || [];
   const masterTx = db.MASTER_TRANSAKSI || [];
   const mapsReviews = db.MapsReviews || [];

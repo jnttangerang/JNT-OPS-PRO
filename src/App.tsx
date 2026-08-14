@@ -463,6 +463,7 @@ function AppContent() {
                   activeOutletId={activeOutletId}
                   onChangeActiveOutlet={handleActiveOutletChange}
                   outlets={outlets}
+                  onNavigate={navigate}
                 />
               } />
               
@@ -472,6 +473,7 @@ function AppContent() {
                   activeOutletId={activeOutletId}
                   onChangeActiveOutlet={handleActiveOutletChange}
                   outlets={outlets}
+                  onNavigate={navigate}
                 />
               } />
               
@@ -481,6 +483,7 @@ function AppContent() {
                   outlets={outlets}
                   activeOutletId={activeOutletId}
                   onChangeActiveOutlet={handleActiveOutletChange}
+                  onNavigate={navigate}
                 />
               } />
 
@@ -523,6 +526,7 @@ function AppContent() {
                   activeOutletId={activeOutletId}
                   outlets={outlets}
                   onChangeActiveOutlet={handleActiveOutletChange}
+                  onNavigate={navigate}
                 />
               } />
               
@@ -576,15 +580,18 @@ function AppContent() {
       </footer>
 
       {session && (
-        <QuickAction currentRole={session.role} />
+        <QuickAction currentRole={session.role} onNavigate={navigate} />
       )}
     </div>
   );
 }
 
+import { Toaster } from 'react-hot-toast';
+
 export default function App() {
   return (
     <BrowserRouter>
+      <Toaster position="top-right" toastOptions={{ className: 'text-sm font-bold' }} />
       <AppContent />
     </BrowserRouter>
   );

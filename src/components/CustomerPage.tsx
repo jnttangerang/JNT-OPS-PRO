@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { 
   Users, Search, Filter, Phone, MapPin, Building2, Calendar, Star, X, Package, 
-  BookOpen, Clock, DollarSign, Weight, ShoppingBag, ArrowUpRight, CheckCircle, BarChart3, AlertCircle
+  BookOpen, Clock, DollarSign, Weight, ShoppingBag, ArrowUpRight, CheckCircle, BarChart3, AlertCircle,
+  Trash2, Edit2, ChevronLeft, ChevronRight
 } from "lucide-react";
+import toast from "react-hot-toast";
+import EditCustomerModal from "./customer/EditCustomerModal";
+import DeleteBulkModal from "./customer/DeleteBulkModal";
 import useAppsScript from "../hooks/useAppsScript";
 import { Outlet } from "../types";
 import { format } from "date-fns";
@@ -37,9 +41,25 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [drawerTab, setDrawerTab] = useState<"ANALYTICS" | "PENGIRIM" | "PENERIMA" | "RIWAYAT">("ANALYTICS");
 
+  // Pagination & Selection State
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(50);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  
+  // Modals
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editData, setEditData] = useState<any | null>(null);
+
   useEffect(() => {
     loadAllData();
   }, []);
+
+  // Reset pagination/selection on tab/filter change
+  useEffect(() => {
+    setPage(1);
+    setSelectedIds([]);
+  }, [activeTab, searchQuery, filterOutlet, filterStatus, dateRange, limit]);
 
   const loadAllData = async () => {
     setLoading(true);
@@ -113,6 +133,61 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
   const filteredSemua = filterList(customersMaster, "nama", "telepon", "alamat", "last_shipment");
   const filteredPengirim = filterList(bukuPengirim, "nama", "telepon", "alamat", "tanggal_terakhir");
   const filteredPenerima = filterList(bukuPenerima, "nama", "telepon", "alamat", "tanggal_terakhir");
+
+  const currentFiltered = activeTab === "SEMUA" ? filteredSemua : activeTab === "PENGIRIM" ? filteredPengirim : filteredPenerima;
+  const totalPages = Math.ceil(currentFiltered.length / limit) || 1;
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + limit;
+  const currentData = currentFiltered.slice(startIndex, endIndex);
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      setSelectedIds(currentData.map(item => item.id || item.customer_id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectRow = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteBulk = async () => {
+    try {
+      const sheetName = activeTab === "SEMUA" ? "Master_Customer" : activeTab === "PENGIRIM" ? "MASTER_PENGIRIM" : "MASTER_PENERIMA";
+      const res = await callBackend("deleteBulkCustomers", { ids: selectedIds, sheetName });
+      if (res?.status === "success") {
+        toast.success(`${res.deleted_count || selectedIds.length} data berhasil dihapus`);
+        setSelectedIds([]);
+        loadAllData();
+      } else {
+        toast.error("Gagal menghapus data, silakan coba lagi.");
+      }
+    } catch (e) {
+      toast.error("Gagal menghapus data, silakan coba lagi.");
+    }
+  };
+
+  const handleSaveEdit = async (updatedData: any) => {
+    try {
+      const sheetName = activeTab === "SEMUA" ? "Master_Customer" : activeTab === "PENGIRIM" ? "MASTER_PENGIRIM" : "MASTER_PENERIMA";
+      const res = await callBackend("updateCustomer", { 
+        id: updatedData.id || updatedData.customer_id, 
+        sheetName, 
+        updatedData 
+      });
+      if (res?.status === "success") {
+        toast.success("Data berhasil diperbarui");
+        loadAllData();
+      } else {
+        toast.error(res?.message || "Gagal memperbarui data, silakan coba lagi.");
+      }
+    } catch (e) {
+      toast.error("Gagal memperbarui data, silakan coba lagi.");
+    }
+  };
 
   return (
     <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto animate-fade-in relative">
@@ -222,6 +297,16 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
                 className="outline-none bg-transparent py-1.5 px-1 text-gray-700"
               />
             </div>
+            
+            {selectedIds.length > 0 && (
+              <button
+                onClick={() => setIsDeleteModalOpen(true)}
+                className="bg-red-50 text-red-600 px-3 py-2 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors flex items-center gap-2"
+              >
+                <Trash2 size={14} />
+                Hapus Terpilih ({selectedIds.length})
+              </button>
+            )}
           </div>
         </div>
 
@@ -231,6 +316,14 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 text-gray-500 text-[11px] uppercase tracking-wider border-b border-gray-100">
+                  <th className="p-4 w-12">
+                    <input 
+                      type="checkbox" 
+                      checked={currentData.length > 0 && selectedIds.length === currentData.length}
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </th>
                   <th className="p-4 font-bold">Customer ID & Nama</th>
                   <th className="p-4 font-bold">Telepon / WhatsApp</th>
                   <th className="p-4 font-bold">Customer Sejak</th>
@@ -239,29 +332,39 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
                   <th className="p-4 font-bold">Terakhir Kirim</th>
                   <th className="p-4 font-bold">Maps Review</th>
                   <th className="p-4 font-bold">Status</th>
+                  <th className="p-4 font-bold text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="text-xs divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-gray-400">
+                    <td colSpan={10} className="p-8 text-center text-gray-400">
                       Memuat data customer master...
                     </td>
                   </tr>
-                ) : filteredSemua.length === 0 ? (
+                ) : currentData.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-8 text-center text-gray-400">
+                    <td colSpan={10} className="p-8 text-center text-gray-400">
                       Tidak ada data customer yang cocok.
                     </td>
                   </tr>
                 ) : (
-                  filteredSemua.map((c, i) => (
+                  currentData.map((c, i) => {
+                    const rowId = c.customer_id || c.id;
+                    return (
                     <tr 
-                      key={c.customer_id || i} 
-                      onClick={() => openCustomerDetail(c.customer_id, c.telepon)}
-                      className="hover:bg-red-50/40 cursor-pointer transition-colors"
+                      key={rowId || i} 
+                      className={`hover:bg-red-50/40 transition-colors ${selectedIds.includes(rowId) ? 'bg-red-50/30' : ''}`}
                     >
-                      <td className="p-4">
+                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedIds.includes(rowId)}
+                          onChange={() => handleSelectRow(rowId)}
+                          className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                      </td>
+                      <td className="p-4 cursor-pointer" onClick={() => openCustomerDetail(c.customer_id, c.telepon)}>
                         <div className="font-bold text-gray-800 text-sm">{c.nama}</div>
                         <div className="text-[10px] text-gray-400 font-mono mt-0.5">{c.customer_id}</div>
                       </td>
@@ -291,15 +394,29 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
                           </span>
                         )}
                       </td>
-                      <td className="p-4">
+                      <td className="p-4 cursor-pointer" onClick={() => openCustomerDetail(c.customer_id, c.telepon)}>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
                           c.status === "AKTIF" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
                         }`}>
                           {c.status || "AKTIF"}
                         </span>
                       </td>
+                      <td className="p-4 text-center">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditData(c);
+                            setIsEditModalOpen(true);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Edit Customer"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                      </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -312,35 +429,53 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 text-gray-500 text-[11px] uppercase tracking-wider border-b border-gray-100">
+                  <th className="p-4 w-12">
+                    <input 
+                      type="checkbox" 
+                      checked={currentData.length > 0 && selectedIds.length === currentData.length}
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </th>
                   <th className="p-4 font-bold">ID & Nama Pengirim</th>
                   <th className="p-4 font-bold">Telepon</th>
                   <th className="p-4 font-bold">Alamat Pengirim</th>
                   <th className="p-4 font-bold">Jumlah Pengiriman</th>
                   <th className="p-4 font-bold">Pertama Kirim</th>
                   <th className="p-4 font-bold">Terakhir Kirim</th>
+                  <th className="p-4 font-bold text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="text-xs divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-gray-400">
+                    <td colSpan={8} className="p-8 text-center text-gray-400">
                       Memuat data buku pengirim...
                     </td>
                   </tr>
-                ) : filteredPengirim.length === 0 ? (
+                ) : currentData.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-gray-400">
+                    <td colSpan={8} className="p-8 text-center text-gray-400">
                       Tidak ada data pengirim yang cocok.
                     </td>
                   </tr>
                 ) : (
-                  filteredPengirim.map((p, i) => (
+                  currentData.map((p, i) => {
+                    const rowId = p.id || p.customer_id;
+                    return (
                     <tr 
-                      key={p.id || i}
-                      onClick={() => openCustomerDetail(p.customer_id, p.telepon)}
-                      className="hover:bg-red-50/40 cursor-pointer transition-colors"
+                      key={rowId || i}
+                      className={`hover:bg-red-50/40 transition-colors ${selectedIds.includes(rowId) ? 'bg-red-50/30' : ''}`}
                     >
-                      <td className="p-4">
+                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedIds.includes(rowId)}
+                          onChange={() => handleSelectRow(rowId)}
+                          className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                      </td>
+                      <td className="p-4 cursor-pointer" onClick={() => openCustomerDetail(p.customer_id, p.telepon)}>
                         <div className="font-bold text-gray-800 text-sm">{p.nama}</div>
                         <div className="text-[10px] text-gray-400 font-mono mt-0.5">{p.id}</div>
                       </td>
@@ -352,11 +487,25 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
                       <td className="p-4 text-gray-500">
                         {p.tanggal_pertama ? format(new Date(p.tanggal_pertama), "dd MMM yyyy", { locale: id }) : "-"}
                       </td>
-                      <td className="p-4 text-gray-600">
+                      <td className="p-4 text-gray-600 cursor-pointer" onClick={() => openCustomerDetail(p.customer_id, p.telepon)}>
                         {p.tanggal_terakhir ? format(new Date(p.tanggal_terakhir), "dd MMM yyyy", { locale: id }) : "-"}
                       </td>
+                      <td className="p-4 text-center">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditData(p);
+                            setIsEditModalOpen(true);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Edit Pengirim"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                      </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -369,35 +518,53 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 text-gray-500 text-[11px] uppercase tracking-wider border-b border-gray-100">
+                  <th className="p-4 w-12">
+                    <input 
+                      type="checkbox" 
+                      checked={currentData.length > 0 && selectedIds.length === currentData.length}
+                      onChange={handleSelectAll}
+                      className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                    />
+                  </th>
                   <th className="p-4 font-bold">ID & Nama Penerima</th>
                   <th className="p-4 font-bold">Telepon</th>
                   <th className="p-4 font-bold">Alamat Penerima</th>
                   <th className="p-4 font-bold">Jumlah Diterima</th>
                   <th className="p-4 font-bold">Pertama Terima</th>
                   <th className="p-4 font-bold">Terakhir Terima</th>
+                  <th className="p-4 font-bold text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="text-xs divide-y divide-gray-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-gray-400">
+                    <td colSpan={8} className="p-8 text-center text-gray-400">
                       Memuat data buku penerima...
                     </td>
                   </tr>
-                ) : filteredPenerima.length === 0 ? (
+                ) : currentData.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-gray-400">
+                    <td colSpan={8} className="p-8 text-center text-gray-400">
                       Tidak ada data penerima yang cocok.
                     </td>
                   </tr>
                 ) : (
-                  filteredPenerima.map((r, i) => (
+                  currentData.map((r, i) => {
+                    const rowId = r.id || r.customer_id;
+                    return (
                     <tr 
-                      key={r.id || i}
-                      onClick={() => openCustomerDetail(r.customer_id, r.telepon)}
-                      className="hover:bg-red-50/40 cursor-pointer transition-colors"
+                      key={rowId || i}
+                      className={`hover:bg-red-50/40 transition-colors ${selectedIds.includes(rowId) ? 'bg-red-50/30' : ''}`}
                     >
-                      <td className="p-4">
+                      <td className="p-4" onClick={(e) => e.stopPropagation()}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedIds.includes(rowId)}
+                          onChange={() => handleSelectRow(rowId)}
+                          className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                        />
+                      </td>
+                      <td className="p-4 cursor-pointer" onClick={() => openCustomerDetail(r.customer_id, r.telepon)}>
                         <div className="font-bold text-gray-800 text-sm">{r.nama}</div>
                         <div className="text-[10px] text-gray-400 font-mono mt-0.5">{r.id}</div>
                       </td>
@@ -409,18 +576,95 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
                       <td className="p-4 text-gray-500">
                         {r.tanggal_pertama ? format(new Date(r.tanggal_pertama), "dd MMM yyyy", { locale: id }) : "-"}
                       </td>
-                      <td className="p-4 text-gray-600">
+                      <td className="p-4 text-gray-600 cursor-pointer" onClick={() => openCustomerDetail(r.customer_id, r.telepon)}>
                         {r.tanggal_terakhir ? format(new Date(r.tanggal_terakhir), "dd MMM yyyy", { locale: id }) : "-"}
                       </td>
+                      <td className="p-4 text-center">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditData(r);
+                            setIsEditModalOpen(true);
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Edit Penerima"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                      </td>
                     </tr>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
         )}
 
+        {/* Pagination Controls */}
+        <div className="p-4 border-t border-gray-100 flex flex-col md:flex-row items-center justify-between gap-4 bg-white">
+          <div className="flex items-center gap-3 text-xs text-gray-500">
+            <span>Tampilkan:</span>
+            <select
+              value={limit}
+              onChange={e => {
+                setLimit(Number(e.target.value));
+                setPage(1);
+              }}
+              className="border border-gray-200 rounded-lg px-2 py-1 outline-none focus:border-red-500 bg-white"
+            >
+              <option value={10}>10</option>
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+            </select>
+            <span>data per halaman</span>
+          </div>
+
+          <div className="text-xs text-gray-500">
+            Menampilkan <span className="font-bold text-gray-800">{currentFiltered.length === 0 ? 0 : startIndex + 1}</span> - <span className="font-bold text-gray-800">{Math.min(endIndex, currentFiltered.length)}</span> dari <span className="font-bold text-gray-800">{currentFiltered.length}</span> data
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="p-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span className="text-xs font-bold text-gray-700 mx-2">
+              Hal {page} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages || totalPages === 0}
+              className="p-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-transparent"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+
       </div>
+
+      <EditCustomerModal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditData(null);
+        }}
+        onSave={handleSaveEdit}
+        initialData={editData}
+        type={activeTab}
+      />
+
+      <DeleteBulkModal
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDeleteBulk}
+        count={selectedIds.length}
+      />
 
       {/* Customer Detail Drawer */}
       {selectedCustId && (

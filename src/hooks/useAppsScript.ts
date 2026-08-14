@@ -71,6 +71,8 @@ export function useAppsScript() {
         "getDashboardData",
         "getCustomerDetailFull",
         "getCustomerHistory",
+        "deleteBulkCustomers",
+        "updateCustomer",
         "dailyClosing",
         "reconciliation",
         "auditTrail",
