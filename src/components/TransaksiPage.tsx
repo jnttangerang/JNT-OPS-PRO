@@ -138,7 +138,30 @@ export default function TransaksiPage({
 
   const fileInputRef1 = useRef<HTMLInputElement>(null);
   const fileInputRef2 = useRef<HTMLInputElement>(null);
+  const fileInputPaketRef = useRef<HTMLInputElement>(null);
+  const fileInputResiRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: "paket" | "resi") => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+    if (type === "paket") {
+      if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
+      setFotoPaketBlob(file);
+      setFotoPaketPreview(previewUrl);
+      setFotoPaketUrl("");
+      toast.success("Foto fisik paket berhasil dipilih");
+    } else {
+      if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
+      setFotoResiBlob(file);
+      setFotoResiPreview(previewUrl);
+      setFotoResiUrl("");
+      toast.success("Foto resi paket berhasil dipilih");
+    }
+    e.target.value = "";
+  };
 
   // Fetch Queue of Drafts
   const fetchQueue = useCallback(async () => {
@@ -1094,71 +1117,163 @@ export default function TransaksiPage({
               {/* SECTION: SCAN BARCODE & CAMERA */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
                 
-                {/* Scanner Main Button / Status */}
+                {/* Hidden File Inputs */}
+                <input
+                  ref={fileInputPaketRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFileSelect(e, "paket")}
+                />
+                <input
+                  ref={fileInputResiRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleFileSelect(e, "resi")}
+                />
+
+                {/* Scanner Main Action Buttons / Status */}
                 {(!fotoPaketPreview && !fotoResiPreview && !fotoPaketUrl && !fotoResiUrl) ? (
-                  <button
-                    type="button"
-                    onClick={() => startCamera(1)}
-                    className="w-full bg-[#E4002B] hover:bg-[#c20023] text-white py-4 rounded-xl font-bold text-lg shadow-md flex items-center justify-center gap-3 transition-colors cursor-pointer"
-                  >
-                    <Camera className="h-6 w-6" />
-                    <span>{showScanner ? "Tutup Kamera" : "Mulai Scan & Foto Paket"}</span>
-                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => startCamera(1)}
+                      className="w-full bg-[#E4002B] hover:bg-[#c20023] text-white py-3.5 px-3 rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Camera className="h-4.5 w-4.5" />
+                      <span>{showScanner && cameraStep === 1 ? "Tutup Kamera" : "Foto Paket & Scan"}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startCamera(2)}
+                      className="w-full bg-slate-800 hover:bg-slate-700 text-white py-3.5 px-3 rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Scan className="h-4.5 w-4.5 text-amber-400" />
+                      <span>{showScanner && cameraStep === 2 ? "Tutup Kamera" : "Kamera Foto Resi"}</span>
+                    </button>
+                  </div>
                 ) : (
-                  <div className="flex flex-col gap-3">
-                    <div className="w-full bg-green-50 text-green-700 py-3 px-4 rounded-xl font-bold text-base border border-green-200 shadow-sm flex items-center justify-between">
+                  <div className="flex flex-col gap-2.5">
+                    <div className="w-full bg-green-50 text-green-700 py-2.5 px-3.5 rounded-xl font-bold text-sm border border-green-200 shadow-xs flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <CheckCircle className="h-5 w-5 text-green-600" />
-                        <span>Scan Selesai</span>
+                        <CheckCircle className="h-4.5 w-4.5 text-green-600 shrink-0" />
+                        <span>Foto / Resi Tersedia</span>
                       </div>
-                      <button 
-                        type="button"
-                        onClick={() => startCamera(1)}
-                        className="text-xs bg-white text-gray-700 px-3 py-1.5 rounded-lg border border-gray-300 shadow-sm hover:bg-gray-50 flex items-center gap-1 cursor-pointer"
-                      >
-                        <RefreshCw className="h-3 w-3" /> Scan Ulang
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button 
+                          type="button"
+                          onClick={() => startCamera(2)}
+                          className="text-xs bg-white text-gray-700 px-2.5 py-1.5 rounded-lg border border-gray-300 shadow-xs hover:bg-gray-50 flex items-center gap-1 cursor-pointer font-semibold"
+                        >
+                          <Camera className="h-3.5 w-3.5 text-[#E4002B]" /> Foto Resi
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={() => startCamera(1)}
+                          className="text-xs bg-white text-gray-700 px-2.5 py-1.5 rounded-lg border border-gray-300 shadow-xs hover:bg-gray-50 flex items-center gap-1 cursor-pointer font-semibold"
+                        >
+                          <RefreshCw className="h-3.5 w-3.5" /> Scan Ulang
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* Progress Indicator */}
+                {/* Progress Tabs when Camera is open */}
                 {showScanner && (
-                  <div className="flex items-center justify-center gap-2 mb-2">
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${cameraStep === 1 ? "bg-red-100 text-red-700" : (fotoPaketPreview || fotoPaketUrl) ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                      {(fotoPaketPreview || fotoPaketUrl) ? "✔ Foto Paket" : "STEP 1: Foto Paket"}
-                    </span>
-                    <span className="text-gray-300">-</span>
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full uppercase ${cameraStep === 2 ? "bg-red-100 text-red-700" : (fotoResiPreview || fotoResiUrl) ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                      {(fotoResiPreview || fotoResiUrl) ? "✔ Scan Resi" : "STEP 2: Scan Resi"}
-                    </span>
+                  <div className="flex items-center justify-between bg-slate-100 p-1.5 rounded-xl gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCameraStep(1);
+                        setScanStatus("STEP 1: Foto fisik paket");
+                      }}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        cameraStep === 1 
+                          ? "bg-[#E4002B] text-white shadow-xs" 
+                          : (fotoPaketPreview || fotoPaketUrl) 
+                          ? "bg-green-100 text-green-800" 
+                          : "text-gray-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {(fotoPaketPreview || fotoPaketUrl) ? <Check className="w-3.5 h-3.5" /> : <Camera className="w-3.5 h-3.5" />}
+                      <span>1. Foto Paket</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCameraStep(2);
+                        setScanStatus("STEP 2: Foto Resi & Arahkan ke Barcode");
+                      }}
+                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                        cameraStep === 2 
+                          ? "bg-[#E4002B] text-white shadow-xs" 
+                          : (fotoResiPreview || fotoResiUrl) 
+                          ? "bg-green-100 text-green-800" 
+                          : "text-gray-600 hover:bg-slate-200"
+                      }`}
+                    >
+                      {(fotoResiPreview || fotoResiUrl) ? <Check className="w-3.5 h-3.5" /> : <Scan className="w-3.5 h-3.5" />}
+                      <span>2. Foto Resi & Barcode</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowScanner(false)}
+                      className="px-2.5 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg text-xs font-semibold cursor-pointer"
+                    >
+                      Tutup
+                    </button>
                   </div>
                 )}
 
-                {/* Html5Qrcode Scanner Target div */}
+                {/* Html5Qrcode Scanner Target div with Frame Overlay */}
                 {showScanner && (
-                  <div className="space-y-3 border border-gray-100 rounded-xl p-3 bg-gray-900 overflow-hidden relative">
-                    <div id="reader" className="w-full overflow-hidden rounded-lg [&_video]:w-full [&_video]:object-cover [&_video]:rounded-lg"></div>
+                  <div className="space-y-3 border border-gray-800 rounded-2xl p-3 bg-slate-950 overflow-hidden relative shadow-inner">
+                    <div id="reader" className="w-full overflow-hidden rounded-xl [&_video]:w-full [&_video]:object-cover [&_video]:rounded-xl min-h-[280px]"></div>
                     
-                    {cameraStep === 1 && (
-                      <div className="absolute inset-x-0 bottom-16 flex justify-center z-10">
-                         <button 
-                           type="button"
-                           onClick={async () => {
-                             await capturePhoto("paket");
-                             setCameraStep(2);
-                             setScanStatus("STEP 2: Arahkan ke barcode resi");
-                           }}
-                           className="bg-[#E4002B] text-white px-6 py-3 rounded-full font-bold shadow-2xl flex items-center gap-2 cursor-pointer ring-4 ring-white/50 animate-bounce"
-                         >
-                           <Camera className="w-5 h-5" /> Ambil Foto Paket
-                         </button>
+                    {/* Viewfinder Target Frame Overlay */}
+                    <div className="absolute inset-x-8 top-6 bottom-20 pointer-events-none border-2 border-dashed border-white/60 rounded-2xl flex flex-col items-center justify-between p-3">
+                      <div className="px-3 py-1 bg-black/60 backdrop-blur-md rounded-full text-white text-[11px] font-medium tracking-wide">
+                        {cameraStep === 1 ? "📷 Frame Kamera Fisik Paket" : "📄 Frame Kamera Lembar Resi & Barcode"}
                       </div>
-                    )}
+                      <div className="w-12 h-1 bg-white/40 rounded-full"></div>
+                    </div>
+
+                    {/* Snapshot Button Overlay */}
+                    <div className="absolute inset-x-0 bottom-14 flex justify-center z-10">
+                      {cameraStep === 1 ? (
+                        <button 
+                          type="button"
+                          onClick={async () => {
+                            await capturePhoto("paket");
+                            setCameraStep(2);
+                            setScanStatus("STEP 2: Posisikan lembar resi pada paket");
+                          }}
+                          className="bg-[#E4002B] hover:bg-[#c20023] text-white px-5 py-2.5 rounded-full font-bold text-sm shadow-xl flex items-center gap-2 cursor-pointer ring-4 ring-white/40"
+                        >
+                          <Camera className="w-4 h-4" /> Ambil Foto Paket
+                        </button>
+                      ) : (
+                        <button 
+                          type="button"
+                          onClick={async () => {
+                            await capturePhoto("resi");
+                            setScanStatus("Foto Resi berhasil ditangkap");
+                            setShowScanner(false);
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-full font-bold text-sm shadow-xl flex items-center gap-2 cursor-pointer ring-4 ring-white/40"
+                        >
+                          <Camera className="w-4 h-4" /> Ambil Foto Resi
+                        </button>
+                      )}
+                    </div>
 
                     {scanStatus && (
-                      <div className="absolute bottom-4 inset-x-4">
-                        <p className="text-sm text-center font-bold text-white bg-black/60 backdrop-blur-sm p-3 rounded-xl border border-white/20 shadow-lg">
+                      <div className="absolute bottom-3 inset-x-4 z-10">
+                        <p className="text-xs text-center font-semibold text-white bg-black/70 backdrop-blur-sm py-1.5 px-3 rounded-lg border border-white/10 shadow-xs truncate">
                           {scanStatus}
                         </p>
                       </div>
@@ -1216,64 +1331,132 @@ export default function TransaksiPage({
                     </div>
                   ) : null}
 
-                  {/* FOTO PREVIEWS */}
-                  {(fotoPaketPreview || fotoPaketUrl || fotoResiPreview || fotoResiUrl || uploadingFotoPaket || uploadingFotoResi) && (
-                    <div className="mt-4 grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                      <div>
-                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block mb-2">Foto Paket</span>
-                        {uploadingFotoPaket ? (
-                           <div className="flex items-center gap-1 text-[10px] text-gray-500">
-                             <RefreshCw className="h-3 w-3 animate-spin text-[#E4002B]" /> Mengunggah...
-                           </div>
-                        ) : (fotoPaketPreview || fotoPaketUrl) ? (
-                          <div className="flex items-start gap-3">
-                            <img src={getDisplayImageUrl(fotoPaketPreview || fotoPaketUrl)} alt="Paket" className="h-[72px] w-[72px] object-cover rounded-lg border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
-                            <div className="flex flex-col gap-1.5">
-                              <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded inline-block w-fit">✓ Siap Upload</span>
-                              <button 
-                                type="button" 
-                                onClick={() => startCamera(1)} 
-                                className="text-[10px] text-gray-600 bg-white border border-gray-300 px-2 py-1 rounded shadow-sm hover:bg-gray-50 flex items-center gap-1 w-fit cursor-pointer"
-                              >
-                                <RefreshCw className="h-3 w-3" /> Retake
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-gray-400 italic">Belum ada foto</span>
+                  {/* FOTO PAKET & FOTO RESI SECTION */}
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    
+                    {/* CARD FOTO PAKET */}
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Fisik Paket</span>
+                        {(fotoPaketPreview || fotoPaketUrl) && (
+                          <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded">
+                            ✓ Siap Upload
+                          </span>
                         )}
                       </div>
-                      
-                      <div>
-                        <span className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block mb-2">Foto Resi</span>
-                        {uploadingFotoResi ? (
-                           <div className="flex items-center gap-1 text-[10px] text-gray-500">
-                             <RefreshCw className="h-3 w-3 animate-spin text-orange-500" /> Mengunggah...
-                           </div>
-                        ) : (fotoResiPreview || fotoResiUrl) ? (
-                          <div className="flex items-start gap-3">
-                            <img src={getDisplayImageUrl(fotoResiPreview || fotoResiUrl)} alt="Resi" className="h-[72px] w-[72px] object-cover rounded-lg border border-gray-200 shadow-sm" referrerPolicy="no-referrer" />
-                            <div className="flex flex-col gap-1.5">
-                              <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded inline-block w-fit">✓ Siap Upload</span>
-                              <button 
-                                type="button" 
-                                onClick={() => startCamera(2)} 
-                                className="text-[10px] text-gray-600 bg-white border border-gray-300 px-2 py-1 rounded shadow-sm hover:bg-gray-50 flex items-center gap-1 w-fit cursor-pointer"
-                              >
-                                <RefreshCw className="h-3 w-3" /> Retake
-                              </button>
-                            </div>
+
+                      {uploadingFotoPaket ? (
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500 py-4 justify-center">
+                          <RefreshCw className="h-4 w-4 animate-spin text-[#E4002B]" /> Mengunggah...
+                        </div>
+                      ) : (fotoPaketPreview || fotoPaketUrl) ? (
+                        <div className="flex items-start gap-3">
+                          <img 
+                            src={getDisplayImageUrl(fotoPaketPreview || fotoPaketUrl)} 
+                            alt="Paket" 
+                            className="h-[76px] w-[76px] object-cover rounded-lg border border-gray-200 shadow-xs shrink-0" 
+                            referrerPolicy="no-referrer" 
+                          />
+                          <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                            <button 
+                              type="button" 
+                              onClick={() => startCamera(1)} 
+                              className="text-[11px] text-gray-700 bg-white border border-gray-300 px-2.5 py-1 rounded-lg shadow-xs hover:bg-gray-50 flex items-center gap-1 w-fit cursor-pointer font-medium"
+                            >
+                              <Camera className="h-3.5 w-3.5 text-[#E4002B]" /> Kamera Ulang
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => fileInputPaketRef.current?.click()} 
+                              className="text-[11px] text-gray-700 bg-white border border-gray-300 px-2.5 py-1 rounded-lg shadow-xs hover:bg-gray-50 flex items-center gap-1 w-fit cursor-pointer font-medium"
+                            >
+                              <Upload className="h-3.5 w-3.5 text-gray-500" /> Ganti Berkas
+                            </button>
                           </div>
-                        ) : (
-                          <span className="text-[10px] text-gray-400 italic">Belum ada foto</span>
-                        )}
-                      </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => startCamera(1)}
+                            className="w-full py-2 bg-white border border-gray-300 hover:border-gray-400 rounded-lg text-xs font-semibold text-gray-700 flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Camera className="h-3.5 w-3.5 text-[#E4002B]" /> Ambil Foto (Kamera)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => fileInputPaketRef.current?.click()}
+                            className="w-full py-2 bg-white border border-gray-300 hover:border-gray-400 rounded-lg text-xs font-semibold text-gray-700 flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Upload className="h-3.5 w-3.5 text-gray-500" /> Upload Berkas Paket
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    {/* CARD FOTO RESI */}
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Resi Pada Paket</span>
+                        {(fotoResiPreview || fotoResiUrl) && (
+                          <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded">
+                            ✓ Siap Upload
+                          </span>
+                        )}
+                      </div>
+
+                      {uploadingFotoResi ? (
+                        <div className="flex items-center gap-1.5 text-xs text-gray-500 py-4 justify-center">
+                          <RefreshCw className="h-4 w-4 animate-spin text-orange-500" /> Mengunggah...
+                        </div>
+                      ) : (fotoResiPreview || fotoResiUrl) ? (
+                        <div className="flex items-start gap-3">
+                          <img 
+                            src={getDisplayImageUrl(fotoResiPreview || fotoResiUrl)} 
+                            alt="Resi" 
+                            className="h-[76px] w-[76px] object-cover rounded-lg border border-gray-200 shadow-xs shrink-0" 
+                            referrerPolicy="no-referrer" 
+                          />
+                          <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                            <button 
+                              type="button" 
+                              onClick={() => startCamera(2)} 
+                              className="text-[11px] text-gray-700 bg-white border border-gray-300 px-2.5 py-1 rounded-lg shadow-xs hover:bg-gray-50 flex items-center gap-1 w-fit cursor-pointer font-medium"
+                            >
+                              <Camera className="h-3.5 w-3.5 text-[#E4002B]" /> Kamera Ulang
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => fileInputResiRef.current?.click()} 
+                              className="text-[11px] text-gray-700 bg-white border border-gray-300 px-2.5 py-1 rounded-lg shadow-xs hover:bg-gray-50 flex items-center gap-1 w-fit cursor-pointer font-medium"
+                            >
+                              <Upload className="h-3.5 w-3.5 text-gray-500" /> Ganti Berkas
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => startCamera(2)}
+                            className="w-full py-2 bg-white border border-gray-300 hover:border-gray-400 rounded-lg text-xs font-semibold text-gray-700 flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Camera className="h-3.5 w-3.5 text-[#E4002B]" /> Ambil Foto Resi (Kamera)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => fileInputResiRef.current?.click()}
+                            className="w-full py-2 bg-white border border-gray-300 hover:border-gray-400 rounded-lg text-xs font-semibold text-gray-700 flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                          >
+                            <Upload className="h-3.5 w-3.5 text-[#E4002B]" /> Upload Foto Resi
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                  </div>
                 </div>
               </div>
-
-
 
               {/* FINANCIAL CALCULATORS FOR SERVICE CATEGORY */}
               <div ref={layananRef} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
