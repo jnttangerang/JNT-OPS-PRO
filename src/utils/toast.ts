@@ -19,7 +19,10 @@ export const toast = {
 
 function emit(message: string, type: ToastType) {
   const event: ToastEvent = { id: idCounter++, message, type };
-  listeners.forEach((listener) => listener(event));
+  // Dispatch in microtask/timeout to prevent updating ToastContainer during another component's render phase
+  setTimeout(() => {
+    listeners.forEach((listener) => listener(event));
+  }, 0);
 }
 
 export const subscribeToasts = (listener: Listener) => {

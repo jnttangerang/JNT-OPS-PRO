@@ -232,7 +232,8 @@ function AppContent() {
         <div className="space-y-1">
           {group.items.map((item) => {
             const Icon = item.icon;
-            const isActive = location.pathname.includes(item.id);
+            const itemPath = `/${item.id}`;
+            const isActive = location.pathname === itemPath || location.pathname.startsWith(`${itemPath}/`);
             return (
               <button
                 key={item.id}
