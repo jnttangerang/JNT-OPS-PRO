@@ -4,7 +4,7 @@ import {
   Save, ArrowLeft, CheckCircle2, Clipboard, ChevronRight, RefreshCw, AlertCircle, BookOpen,
   PlusCircle, Search, Filter, XCircle, Clock, Play, Edit3, Trash2, Zap, Check, AlertTriangle, Layers,
   CreditCard, Hash, ArrowRight, Activity, Scale, DollarSign, Tag
-} from "lucide-react";
+, ChevronLeft} from 'lucide-react';
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, MasterCustomer, RiwayatPenerima } from "../types";
 import { toast } from "../utils/toast";
@@ -41,6 +41,13 @@ export default function PreInputPage({
   // Customer Suggestions Dropdown
   const [customerSuggestions, setCustomerSuggestions] = useState<MasterCustomer[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const [penerimaSuggestions, setPenerimaSuggestions] = useState<any[]>([]);
+  const [showPenerimaSuggestions, setShowPenerimaSuggestions] = useState(false);
+  const [searchingPenerima, setSearchingPenerima] = useState(false);
+  const penerimaSuggestionContainerRef = useRef<HTMLDivElement>(null);
+  const namaPenerimaInputRef = useRef<HTMLInputElement>(null);
+  const searchTimerRef = useRef<any>(null);
   const [searchingCustomer, setSearchingCustomer] = useState(false);
   
   // Recipient History
@@ -78,6 +85,104 @@ export default function PreInputPage({
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("Semua");
   const [autoSaveStatus, setAutoSaveStatus] = useState<string | null>(null);
+  const [activeBoardTab, setActiveBoardTab] = useState("DRAFT");
+  const [boardPage, setBoardPage] = useState(1);
+  const [boardLimit, setBoardLimit] = useState(5);
+  const [users, setUsers] = useState<any[]>([]);
+  const [draftToDelete, setDraftToDelete] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      const res = await callBackend("getUsers");
+      if (res && res.status === "success" && Array.isArray(res.data)) setUsers(res.data);
+    };
+    fetchUsers();
+  }, [callBackend]);
+
+  const handleSimpanDraftManual = async () => {
+    setFormError(null);
+    try {
+      const calc = calcWeight();
+      const payload = {
+        transaksi_id: editingTxId,
+        is_draft: true,
+        status: "Draft",
+        admin_id: session.user_id,
+        outlet_id_tugas: activeOutletId,
+        nama_pengirim: String(namaPengirim || "").trim(),
+        hp_pengirim: String(hpPengirim || "").trim(),
+        alamat_pengirim: String(alamatPengirim || "").trim(),
+        nama_penerima: String(namaPenerima || "").trim(),
+        hp_penerima: String(hpPenerima || "").trim(),
+        alamat_penerima: String(alamatPenerima || "").trim(),
+        alamat_penerima_asli: alamatPenerimaAsli || String(alamatPenerima || "").trim(),
+        catatan_admin: String(catatanAdmin || "").trim(),
+        nama_barang: String(namaBarang || "").trim(),
+        ekspedisi,
+        berat_timbangan: Number(beratKg) || 0,
+        panjang_cm: Number(volP) || 0,
+        lebar_cm: Number(volL) || 0,
+        tinggi_cm: Number(volT) || 0,
+        berat_volume: calc.berat_volume,
+        dasar_berat: calc.dasar_berat,
+        berat_kg: calc.berat_penagihan,
+        volume: `${volP || 0} x ${volL || 0} x ${volT || 0}`,
+        nilai_barang: getCleanNumberValue(nilaiBarangRaw || ""),
+        foto_paket_url: fotoPaketUrl || "",
+        foto_resi_url: fotoResiUrl || ""
+      };
+      
+      setAutoSaveStatus("Menyimpan draft...");
+      const res = await callBackend("saveDataPreInput", payload);
+      if (res && res.status === "success" && res.data) {
+        const txId = res.data.transaksi_id;
+        if (!editingTxId) setEditingTxId(txId);
+        localStorage.setItem("active_draft_tx_id", txId);
+        setAutoSaveStatus(`Draft Tersimpan ${new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`);
+        
+        const draftsRes = await callBackend("getPreInputDrafts");
+        if (draftsRes && draftsRes.status === "success" && Array.isArray(draftsRes.data)) {
+          setDrafts(draftsRes.data);
+        }
+      }
+    } catch (e) {
+      console.error("Manual save failed:", e);
+      setAutoSaveStatus("Gagal menyimpan draft");
+    }
+  };
+
+  const confirmAndExecuteHapusDraft = async (txId: string) => {
+    try {
+      // Optimistic delete
+      setDrafts(prev => prev.filter(d => d.transaksi_id !== txId));
+      if (editingTxId === txId) handleDraftBaru();
+      
+      const res = await callBackend("deletePreInputDraft", { transaksi_id: txId, admin_id: session.user_id });
+      if (res && res.status === "success") {
+        toast.success(`Draft ${txId} berhasil dihapus permanen`);
+        const draftsRes = await callBackend("getPreInputDrafts");
+        if (draftsRes && draftsRes.status === "success" && Array.isArray(draftsRes.data)) {
+          setDrafts(draftsRes.data);
+        }
+      } else {
+        toast.error("Gagal menghapus draft: " + (res?.message || "Error server"));
+        const draftsRes = await callBackend("getPreInputDrafts");
+        if (draftsRes && draftsRes.status === "success" && Array.isArray(draftsRes.data)) {
+          setDrafts(draftsRes.data);
+        }
+      }
+    } catch (e: any) {
+      console.error(e);
+      toast.error("Terjadi kesalahan saat menghapus draft");
+    } finally {
+      setDraftToDelete(null);
+    }
+  };
+
+  const handleHapusDraft = (txId: string) => {
+    setDraftToDelete(txId);
+  };
+
   const [duplicateAlert, setDuplicateAlert] = useState<any | null>(null);
 
   // New Operational Workspace Filters
@@ -257,6 +362,9 @@ export default function PreInputPage({
       if (suggestionContainerRef.current && !suggestionContainerRef.current.contains(event.target as Node)) {
         setShowSuggestions(false);
       }
+      if (penerimaSuggestionContainerRef.current && !penerimaSuggestionContainerRef.current.contains(event.target as Node)) {
+        setShowPenerimaSuggestions(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -311,77 +419,7 @@ export default function PreInputPage({
     setDuplicateAlert(existingMatch || null);
   }, [namaPengirim, hpPengirim, drafts, editingTxId]);
 
-  // Auto-Save Effect (Debounced 800ms)
-  useEffect(() => {
-    // Only auto-save if user has provided at least name, HP, or item name
-    const hasAnyContent = String(namaPengirim || "").trim() || String(hpPengirim || "").trim() || String(namaBarang || "").trim() || String(namaPenerima || "").trim();
-    if (!hasAnyContent || submittedTxId) return;
-
-    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-
-    setAutoSaveStatus("Menyimpan draft...");
-
-    autoSaveTimerRef.current = setTimeout(async () => {
-      try {
-        const calc = calcWeight();
-        const payload = {
-          transaksi_id: editingTxId,
-          is_draft: true,
-          status: "Draft",
-          admin_id: session.user_id,
-          outlet_id_tugas: activeOutletId,
-          nama_pengirim: String(namaPengirim || "").trim(),
-          hp_pengirim: String(hpPengirim || "").trim(),
-          alamat_pengirim: String(alamatPengirim || "").trim(),
-          nama_penerima: String(namaPenerima || "").trim(),
-          hp_penerima: String(hpPenerima || "").trim(),
-          alamat_penerima: String(alamatPenerima || "").trim(),
-          alamat_penerima_asli: alamatPenerimaAsli || String(alamatPenerima || "").trim(),
-          catatan_admin: String(catatanAdmin || "").trim(),
-          nama_barang: String(namaBarang || "").trim(),
-          ekspedisi,
-          berat_timbangan: Number(beratKg) || 0,
-          panjang_cm: Number(volP) || 0,
-          lebar_cm: Number(volL) || 0,
-          tinggi_cm: Number(volT) || 0,
-          berat_volume: calc.berat_volume,
-          dasar_berat: calc.dasar_berat,
-          berat_kg: calc.berat_penagihan,
-          volume: `${volP || 0} x ${volL || 0} x ${volT || 0}`,
-          nilai_barang: getCleanNumberValue(nilaiBarangRaw || ""),
-          foto_paket_url: fotoPaketUrl || "",
-          foto_resi_url: fotoResiUrl || ""
-        };
-
-        const res = await callBackend("saveDataPreInput", payload);
-        if (res && res.status === "success" && res.data) {
-          const txId = res.data.transaksi_id;
-          if (!editingTxId) setEditingTxId(txId);
-          localStorage.setItem("active_draft_tx_id", txId);
-          setAutoSaveStatus(`Tersimpan otomatis • ${new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`);
-          
-          // Refresh drafts quietly
-          const draftsRes = await callBackend("getPreInputDrafts");
-          if (draftsRes && draftsRes.status === "success" && Array.isArray(draftsRes.data)) {
-            setDrafts(draftsRes.data);
-          }
-        }
-      } catch (e) {
-        console.error("Auto-save failed:", e);
-        setAutoSaveStatus("Gagal menyimpan otomatis");
-      }
-    }, 800);
-
-    return () => {
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-    };
-  }, [
-    namaPengirim, hpPengirim, alamatPengirim, 
-    namaPenerima, hpPenerima, alamatPenerima, 
-    namaBarang, ekspedisi, beratKg, volP, volL, volT, 
-    nilaiBarangRaw, catatanAdmin, fotoPaketUrl, fotoResiUrl, 
-    editingTxId, activeOutletId, session.user_id, submittedTxId, callBackend
-  ]);
+  
 
   // Form Reset / Draft Baru action
   const handleDraftBaru = useCallback(() => {
@@ -428,7 +466,7 @@ export default function PreInputPage({
         handleDraftBaru();
       } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        handleSavePreInput(false);
+        handleSimpanDraftManual();
       } else if (e.key === "Escape") {
         e.preventDefault();
         handleDraftBaru();
@@ -949,6 +987,45 @@ Catatan : ${catatanAdmin || "-"}
     setShowSuggestions(false);
   };
 
+  const handlePenerimaChange = (val: string, type: "nama" | "hp" | "alamat") => {
+    if (type === "nama") setNamaPenerima(val);
+    if (type === "hp") setHpPenerima(val);
+    if (type === "alamat") setAlamatPenerima(val);
+
+    if (type === "nama" || type === "hp") {
+      if (val.length >= 3) {
+        setSearchingPenerima(true);
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = setTimeout(async () => {
+          try {
+            const res = await callBackend("getBukuPenerima", { search: val });
+            if (res && res.status === "success" && Array.isArray(res.data)) {
+              setPenerimaSuggestions(res.data.slice(0, 10));
+              setShowPenerimaSuggestions(true);
+            }
+          } finally {
+            setSearchingPenerima(false);
+          }
+        }, 500);
+      } else {
+        setShowPenerimaSuggestions(false);
+        setPenerimaSuggestions([]);
+      }
+    }
+  };
+
+  const handleSelectPenerima = (penerima: any) => {
+    setNamaPenerima(penerima.nama || penerima.nama_penerima || "");
+    setHpPenerima(penerima.telepon || penerima.no_hp || penerima.no_hp_penerima || "");
+    setAlamatPenerima(penerima.alamat || penerima.alamat_penerima || "");
+    setShowPenerimaSuggestions(false);
+    
+    // Focus next input or just unfocus
+    setTimeout(() => {
+      document.getElementById("input-nama-barang")?.focus();
+    }, 100);
+  };
+
   const handleSenderChange = (val: string, type: "nama" | "hp" | "alamat") => {
     const safeVal = val || "";
     if (type === "nama") {
@@ -1187,7 +1264,7 @@ Catatan : ${catatanAdmin || "-"}
             </span>
             <span className="flex items-center gap-1">
               <kbd className="px-1.5 py-0.5 text-[9px] bg-gray-100 border border-gray-200 rounded font-mono text-gray-700 font-bold">Ctrl + S</kbd>
-              <span>Simpan Draft</span>
+              <span>Simpan Pre-Input</span>
             </span>
             <span className="flex items-center gap-1">
               <kbd className="px-1.5 py-0.5 text-[9px] bg-gray-100 border border-gray-200 rounded font-mono text-gray-700 font-bold">Esc</kbd>
@@ -1507,8 +1584,8 @@ Catatan : ${catatanAdmin || "-"}
         /* MAIN WORKSPACE 2-AREA LAYOUT */
         <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-12 gap-6 items-start">
           
-          {/* AREA KIRI: FORM PRE-INPUT (40% Desktop / 45% Tablet / 100% Mobile) */}
-          <div className="md:col-span-5 lg:col-span-5 xl:col-span-4 2xl:col-span-4 space-y-6">
+          {/* AREA KIRI: FORM PRE-INPUT (DIPERBESAR: 58% Desktop / 7 Kolom) */}
+          <div className="md:col-span-7 lg:col-span-7 xl:col-span-7 2xl:col-span-7 space-y-6">
 
             {/* DUPLICATE CUSTOMER ALERT BANNER */}
             {duplicateAlert && (
@@ -1715,18 +1792,43 @@ Catatan : ${catatanAdmin || "-"}
                   </button>
                 </div>
 
-                {/* Nama Penerima */}
-                <div>
+                {/* Nama Penerima + Suggestions */}
+                <div className="relative" ref={penerimaSuggestionContainerRef}>
                   <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                     Nama Penerima <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="text"
-                    value={namaPenerima}
-                    onChange={(e) => setNamaPenerima(e.target.value)}
-                    className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
-                    placeholder="Silahkan masukan nama"
-                  />
+                  <div className="relative">
+                    <input
+                      ref={namaPenerimaInputRef}
+                      type="text"
+                      value={namaPenerima}
+                      onChange={(e) => handlePenerimaChange(e.target.value, "nama")}
+                      className="w-full pl-3 pr-8 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
+                      placeholder="Silahkan masukan nama"
+                    />
+                    {searchingPenerima && (
+                      <div className="absolute right-3 inset-y-0 flex items-center">
+                        <RefreshCw className="h-4 w-4 text-gray-400 animate-spin" />
+                      </div>
+                    )}
+                  </div>
+                  {showPenerimaSuggestions && penerimaSuggestions.length > 0 && (
+                    <div className="absolute z-20 w-full bg-white border border-gray-200 mt-1 rounded-xl shadow-lg max-h-48 overflow-y-auto divide-y divide-gray-50">
+                      {penerimaSuggestions.map((pen, idx) => (
+                        <div
+                          key={idx}
+                          onClick={() => handleSelectPenerima(pen)}
+                          className="px-3 py-2 hover:bg-red-50 cursor-pointer transition-colors"
+                        >
+                          <div className="font-bold text-gray-800 text-[13px]">{pen.nama || pen.nama_penerima}</div>
+                          <div className="text-[11px] text-gray-500 flex items-center gap-2 mt-0.5">
+                            <span className="font-mono text-[#E4002B]">{pen.telepon || pen.no_hp || pen.no_hp_penerima}</span>
+                            <span className="truncate flex-1">{pen.alamat || pen.alamat_penerima}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* HP Penerima */}
@@ -2030,7 +2132,7 @@ Catatan : ${catatanAdmin || "-"}
                 <button
                   type="button"
                   onClick={handleDraftBaru}
-                  className="py-3 px-3 sm:px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer shrink-0 whitespace-nowrap"
+                  className="py-3 px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition cursor-pointer shrink-0 whitespace-nowrap"
                 >
                   Reset Form
                 </button>
@@ -2038,7 +2140,7 @@ Catatan : ${catatanAdmin || "-"}
                   type="button"
                   onClick={() => handleSavePreInput(false)}
                   disabled={loading || uploadingFotoPaket}
-                  className="flex-1 py-3 px-3 sm:px-4 bg-[#E4002B] hover:bg-[#c20023] disabled:bg-gray-400 text-white font-extrabold rounded-xl shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer text-xs sm:text-sm whitespace-nowrap min-w-0"
+                  className="flex-1 py-3 px-4 bg-[#E4002B] hover:bg-[#c20023] disabled:bg-gray-400 text-white font-extrabold rounded-xl shadow-md flex items-center justify-center gap-1.5 transition cursor-pointer text-xs sm:text-sm whitespace-nowrap min-w-0"
                 >
                   {loading ? (
                     <>
@@ -2057,8 +2159,8 @@ Catatan : ${catatanAdmin || "-"}
             </div>
           </div>
 
-          {/* AREA KANAN: OPERATIONAL WORKSPACE BOARD (60% Desktop / 55% Tablet / STICKY BOARD) */}
-          <div className="md:col-span-7 lg:col-span-7 xl:col-span-8 2xl:col-span-8 space-y-4 md:sticky md:top-6 lg:sticky lg:top-6 z-10 self-start">
+          {/* AREA KANAN: OPERATIONAL WORKSPACE BOARD (DIPERKECIL: 42% Desktop / 5 Kolom / STICKY BOARD) */}
+          <div className="md:col-span-5 lg:col-span-5 xl:col-span-5 2xl:col-span-5 space-y-4 md:sticky md:top-6 lg:sticky lg:top-6 z-10 self-start">
             
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 space-y-4">
               
@@ -2202,133 +2304,92 @@ Catatan : ${catatanAdmin || "-"}
                       className="w-full px-2 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-[11px] font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
                     >
                       <option value="ALL">Semua Admin</option>
-                      {Array.from(new Set(drafts.map((d) => d.admin_id).filter(Boolean))).map((adm) => (
-                        <option key={adm} value={adm}>
-                          {adm}
-                        </option>
-                      ))}
+                      {Array.from(new Set(drafts.map((d) => d.admin_id).filter(Boolean))).map((adm) => {
+                        const u = users.find(x => x.user_id === adm || x.username === adm);
+                        const label = u ? (u.nama_lengkap || u.username || adm) : adm;
+                        return (
+                          <option key={adm} value={adm}>
+                            {label}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                 </div>
               </div>
 
-              {/* 4 OPERATIONAL BOARD COLUMNS */}
+              {/* OPERATIONAL BOARD (ACCORDION TABS) */}
               {loadingDrafts ? (
                 <div className="py-12 text-center text-xs text-gray-400 flex flex-col items-center gap-2">
                   <RefreshCw className="h-6 w-6 animate-spin text-[#E4002B]" />
                   <span>Memuat workspace operasional board...</span>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 pt-2">
-                  
-                  {/* KOLOM 1: DRAFT */}
-                  <div className="bg-blue-50/40 border border-blue-200/80 rounded-2xl p-3 flex flex-col space-y-3 min-h-[380px]">
-                    <div className="flex items-center justify-between border-b border-blue-200/60 pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="bg-blue-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded">1</span>
-                        <h4 className="font-extrabold text-blue-900 text-xs uppercase tracking-wide">DRAFT</h4>
-                      </div>
-                      <span className="bg-blue-100 text-blue-800 text-[10px] font-black px-2 py-0.5 rounded-full font-mono">
-                        {columnData.DRAFT.length}
-                      </span>
-                    </div>
-
-                    <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-                      {columnData.DRAFT.length === 0 ? (
-                        <p className="text-[11px] text-blue-400 text-center py-8 italic">Tidak ada Draft baru</p>
-                      ) : (
-                        columnData.DRAFT.map((card) => {
-                          const isCurrent = editingTxId === card.transaksi_id;
-                          const dateObj = card.timestamp ? new Date(card.timestamp) : new Date();
-                          const timeFormatted = dateObj.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-
-                          return (
-                            <div
-                              key={card.transaksi_id}
-                              className={`p-3 bg-white rounded-xl border transition space-y-2.5 shadow-2xs min-h-[120px] flex flex-col justify-between ${
-                                isCurrent ? "border-[#E4002B] ring-2 ring-red-100" : "border-slate-200 hover:border-slate-300"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-1 border-b border-gray-100 pb-1.5">
-                                <div>
-                                  <h5 className="font-bold text-slate-900 text-xs">{card.nama_pengirim || "Customer Umum"}</h5>
-                                  <span className="text-[9px] text-gray-400 font-mono">{card.transaksi_id} • {timeFormatted}</span>
-                                </div>
-                                {renderProductBadge(card.ekspedisi, card.nama_barang)}
-                              </div>
-
-                              <div className="text-[11px] space-y-1 text-slate-700">
-                                <p className="font-semibold truncate text-slate-800">📦 {card.nama_barang || "Tanpa Nama Barang"}</p>
-                                <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                                  <span>1 Paket • {card.berat_kg || card.berat_timbangan || 0} kg</span>
-                                  <span>📞 {card.hp_pengirim || "-"}</span>
-                                </div>
-                                {renderPriorityBadges(card)}
-                              </div>
-
-                              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1 text-[10px]">
-                                <button
-                                  type="button"
-                                  onClick={() => handleSelectDraftToEdit(card)}
-                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
-                                >
-                                  <Edit3 className="h-3 w-3 shrink-0" />
-                                  <span>Edit</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleBatalkanDraft(card.transaksi_id)}
-                                  className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shrink-0 whitespace-nowrap"
-                                >
-                                  <XCircle className="h-3 w-3 shrink-0" />
-                                  <span>Batal</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleMoveStatus(card.transaksi_id, "INPUT_YOYI")}
-                                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs shrink-0 whitespace-nowrap"
-                                >
-                                  <span>Lanjutkan</span>
-                                  <ChevronRight className="h-3 w-3 shrink-0" />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
+                <div className="space-y-3 pt-2">
+                  {/* ACCORDION TABS HEADER */}
+                  <div className="flex flex-wrap sm:flex-nowrap bg-gray-100 p-1.5 rounded-xl w-full gap-1">
+                    <button
+                      onClick={() => { setActiveBoardTab("DRAFT"); setBoardPage(1); }}
+                      className={`flex-1 py-2 text-[11px] font-bold rounded-lg transition-colors ${activeBoardTab === "DRAFT" ? 'bg-white text-blue-700 shadow-sm border border-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                    >
+                      DRAFT <span className={`ml-1 px-1.5 py-0.5 rounded font-mono text-[9px] ${activeBoardTab === "DRAFT" ? "bg-blue-100" : "bg-gray-200"}`}>{columnData.DRAFT.length}</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveBoardTab("INPUT_YOYI"); setBoardPage(1); }}
+                      className={`flex-1 py-2 text-[11px] font-bold rounded-lg transition-colors ${activeBoardTab === "INPUT_YOYI" ? 'bg-white text-amber-700 shadow-sm border border-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                    >
+                      INPUT YOYI <span className={`ml-1 px-1.5 py-0.5 rounded font-mono text-[9px] ${activeBoardTab === "INPUT_YOYI" ? "bg-amber-100" : "bg-gray-200"}`}>{columnData.INPUT_YOYI.length}</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveBoardTab("SIAP_DIBAYAR"); setBoardPage(1); }}
+                      className={`flex-1 py-2 text-[11px] font-bold rounded-lg transition-colors ${activeBoardTab === "SIAP_DIBAYAR" ? 'bg-white text-emerald-700 shadow-sm border border-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                    >
+                      SIAP DIBAYAR <span className={`ml-1 px-1.5 py-0.5 rounded font-mono text-[9px] ${activeBoardTab === "SIAP_DIBAYAR" ? "bg-emerald-100" : "bg-gray-200"}`}>{columnData.SIAP_DIBAYAR.length}</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveBoardTab("SELESAI"); setBoardPage(1); }}
+                      className={`flex-1 py-2 text-[11px] font-bold rounded-lg transition-colors ${activeBoardTab === "SELESAI" ? 'bg-white text-gray-800 shadow-sm border border-gray-200/50' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
+                    >
+                      SELESAI <span className={`ml-1 px-1.5 py-0.5 rounded font-mono text-[9px] ${activeBoardTab === "SELESAI" ? "bg-gray-100 text-gray-600" : "bg-gray-200"}`}>{columnData.SELESAI.length}</span>
+                    </button>
                   </div>
 
-                  {/* KOLOM 2: INPUT YOYI / JTC */}
-                  <div className="bg-amber-50/40 border border-amber-200/80 rounded-2xl p-3 flex flex-col space-y-3 min-h-[380px]">
-                    <div className="flex items-center justify-between border-b border-amber-200/60 pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="bg-amber-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded">2</span>
-                        <h4 className="font-extrabold text-amber-900 text-xs uppercase tracking-wide">INPUT YOYI / JTC</h4>
-                      </div>
-                      <span className="bg-amber-100 text-amber-800 text-[10px] font-black px-2 py-0.5 rounded-full font-mono">
-                        {columnData.INPUT_YOYI.length}
-                      </span>
-                    </div>
-
-                    <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-                      {columnData.INPUT_YOYI.length === 0 ? (
-                        <p className="text-[11px] text-amber-500 text-center py-8 italic">Tidak ada antrean YoYi</p>
+                  {/* ACTIVE TAB CONTENT */}
+                  <div className="bg-white border border-gray-200 rounded-2xl p-3 flex flex-col space-y-3 min-h-[400px]">
+                    <div className="flex-1 space-y-2.5 overflow-y-auto pr-1">
+                      {columnData[activeBoardTab as "DRAFT" | "INPUT_YOYI" | "SIAP_DIBAYAR" | "SELESAI"].length === 0 ? (
+                        <p className="text-[11px] text-gray-500 text-center py-12 italic">Tidak ada data untuk status ini.</p>
                       ) : (
-                        columnData.INPUT_YOYI.map((card) => {
+                        columnData[activeBoardTab as "DRAFT" | "INPUT_YOYI" | "SIAP_DIBAYAR" | "SELESAI"]
+                          .slice((boardPage - 1) * boardLimit, boardPage * boardLimit)
+                          .map((card: any) => {
                           const dateObj = card.timestamp ? new Date(card.timestamp) : new Date();
                           const timeFormatted = dateObj.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+                          
+                          // Styling per tab
+                          let cardBorder = "border-gray-200";
+                          let badgeBg = "bg-gray-100 text-gray-600";
+                          if (activeBoardTab === "DRAFT") { cardBorder = "border-blue-200"; badgeBg = "bg-blue-50 text-blue-600"; }
+                          else if (activeBoardTab === "INPUT_YOYI") { cardBorder = "border-amber-200"; badgeBg = "bg-amber-50 text-amber-600"; }
+                          else if (activeBoardTab === "SIAP_DIBAYAR") { cardBorder = "border-emerald-200"; badgeBg = "bg-emerald-50 text-emerald-600"; }
+                          
+                          // Is being edited?
+                          const isCurrent = editingTxId === card.transaksi_id;
 
                           return (
-                            <div key={card.transaksi_id} className="p-3 bg-white rounded-xl border border-amber-200/80 transition space-y-2.5 shadow-2xs min-h-[120px] flex flex-col justify-between">
+                            <div key={card.transaksi_id} className={`p-3 bg-white rounded-xl border ${cardBorder} transition space-y-2.5 shadow-2xs flex flex-col justify-between hover:shadow-sm ${isCurrent ? "ring-2 ring-[#E4002B]/20 border-[#E4002B]" : ""}`}>
                               <div className="flex items-start justify-between gap-1 border-b border-gray-100 pb-1.5">
                                 <div>
                                   <h5 className="font-bold text-slate-900 text-xs">{card.nama_pengirim || "Customer Umum"}</h5>
-                                  <span className="text-[9px] text-amber-600 font-mono font-bold">Sedang Diketik di YoYi</span>
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${badgeBg}`}>
+                                      {card.transaksi_id.split("-")[1] || card.transaksi_id}
+                                    </span>
+                                    <span className="text-[9px] text-gray-400 font-mono">• {timeFormatted}</span>
+                                  </div>
                                 </div>
                                 {renderProductBadge(card.ekspedisi, card.nama_barang)}
                               </div>
-
                               <div className="text-[11px] space-y-1 text-slate-700">
                                 <p className="font-semibold truncate text-slate-800">📦 {card.nama_barang || "Tanpa Nama Barang"}</p>
                                 <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
@@ -2337,135 +2398,132 @@ Catatan : ${catatanAdmin || "-"}
                                 </div>
                                 {renderPriorityBadges(card)}
                               </div>
-
-                              <div className="pt-2 border-t border-slate-100 flex flex-col gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => setResiModalData(card)}
-                                  className="w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg text-[11px] transition cursor-pointer flex items-center justify-center gap-1 shadow-2xs whitespace-nowrap"
-                                >
-                                  <Hash className="h-3.5 w-3.5 shrink-0" />
-                                  <span>Nomor Resi Sudah Ada</span>
-                                </button>
-                                <div className="flex items-center justify-between gap-1 text-[10px]">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSelectDraftToEdit(card)}
-                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition shrink-0 whitespace-nowrap"
-                                  >
-                                    Buka Draft
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleMoveStatus(card.transaksi_id, "Draft")}
-                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold rounded-lg transition shrink-0 whitespace-nowrap"
-                                  >
-                                    Kembali Draft
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-
-                  {/* KOLOM 3: SIAP DIBAYAR */}
-                  <div className="bg-emerald-50/40 border border-emerald-200/80 rounded-2xl p-3 flex flex-col space-y-3 min-h-[380px]">
-                    <div className="flex items-center justify-between border-b border-emerald-200/60 pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="bg-emerald-600 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded">3</span>
-                        <h4 className="font-extrabold text-emerald-900 text-xs uppercase tracking-wide">SIAP DIBAYAR</h4>
-                      </div>
-                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full font-mono">
-                        {columnData.SIAP_DIBAYAR.length}
-                      </span>
-                    </div>
-
-                    <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-                      {columnData.SIAP_DIBAYAR.length === 0 ? (
-                        <p className="text-[11px] text-emerald-500 text-center py-8 italic">Belum ada transaksi siap bayar</p>
-                      ) : (
-                        columnData.SIAP_DIBAYAR.map((card) => {
-                          return (
-                            <div key={card.transaksi_id} className="p-3 bg-white rounded-xl border border-emerald-200 transition space-y-2.5 shadow-2xs min-h-[120px] flex flex-col justify-between">
-                              <div className="flex items-start justify-between gap-1 border-b border-gray-100 pb-1.5">
-                                <div>
-                                  <h5 className="font-bold text-slate-900 text-xs">{card.nama_pengirim || "Customer Umum"}</h5>
-                                  {card.no_resi && (
-                                    <span className="text-[10px] font-mono font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 block mt-0.5">
-                                      Resi: {card.no_resi}
-                                    </span>
+                              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5">
+                                  {activeBoardTab !== "SELESAI" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectDraftToEdit(card)}
+                                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition text-[10px] flex items-center gap-1"
+                                    >
+                                      <Edit3 className="h-3 w-3" /> Edit
+                                    </button>
+                                  )}
+                                  
+                                  {activeBoardTab === "DRAFT" && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleBatalkanDraft(card.transaksi_id)}
+                                        className="px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-semibold rounded-lg transition text-[10px] flex items-center gap-1"
+                                      >
+                                        <XCircle className="h-3 w-3" /> Batal
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleHapusDraft(card.transaksi_id)}
+                                        className="px-2 py-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 font-semibold rounded-lg transition text-[10px]"
+                                        title="Hapus Data (Tidak bisa dikembalikan)"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </>
+                                  )}
+                                  
+                                  {activeBoardTab === "INPUT_YOYI" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleMoveStatus(card.transaksi_id, "Draft")}
+                                      className="px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition text-[10px] flex items-center gap-1"
+                                    >
+                                      <RefreshCw className="h-3 w-3" /> Ke Draft
+                                    </button>
                                   )}
                                 </div>
-                                {renderProductBadge(card.ekspedisi, card.nama_barang)}
-                              </div>
-
-                              <div className="text-[11px] space-y-1 text-slate-700">
-                                <p className="font-semibold truncate text-slate-800">📦 {card.nama_barang || "Tanpa Nama Barang"}</p>
-                                <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                                  <span>{card.berat_kg || card.berat_timbangan || 0} kg</span>
-                                  <span>Ke: {card.nama_penerima || "-"}</span>
+                                
+                                <div className="flex items-center gap-1.5">
+                                  {activeBoardTab === "DRAFT" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleMoveStatus(card.transaksi_id, "INPUT_YOYI")}
+                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-lg transition text-[10px] flex items-center gap-1 shadow-2xs"
+                                    >
+                                      Lanjut <ArrowRight className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                  
+                                  {activeBoardTab === "INPUT_YOYI" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setResiModalData(card)}
+                                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white font-extrabold rounded-lg transition text-[10px] flex items-center gap-1 shadow-2xs"
+                                    >
+                                      Input Resi <ArrowRight className="h-3 w-3" />
+                                    </button>
+                                  )}
+                                  
+                                  {activeBoardTab === "SIAP_DIBAYAR" && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleLanjutkanDraft(card)}
+                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-lg transition text-[10px] flex items-center gap-1 shadow-2xs"
+                                    >
+                                      Bayar <ArrowRight className="h-3 w-3" />
+                                    </button>
+                                  )}
                                 </div>
-                                {renderPriorityBadges(card)}
-                              </div>
-
-                              <div className="pt-2 border-t border-slate-100">
-                                <button
-                                  type="button"
-                                  onClick={() => handleLanjutkanDraft(card)}
-                                  className="w-full py-2 px-2.5 bg-[#E4002B] hover:bg-[#c20023] text-white font-extrabold rounded-xl text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs whitespace-nowrap"
-                                >
-                                  <CreditCard className="h-3.5 w-3.5 shrink-0" />
-                                  <span>Masuk Resi & Bayar</span>
-                                </button>
                               </div>
                             </div>
                           );
                         })
                       )}
                     </div>
-                  </div>
-
-                  {/* KOLOM 4: SELESAI */}
-                  <div className="bg-slate-100/60 border border-slate-200 rounded-2xl p-3 flex flex-col space-y-3 min-h-[380px]">
-                    <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="bg-slate-700 text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded">4</span>
-                        <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wide">SELESAI</h4>
+                    
+                    {/* PAGINATION */}
+                    {columnData[activeBoardTab as "DRAFT" | "INPUT_YOYI" | "SIAP_DIBAYAR" | "SELESAI"].length > 0 && (
+                      <div className="pt-2 border-t border-gray-100 flex flex-wrap items-center justify-between text-[11px] text-gray-500 gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <select 
+                            value={boardLimit} 
+                            onChange={(e) => { setBoardLimit(Number(e.target.value)); setBoardPage(1); }}
+                            className="bg-gray-50 border border-gray-200 rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-[#E4002B] text-gray-700 font-semibold cursor-pointer"
+                          >
+                            <option value={5}>5</option>
+                            <option value={10}>10</option>
+                            <option value={25}>25</option>
+                            <option value={50}>50</option>
+                          </select>
+                          <span>/ hal</span>
+                        </div>
+                        <div className="font-semibold hidden sm:block">
+                          Menampilkan {Math.min((boardPage - 1) * boardLimit + 1, columnData[activeBoardTab as "DRAFT" | "INPUT_YOYI" | "SIAP_DIBAYAR" | "SELESAI"].length)} - {Math.min(boardPage * boardLimit, columnData[activeBoardTab as "DRAFT" | "INPUT_YOYI" | "SIAP_DIBAYAR" | "SELESAI"].length)} dari {columnData[activeBoardTab as "DRAFT" | "INPUT_YOYI" | "SIAP_DIBAYAR" | "SELESAI"].length} data
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            disabled={boardPage === 1}
+                            onClick={() => setBoardPage(p => Math.max(1, p - 1))}
+                            className="p-1 rounded bg-gray-50 border border-gray-200 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                            title="Halaman Sebelumnya"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <span className="font-mono px-2 font-bold">{boardPage}</span>
+                          <button 
+                            disabled={boardPage * boardLimit >= columnData[activeBoardTab as "DRAFT" | "INPUT_YOYI" | "SIAP_DIBAYAR" | "SELESAI"].length}
+                            onClick={() => setBoardPage(p => p + 1)}
+                            className="p-1 rounded bg-gray-50 border border-gray-200 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                            title="Halaman Selanjutnya"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
-                      <span className="bg-slate-200 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-full font-mono">
-                        {columnData.SELESAI.length}
-                      </span>
-                    </div>
-
-                    <div className="flex-1 space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
-                      {columnData.SELESAI.length === 0 ? (
-                        <p className="text-[11px] text-slate-400 text-center py-8 italic">Tidak ada transaksi baru selesai</p>
-                      ) : (
-                        columnData.SELESAI.map((card) => {
-                          return (
-                            <div key={card.transaksi_id} className="p-3 bg-white/90 rounded-xl border border-slate-200 text-slate-600 space-y-1.5 shadow-2xs opacity-90 min-h-[120px] flex flex-col justify-between">
-                              <div className="flex items-center justify-between border-b border-slate-100 pb-1">
-                                <span className="font-bold text-xs text-slate-800 truncate">{card.nama_pengirim || "Customer"}</span>
-                                <span className="bg-emerald-100 text-emerald-800 text-[9px] font-black px-1.5 py-0.5 rounded flex items-center gap-0.5">
-                                  <Check className="h-3 w-3" /> SELESAI
-                                </span>
-                              </div>
-                              <p className="text-[11px] font-mono font-bold text-slate-700">Resi: {card.no_resi || card.transaksi_id}</p>
-                              <p className="text-[10px] text-slate-400">Card otomatis hilang dlm 30s</p>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
+                    )}
                   </div>
-
                 </div>
               )}
-
-              {/* RECENT ACTIVITY LOG SECTION */}
+              
+{/* RECENT ACTIVITY LOG SECTION */}
               <div className="pt-3 border-t border-gray-100 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -2615,6 +2673,43 @@ Catatan : ${catatanAdmin || "-"}
                 className="flex items-center justify-center gap-1.5 rounded-lg bg-[#E4002B] py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#c20023] transition cursor-pointer"
               >
                 Jelas & Simpan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS DRAFT */}
+      {draftToDelete && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 space-y-4 animate-in fade-in zoom-in duration-150">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-red-100 text-red-600 rounded-xl">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-gray-900 text-sm">Hapus Draft Pre-Input?</h4>
+                <p className="text-xs text-gray-500 font-mono mt-0.5">{draftToDelete}</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-600 leading-relaxed">
+              Data draft ini akan dihapus secara permanen dari sistem dan tidak dapat dipulihkan.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setDraftToDelete(null)}
+                className="px-3.5 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={() => confirmAndExecuteHapusDraft(draftToDelete)}
+                className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Ya, Hapus Draft</span>
               </button>
             </div>
           </div>

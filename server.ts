@@ -2358,6 +2358,35 @@ app.post("/api/checkDuplicateResi", (req, res) => {
 });
 
 // 7. SAVE DATA PREINPUT
+
+app.post("/api/deletePreInputDraft", (req, res) => {
+  const { transaksi_id } = req.body;
+  if (!transaksi_id) return res.status(400).json({ status: "error", message: "ID Transaksi diperlukan." });
+  
+  const db = readDb();
+  if (!db.PreInput_Backup) db.PreInput_Backup = [];
+  
+  const index = db.PreInput_Backup.findIndex((p: any) => p.transaksi_id === transaksi_id);
+  if (index !== -1) {
+    db.PreInput_Backup.splice(index, 1);
+    
+    if (!db.AuditLogs) db.AuditLogs = [];
+    db.AuditLogs.push({
+      id: `AUD-${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      user: "System", // Or admin_id if available
+      action: "DELETE_DRAFT",
+      details: `Menghapus draft transaksi ${transaksi_id}`,
+      target: "PreInput_Backup"
+    });
+    
+    writeDb(db);
+    return res.json({ status: "success", message: "Draft berhasil dihapus." });
+  }
+  
+  return res.status(404).json({ status: "error", message: "Draft tidak ditemukan." });
+});
+
 app.post("/api/saveDataPreInput", (req, res) => {
   const {
     transaksi_id,
@@ -2402,6 +2431,16 @@ app.post("/api/saveDataPreInput", (req, res) => {
   if (!db.PreInput_Backup) db.PreInput_Backup = [];
 
   let existing = transaksi_id ? db.PreInput_Backup.find((p: any) => p.transaksi_id === transaksi_id) : null;
+  
+  if (!existing && hp_pengirim) {
+    const hpNorm = hp_pengirim.replace(/\D/g, "");
+    existing = db.PreInput_Backup.find((p: any) => 
+      p.hp_pengirim && 
+      p.hp_pengirim.replace(/\D/g, "") === hpNorm && 
+      (p.status === "Draft" || p.status === "INPUT_YOYI")
+    );
+  }
+
   const txId = existing ? existing.transaksi_id : (transaksi_id || ("TRX-" + Math.floor(Date.now() / 1000)));
 
   const finalStatus = reqStatus || (existing ? existing.status : (is_draft ? "Draft" : "Siap Dibayar"));
@@ -2545,6 +2584,38 @@ app.post("/api/updatePreInputStatus", (req, res) => {
 
   writeDb(db);
   return res.json({ status: "success", message: `Status draft berhasil diubah ke ${status}`, data: pre });
+});
+
+// 7.3 DELETE PREINPUT DRAFT
+app.post("/api/deletePreInputDraft", (req, res) => {
+  const { transaksi_id } = req.body || {};
+  if (!transaksi_id) {
+    return res.status(400).json({ status: "error", message: "transaksi_id wajib diberikan" });
+  }
+
+  const db = readDb();
+  if (!db.PreInput_Backup) db.PreInput_Backup = [];
+  
+  db.PreInput_Backup = db.PreInput_Backup.filter((p: any) => p.transaksi_id !== transaksi_id);
+  
+  if (db.MASTER_TRANSAKSI) {
+    db.MASTER_TRANSAKSI = db.MASTER_TRANSAKSI.filter((t: any) => t.transaksi_id !== transaksi_id);
+  }
+  if (db.MASTER_PENGIRIMAN) {
+    db.MASTER_PENGIRIMAN = db.MASTER_PENGIRIMAN.filter((p: any) => p.transaksi_id !== transaksi_id);
+  }
+
+  if (!db.AuditLogs) db.AuditLogs = [];
+  db.AuditLogs.unshift({
+    id: "LOG-" + Date.now(),
+    timestamp: new Date().toISOString(),
+    user: req.body.admin_id || "SYSTEM",
+    action: "DELETE_DRAFT",
+    detail: `Draft ${transaksi_id} berhasil dihapus permanen`
+  });
+
+  writeDb(db);
+  return res.json({ status: "success", message: "Draft berhasil dihapus" });
 });
 
 // 8. GET PREINPUT DETAILS

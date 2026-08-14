@@ -79,6 +79,8 @@ function handleRouting(action, params) {
       return apiCheckDuplicateResi(params);
     case "saveDataPreInput":
       return apiSaveDataPreInput(params);
+    case "deletePreInputDraft":
+      return apiDeletePreInputDraft(params);
     case "saveTransaksi":
       return apiSaveTransaksi(params);
     case "updateTransaksi":
@@ -459,6 +461,47 @@ function apiCheckDuplicateResi(params) {
  * appendRow disusun lewat DB_SCHEMA.PreInput_Backup (termasuk catatan_admin),
  * bukan array literal manual.
  */
+
+function logAudit(userId, action, detail, outletId) {
+  try {
+    DatabaseService.appendAudit(userId, action, detail, outletId);
+  } catch (e) {
+    Logger.log("logAudit error: " + e.toString());
+  }
+}
+
+function writeAuditLog(userId, action, detail, outletId) {
+  logAudit(userId, action, detail, outletId);
+}
+
+function apiDeletePreInputDraft(params) {
+  try {
+    var txId = params.transaksi_id;
+    if (!txId) return { status: "error", message: "ID Transaksi diperlukan." };
+    
+    var sheet = getSheetByName("PreInput_Backup");
+    if (!sheet) return { status: "error", message: "Sheet tidak ditemukan" };
+    
+    var data = sheet.getDataRange().getValues();
+    var deleted = false;
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] === txId) {
+        sheet.deleteRow(i + 1);
+        deleted = true;
+        break;
+      }
+    }
+    
+    if (deleted) {
+      logAudit(params.admin_id || "System", "DELETE_DRAFT", "Menghapus draft " + txId);
+      return { status: "success", message: "Draft berhasil dihapus." };
+    }
+    return { status: "error", message: "Draft tidak ditemukan." };
+  } catch(e) {
+    return { status: "error", message: e.message };
+  }
+}
+
 function apiSaveDataPreInput(params) {
   try {
     var result = TransactionService.savePreInput(params);

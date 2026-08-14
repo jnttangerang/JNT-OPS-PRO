@@ -1,3 +1,4 @@
+// @ts-ignore
 import serverMod from '../dist/server.cjs';
 const app = serverMod.default || serverMod;
 
