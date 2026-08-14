@@ -476,29 +476,62 @@ function writeAuditLog(userId, action, detail, outletId) {
 
 function apiDeletePreInputDraft(params) {
   try {
-    var txId = params.transaksi_id;
+    params = params || {};
+    var txId = (params.transaksi_id || "").toString().trim();
     if (!txId) return { status: "error", message: "ID Transaksi diperlukan." };
     
-    var sheet = getSheetByName("PreInput_Backup");
-    if (!sheet) return { status: "error", message: "Sheet tidak ditemukan" };
-    
-    var data = sheet.getDataRange().getValues();
-    var deleted = false;
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] === txId) {
-        sheet.deleteRow(i + 1);
-        deleted = true;
-        break;
+    var ss = getSpreadsheet_();
+
+    // 1. Delete from PreInput_Backup
+    var sheet = findSheetCaseInsensitive_(ss, "PreInput_Backup") || getSheetByName("PreInput_Backup");
+    if (sheet) {
+      var data = sheet.getDataRange().getValues();
+      var colIdx = getColIndex_(sheet, "transaksi_id");
+      if (colIdx === -1) colIdx = 0;
+      
+      for (var i = data.length - 1; i >= 1; i--) {
+        var rowVal = (data[i][colIdx] || "").toString().trim();
+        if (rowVal.toUpperCase() === txId.toUpperCase()) {
+          sheet.deleteRow(i + 1);
+        }
+      }
+    }
+
+    // 2. Delete from MASTER_TRANSAKSI if present
+    var sheetTx = findSheetCaseInsensitive_(ss, "MASTER_TRANSAKSI") || getSheetByName("MASTER_TRANSAKSI");
+    if (sheetTx) {
+      var dataTx = sheetTx.getDataRange().getValues();
+      var colIdxTx = getColIndex_(sheetTx, "id");
+      if (colIdxTx === -1) colIdxTx = getColIndex_(sheetTx, "transaksi_id");
+      if (colIdxTx === -1) colIdxTx = 0;
+      
+      for (var j = dataTx.length - 1; j >= 1; j--) {
+        var rowValTx = (dataTx[j][colIdxTx] || "").toString().trim();
+        if (rowValTx.toUpperCase() === txId.toUpperCase()) {
+          sheetTx.deleteRow(j + 1);
+        }
+      }
+    }
+
+    // 3. Delete from MASTER_PENGIRIMAN if present
+    var sheetShip = findSheetCaseInsensitive_(ss, "MASTER_PENGIRIMAN") || getSheetByName("MASTER_PENGIRIMAN");
+    if (sheetShip) {
+      var dataShip = sheetShip.getDataRange().getValues();
+      var colIdxShip = getColIndex_(sheetShip, "transaksi_id");
+      if (colIdxShip === -1) colIdxShip = 3;
+      
+      for (var k = dataShip.length - 1; k >= 1; k--) {
+        var rowValShip = (dataShip[k][colIdxShip] || "").toString().trim();
+        if (rowValShip.toUpperCase() === txId.toUpperCase()) {
+          sheetShip.deleteRow(k + 1);
+        }
       }
     }
     
-    if (deleted) {
-      logAudit(params.admin_id || "System", "DELETE_DRAFT", "Menghapus draft " + txId);
-      return { status: "success", message: "Draft berhasil dihapus." };
-    }
-    return { status: "error", message: "Draft tidak ditemukan." };
+    logAudit(params.admin_id || params.user_id || "SYSTEM", "DELETE_DRAFT", "Menghapus draft " + txId);
+    return { status: "success", message: "Draft berhasil dihapus." };
   } catch(e) {
-    return { status: "error", message: e.message };
+    return { status: "error", message: e.message || e.toString() };
   }
 }
 
