@@ -160,7 +160,7 @@ function handleRouting(action, params) {
     case "getCustomersMaster":
     case "getBukuPengirim":
     case "getBukuPenerima":
-      return apiGetCustomers(params);
+      return apiGetCustomers(params, action);
     case "getCustomerHistory":
     case "getCustomerDetailFull":
       return apiGetCustomerHistory(params);
@@ -4630,11 +4630,19 @@ function apiImportCustomerFromSheet(params) {
   }
 }
 
-function apiGetCustomers(params) {
+function apiGetCustomers(params, action) {
   try {
     params = params || {};
     var query = (params.query || params.keyword || "").toString().toLowerCase().trim();
-    var rows = DatabaseService.getSheetData("MASTER_PENGIRIM");
+    
+    var sheetName = "Master_Customer";
+    if (action === "getBukuPengirim") {
+      sheetName = "MASTER_PENGIRIM";
+    } else if (action === "getBukuPenerima") {
+      sheetName = "MASTER_PENERIMA";
+    }
+    
+    var rows = DatabaseService.getSheetData(sheetName);
     if (!rows || rows.length < 2) return { status: "success", data: [] };
     var headers = rows[0];
     var list = [];
@@ -4657,7 +4665,7 @@ function apiGetCustomerHistory(params) {
   try {
     params = params || {};
     var customerId = (params.customer_id || params.id || params.telepon || "").toString();
-    var txRows = DatabaseService.getSheetData("Transaksi");
+    var txRows = DatabaseService.getSheetData("MASTER_TRANSAKSI");
     if (!txRows || txRows.length < 2) return { status: "success", data: [] };
     var headers = txRows[0];
     var list = [];
