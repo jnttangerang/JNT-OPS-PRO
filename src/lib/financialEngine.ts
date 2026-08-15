@@ -7,7 +7,7 @@ export function safeNum(val: any): number {
 
 export function isTransactionValidForFinance(tx: any): boolean {
   const status = (tx.status_transaksi || tx.status || "").toUpperCase();
-  if (status === "CANCELLED" || status === "BATAL" || status === "REVISED" || status === "FAILED") {
+  if (status === "CANCELLED" || status === "BATAL" || status === "REVISED" || status === "FAILED" || status === "DRAFT") {
     return false;
   }
   return true;
