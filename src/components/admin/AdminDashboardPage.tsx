@@ -160,13 +160,13 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
         <p className="text-xs font-extrabold text-gray-400 uppercase tracking-wider mb-3">Pintasan Operasional</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <button
-            onClick={() => onNavigate("transaksi")}
-            className="flex items-center gap-3 p-3 bg-red-50 hover:bg-red-100 text-[#E4002B] rounded-xl font-bold text-xs transition-all cursor-pointer border border-red-100"
+            onClick={() => onNavigate("pre-input")}
+            className="flex items-center gap-3 p-3 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl font-bold text-xs transition-all cursor-pointer border border-amber-100"
           >
-            <div className="p-2 bg-[#E4002B] text-white rounded-lg">
+            <div className="p-2 bg-amber-500 text-white rounded-lg">
               <Plus className="h-4 w-4 stroke-[2.5]" />
             </div>
-            <span>Transaksi Baru</span>
+            <span>Input Customer</span>
           </button>
 
           <button
@@ -180,13 +180,13 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
           </button>
 
           <button
-            onClick={() => onNavigate("pre-input")}
-            className="flex items-center gap-3 p-3 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl font-bold text-xs transition-all cursor-pointer border border-amber-100"
+            onClick={() => onNavigate("transaksi")}
+            className="flex items-center gap-3 p-3 bg-red-50 hover:bg-red-100 text-[#E4002B] rounded-xl font-bold text-xs transition-all cursor-pointer border border-red-100"
           >
-            <div className="p-2 bg-amber-500 text-white rounded-lg">
+            <div className="p-2 bg-[#E4002B] text-white rounded-lg">
               <QrCode className="h-4 w-4" />
             </div>
-            <span>Scanner</span>
+            <span>Scan/Input Transaksi</span>
           </button>
 
           <button
