@@ -59,6 +59,7 @@ export default function DailyClosingPage({
   }, [activeOutletId]);
 
   const selectedOutletName = outlets.find((o) => o.outlet_id === selectedOutlet)?.nama_outlet || selectedOutlet;
+  const isOwner = session?.role === "OWNER" || session?.role === "SUPER_ADMIN" || session?.role === "DEVELOPER";
 
   // Fetch status, exceptions, and audit logs on outlet or date change
   const fetchData = useCallback(async () => {
@@ -157,6 +158,7 @@ export default function DailyClosingPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           outlet_id: selectedOutlet,
+          outlet_name: selectedOutletName,
           tanggal: closingDate,
           ...getActorInfo()
         })
@@ -166,12 +168,12 @@ export default function DailyClosingPage({
       if (res.ok && (json.status === "success" || json.status === "blocked")) {
         setClosingStatusData(json.data || json);
         if (json.status === "success") {
-          toast.success(json.message || "Validasi daily closing berhasil. Status READY.");
+          toast.success(json.message || `Validasi tutup buku berhasil. Status SIAP untuk outlet '${selectedOutletName}'.`);
         } else {
-          toast.error(json.message || "Daily closing diblokir karena syarat validasi belum terpenuhi.");
+          toast.error(json.message || `Tutup buku terkendala untuk outlet '${selectedOutletName}'.`);
         }
       } else {
-        toast.error(json.message || "Gagal memvalidasi daily closing.");
+        toast.error(json.message || "Gagal memeriksa kelayakan tutup buku.");
       }
       await fetchData();
     } catch (err: any) {
@@ -190,6 +192,7 @@ export default function DailyClosingPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           outlet_id: selectedOutlet,
+          outlet_name: selectedOutletName,
           tanggal: closingDate,
           notes: closeNotes,
           ...getActorInfo()
@@ -198,15 +201,15 @@ export default function DailyClosingPage({
 
       const json = await res.json();
       if (res.ok && json.status === "success") {
-        toast.success(json.message || "Daily closing berhasil diselesaikan! Status CLOSED.");
+        toast.success(json.message || `Tutup buku berhasil diselesaikan untuk outlet '${selectedOutletName}'.`);
         setShowCloseModal(false);
         setCloseNotes("");
         await fetchData();
       } else {
-        toast.error(json.message || "Gagal menyelesaikan daily closing.");
+        toast.error(json.message || "Gagal menyelesaikan tutup buku.");
       }
     } catch (err: any) {
-      toast.error(err?.message || "Terjadi kesalahan saat menutup daily closing.");
+      toast.error(err?.message || "Terjadi kesalahan saat menutup operasional harian.");
     } finally {
       setValidating(false);
     }
@@ -226,6 +229,7 @@ export default function DailyClosingPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           outlet_id: selectedOutlet,
+          outlet_name: selectedOutletName,
           tanggal: closingDate,
           reason: reopenReason.trim(),
           ...getActorInfo()
@@ -309,17 +313,17 @@ export default function DailyClosingPage({
   const getStatusBadge = (status?: string) => {
     switch (status) {
       case "CLOSED":
-        return <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-black rounded-full border border-emerald-300 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> CLOSED</span>;
+        return <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-black rounded-full border border-emerald-300 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> SUDAH DITUTUP</span>;
       case "READY":
-        return <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-black rounded-full border border-blue-300 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> READY</span>;
+        return <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-black rounded-full border border-blue-300 flex items-center gap-1"><CheckCircle2 className="w-3.5 h-3.5" /> SIAP TUTUP BUKU</span>;
       case "BLOCKED":
-        return <span className="px-3 py-1 bg-red-100 text-red-800 text-xs font-black rounded-full border border-red-300 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> BLOCKED</span>;
+        return <span className="px-3 py-1 bg-red-100 text-red-800 text-xs font-black rounded-full border border-red-300 flex items-center gap-1"><AlertTriangle className="w-3.5 h-3.5" /> TERKENDALA</span>;
       case "REOPENED":
-        return <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-black rounded-full border border-amber-300 flex items-center gap-1"><RotateCcw className="w-3.5 h-3.5" /> REOPENED</span>;
+        return <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-black rounded-full border border-amber-300 flex items-center gap-1"><RotateCcw className="w-3.5 h-3.5" /> DIBUKA KEMBALI</span>;
       case "VALIDATING":
-        return <span className="px-3 py-1 bg-purple-100 text-purple-800 text-xs font-black rounded-full border border-purple-300 flex items-center gap-1"><Loader2 className="w-3.5 h-3.5 animate-spin" /> VALIDATING</span>;
+        return <span className="px-3 py-1 bg-purple-100 text-purple-800 text-xs font-black rounded-full border border-purple-300 flex items-center gap-1"><Loader2 className="w-3.5 h-3.5 animate-spin" /> MEMVALIDASI...</span>;
       default:
-        return <span className="px-3 py-1 bg-gray-100 text-gray-800 text-xs font-black rounded-full border border-gray-300 flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> OPEN</span>;
+        return <span className="px-3 py-1 bg-gray-100 text-gray-800 text-xs font-black rounded-full border border-gray-300 flex items-center gap-1"><Lock className="w-3.5 h-3.5" /> BELUM DITUTUP</span>;
     }
   };
 
@@ -335,8 +339,8 @@ export default function DailyClosingPage({
             <Lock className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-gray-900 tracking-tight">Daily Closing</h1>
-            <p className="text-xs text-gray-500 font-medium">Validasi & Penutupan Operasional Outlet Harian</p>
+            <h1 className="text-xl font-black text-gray-900 tracking-tight">Tutup Buku Harian</h1>
+            <p className="text-xs text-gray-500 font-medium">Validasi & Penutupan Operasional Outlet / Drop Point J&T</p>
           </div>
         </div>
 
@@ -383,8 +387,8 @@ export default function DailyClosingPage({
               onClick={fetchData}
               disabled={loading}
               className="mt-5 p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
-              title="Refresh Data"
-              aria-label="Refresh Data"
+              title="Perbarui Data"
+              aria-label="Perbarui Data"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             </button>
@@ -397,7 +401,7 @@ export default function DailyClosingPage({
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-gray-400 uppercase">Status Daily Closing:</span>
+              <span className="text-xs font-bold text-gray-400 uppercase">Status Tutup Buku:</span>
               {getStatusBadge(statusVal)}
             </div>
             <p className="text-xs text-gray-500 mt-1">
@@ -414,7 +418,7 @@ export default function DailyClosingPage({
               className="px-4 py-2.5 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer shadow-sm"
             >
               {validating ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileCheck className="w-4 h-4" />}
-              Validate Closing
+              Cek Kelayakan Tutup Buku
             </button>
 
             {statusVal === "READY" && (
@@ -425,11 +429,11 @@ export default function DailyClosingPage({
                 className="px-4 py-2.5 bg-[#E4002B] hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-red-500/20"
               >
                 <Lock className="w-4 h-4" />
-                Close Daily Closing
+                Tutup Buku Harian
               </button>
             )}
 
-            {statusVal === "CLOSED" && (
+            {statusVal === "CLOSED" && isOwner && (
               <button
                 id="btn-reopen-closing"
                 onClick={() => setShowReopenModal(true)}
@@ -437,7 +441,7 @@ export default function DailyClosingPage({
                 className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 cursor-pointer shadow-sm"
               >
                 <RotateCcw className="w-4 h-4" />
-                Reopen Closing
+                Buka Kembali Tutup Buku
               </button>
             )}
           </div>
@@ -448,7 +452,7 @@ export default function DailyClosingPage({
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-800 space-y-2">
             <div className="flex items-center gap-2 font-black text-xs uppercase tracking-wide">
               <ShieldAlert className="w-4 h-4 text-red-600" />
-              Proses Daily Closing Terblokir ({blockingReasons.length} Alasan):
+              Proses Tutup Buku Terkendala ({blockingReasons.length} Syarat Belum Terpenuhi):
             </div>
             <ul className="list-disc list-inside text-xs space-y-1 font-medium pl-1">
               {blockingReasons.map((reason, idx) => (
@@ -462,7 +466,7 @@ export default function DailyClosingPage({
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-emerald-800 flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
             <div>
-              <p className="text-xs font-bold">Periode harian telah resmi ditutup (CLOSED).</p>
+              <p className="text-xs font-bold">Operasional harian outlet telah resmi ditutup dan dikunci.</p>
               {closingStatusData?.closed_at && (
                 <p className="text-[11px] text-emerald-600">
                   Ditutup oleh: <strong>{closingStatusData.closed_by || "Admin"}</strong> pada {new Date(closingStatusData.closed_at).toLocaleString("id-ID")}
@@ -483,38 +487,38 @@ export default function DailyClosingPage({
               <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
                 <DollarSign className="w-4 h-4" />
               </div>
-              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Financial Summary</h3>
+              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Ringkasan Finansial Kasir</h3>
             </div>
-            <span className="text-[10px] bg-blue-50 text-blue-700 font-extrabold px-2 py-0.5 rounded">Financial Engine</span>
+            <span className="text-[10px] bg-blue-50 text-blue-700 font-extrabold px-2 py-0.5 rounded">Kalkulasi Transaksi</span>
           </div>
 
           <div className="space-y-2.5 text-xs">
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Total Transaksi</span>
+              <span className="text-gray-500 font-medium">Total Resi / Paket</span>
               <span className="font-extrabold text-gray-900">{closingStatusData?.transaction_count ?? 0}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Transaksi Valid</span>
+              <span className="text-gray-500 font-medium">Resi Valid (Lunas)</span>
               <span className="font-extrabold text-emerald-600">{closingStatusData?.valid_financial_transaction_count ?? 0}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Transaksi Dibatalkan</span>
+              <span className="text-gray-500 font-medium">Resi Dibatalkan (Void)</span>
               <span className="font-extrabold text-red-500">{closingStatusData?.cancelled_transaction_count ?? 0}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Total Customer</span>
+              <span className="text-gray-500 font-medium">Total Pelanggan</span>
               <span className="font-extrabold text-gray-900">{closingStatusData?.total_customer ?? 0}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Wajib Setor Owner</span>
+              <span className="text-gray-500 font-medium">Wajib Setor ke Owner</span>
               <span className="font-black text-blue-600">Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_owner_deposit ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Kas Outlet</span>
+              <span className="text-gray-500 font-medium">Kas Outlet / Operasional</span>
               <span className="font-black text-purple-600">Rp {Number(closingStatusData?.total_outlet_cash ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1">
-              <span className="text-gray-500 font-medium">Pembulatan</span>
+              <span className="text-gray-500 font-medium">Pembulatan Nilai</span>
               <span className="font-extrabold text-gray-700">Rp {Number(closingStatusData?.total_rounding ?? 0).toLocaleString("id-ID")}</span>
             </div>
           </div>
@@ -527,24 +531,24 @@ export default function DailyClosingPage({
               <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
                 <FileCheck className="w-4 h-4" />
               </div>
-              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Status Setoran Owner</h3>
+              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Status Setoran Kasir</h3>
             </div>
             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
               closingStatusData?.setoran_status === "MATCHED" 
                 ? "bg-emerald-100 text-emerald-800" 
                 : "bg-red-100 text-red-800"
             }`}>
-              {closingStatusData?.setoran_status || "PENDING"}
+              {closingStatusData?.setoran_status === "MATCHED" ? "SESUAI" : (closingStatusData?.setoran_status || "PENDING")}
             </span>
           </div>
 
           <div className="space-y-2.5 text-xs">
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Wajib Setor</span>
+              <span className="text-gray-500 font-medium">Kewajiban Setor</span>
               <span className="font-black text-gray-900">Rp {Number(closingStatusData?.setoran_required ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Sudah Disetor (Actual)</span>
+              <span className="text-gray-500 font-medium">Nominal Disetor (Aktual)</span>
               <span className="font-black text-emerald-600">Rp {Number(closingStatusData?.setoran_actual ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
@@ -559,11 +563,11 @@ export default function DailyClosingPage({
               <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-[11px] text-gray-600 mb-3">
                 {closingStatusData?.setoran_status === "MATCHED" ? (
                   <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Setoran owner telah sesuai dengan perhitungan sistem.
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Setoran telah sesuai dengan kewajiban sistem.
                   </span>
                 ) : (
                   <span className="text-red-700 font-semibold flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" /> Setoran belum sesuai aturan atau masih terdapat selisih.
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" /> Setoran belum sesuai atau masih terdapat selisih kas.
                   </span>
                 )}
               </div>
@@ -589,32 +593,32 @@ export default function DailyClosingPage({
               <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
                 <AlertOctagon className="w-4 h-4" />
               </div>
-              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Reconciliation Summary</h3>
+              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Rekonsiliasi & Kendala</h3>
             </div>
             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
               closingStatusData?.reconciliation_status === "MATCHED" 
                 ? "bg-emerald-100 text-emerald-800" 
                 : "bg-red-100 text-red-800"
             }`}>
-              {closingStatusData?.reconciliation_status || "UNKNOWN"}
+              {closingStatusData?.reconciliation_status === "MATCHED" ? "MATCHED (SESUAI)" : (closingStatusData?.reconciliation_status || "BELUM COCOK")}
             </span>
           </div>
 
           <div className="space-y-2 text-xs">
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Total Exceptions Open</span>
+              <span className="text-gray-500 font-medium">Total Kendala Belum Selesai</span>
               <span className="font-extrabold text-gray-900">{closingStatusData?.open_exceptions_count ?? 0}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Critical Exceptions</span>
+              <span className="text-gray-500 font-medium">Kendala Kritis (Critical)</span>
               <span className="font-black text-red-600">{closingStatusData?.open_critical_count ?? 0}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Error Exceptions</span>
+              <span className="text-gray-500 font-medium">Kendala Data (Error)</span>
               <span className="font-black text-orange-600">{closingStatusData?.open_error_count ?? 0}</span>
             </div>
             <div className="flex justify-between items-center py-1">
-              <span className="text-gray-500 font-medium">Warning Exceptions</span>
+              <span className="text-gray-500 font-medium">Peringatan (Warning)</span>
               <span className="font-bold text-amber-600">{closingStatusData?.open_warning_count ?? 0}</span>
             </div>
           </div>
@@ -627,7 +631,7 @@ export default function DailyClosingPage({
         <div className="flex items-center justify-between border-b border-gray-100 pb-3">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-5 h-5 text-amber-600" />
-            <h2 className="text-sm font-extrabold text-gray-900 uppercase tracking-wide">Blocking & Open Exceptions</h2>
+            <h2 className="text-sm font-extrabold text-gray-900 uppercase tracking-wide">Daftar Kendala & Selisih Operasional</h2>
           </div>
           <span className="text-xs font-bold text-gray-400">{exceptions.length} Item</span>
         </div>
@@ -635,20 +639,20 @@ export default function DailyClosingPage({
         {exceptions.length === 0 ? (
           <div className="py-8 text-center text-gray-400 text-xs">
             <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
-            Tidak ada open exception untuk outlet <strong>{selectedOutletName}</strong>.
+            Tidak ada kendala operasional yang terbuka untuk outlet <strong>{selectedOutletName}</strong>.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-[10px] tracking-wider border-b border-gray-100">
                 <tr>
-                  <th className="py-3 px-3">Severity</th>
-                  <th className="py-3 px-3">Type</th>
-                  <th className="py-3 px-3">Entity / ID</th>
-                  <th className="py-3 px-3">Reason</th>
-                  <th className="py-3 px-3">Recommendation</th>
+                  <th className="py-3 px-3">Tingkat</th>
+                  <th className="py-3 px-3">Jenis Kendala</th>
+                  <th className="py-3 px-3">Objek / ID Transaksi</th>
+                  <th className="py-3 px-3">Penyebab / Indikasi</th>
+                  <th className="py-3 px-3">Rekomendasi</th>
                   <th className="py-3 px-3">Status</th>
-                  <th className="py-3 px-3 text-right">Action</th>
+                  <th className="py-3 px-3 text-right">{isOwner ? "Aksi Owner" : "Otorisasi"}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
@@ -664,7 +668,7 @@ export default function DailyClosingPage({
                           severity === "ERROR" ? "bg-orange-100 text-orange-800 border border-orange-200" :
                           "bg-amber-100 text-amber-800 border border-amber-200"
                         }`}>
-                          {severity}
+                          {severity === "CRITICAL" ? "KRITIS" : severity === "ERROR" ? "ERROR" : "PERINGATAN"}
                         </span>
                       </td>
                       <td className="py-3 px-3 font-mono text-[11px] font-bold text-gray-700">{exc.type}</td>
@@ -679,28 +683,40 @@ export default function DailyClosingPage({
                           excStatus === "RESOLVED" ? "bg-emerald-100 text-emerald-800" :
                           excStatus === "IN_REVIEW" ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-700"
                         }`}>
-                          {excStatus}
+                          {excStatus === "RESOLVED" ? "SELESAI" : excStatus === "IN_REVIEW" ? "DITINJAU" : "BELUM SELESAI"}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right space-x-1">
-                        {excStatus === "OPEN" && (
-                          <button
-                            onClick={() => handleStartReview(excId)}
-                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded text-[11px] transition-colors cursor-pointer"
-                          >
-                            Review
-                          </button>
-                        )}
-                        {excStatus !== "RESOLVED" && (
-                          <button
-                            onClick={() => {
-                              setSelectedException(exc);
-                              setResolutionNotes("");
-                            }}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-[11px] transition-colors cursor-pointer"
-                          >
-                            Resolve
-                          </button>
+                        {isOwner ? (
+                          <>
+                            {excStatus === "OPEN" && (
+                              <button
+                                onClick={() => handleStartReview(excId)}
+                                className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded text-[11px] transition-colors cursor-pointer"
+                              >
+                                Tinjau
+                              </button>
+                            )}
+                            {excStatus !== "RESOLVED" && (
+                              <button
+                                onClick={() => {
+                                  setSelectedException(exc);
+                                  setResolutionNotes("");
+                                }}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-[11px] transition-colors cursor-pointer"
+                              >
+                                Selesaikan
+                              </button>
+                            )}
+                          </>
+                        ) : (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border inline-block ${
+                            excStatus === "RESOLVED" 
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          }`}>
+                            {excStatus === "RESOLVED" ? "Disetujui Owner" : "Wewenang Owner"}
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -717,14 +733,14 @@ export default function DailyClosingPage({
         <div className="flex items-center justify-between border-b border-gray-100 pb-3">
           <div className="flex items-center gap-2">
             <History className="w-5 h-5 text-gray-700" />
-            <h2 className="text-sm font-extrabold text-gray-900 uppercase tracking-wide">Daily Closing Audit Trail</h2>
+            <h2 className="text-sm font-extrabold text-gray-900 uppercase tracking-wide">Riwayat Aktivitas Tutup Buku (Audit Trail)</h2>
           </div>
-          <span className="text-xs font-bold text-gray-400">{auditLogs.length} Event</span>
+          <span className="text-xs font-bold text-gray-400">{auditLogs.length} Aktivitas</span>
         </div>
 
         {auditLogs.length === 0 ? (
           <div className="py-6 text-center text-gray-400 text-xs">
-            Belum ada audit event tercatat untuk closing outlet ini.
+            Belum ada aktivitas tercatat untuk tutup buku outlet ini.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -732,10 +748,10 @@ export default function DailyClosingPage({
               <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-[10px] tracking-wider border-b border-gray-100">
                 <tr>
                   <th className="py-2.5 px-3">Waktu</th>
-                  <th className="py-2.5 px-3">Actor</th>
-                  <th className="py-2.5 px-3">Event / Action</th>
-                  <th className="py-2.5 px-3">Result</th>
-                  <th className="py-2.5 px-3">Detail / Reason</th>
+                  <th className="py-2.5 px-3">Petugas / Sistem</th>
+                  <th className="py-2.5 px-3">Aktivitas / Aksi</th>
+                  <th className="py-2.5 px-3">Hasil</th>
+                  <th className="py-2.5 px-3">Keterangan / Alasan</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 font-medium text-gray-700">
@@ -755,7 +771,7 @@ export default function DailyClosingPage({
                         log.result === "SUCCESS" ? "bg-emerald-100 text-emerald-800" :
                         log.result === "REJECTED" || log.result === "FAILED" ? "bg-red-100 text-red-800" : "bg-amber-100 text-amber-800"
                       }`}>
-                        {log.result}
+                        {log.result === "SUCCESS" ? "BERHASIL" : log.result === "REJECTED" ? "DITOLAK" : log.result === "FAILED" ? "GAGAL" : log.result}
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-gray-500 max-w-xs truncate" title={log.reason || log.detail || JSON.stringify(log.metadata || {})}>
@@ -775,7 +791,7 @@ export default function DailyClosingPage({
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-gray-200 shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                <Lock className="w-5 h-5 text-[#E4002B]" /> Confirm Daily Closing
+                <Lock className="w-5 h-5 text-[#E4002B]" /> Konfirmasi Tutup Buku Harian
               </h3>
               <button 
                 onClick={() => setShowCloseModal(false)}
@@ -786,15 +802,15 @@ export default function DailyClosingPage({
             </div>
 
             <p className="text-xs text-gray-600">
-              Anda akan mengunci seluruh operasional harian outlet <strong className="text-gray-800">{selectedOutletName}</strong> pada tanggal <strong className="text-gray-800">{closingDate}</strong>.
+              Anda akan mengunci seluruh transaksi dan pembukuan outlet <strong className="text-gray-800">{selectedOutletName}</strong> pada tanggal <strong className="text-gray-800">{closingDate}</strong>. Setelah ditutup, data hari ini tidak dapat diubah tanpa otorisasi Owner.
             </p>
 
             <div>
-              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">Catatan Closing (Opsional)</label>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">Catatan Tutup Buku (Opsional)</label>
               <textarea
                 value={closeNotes}
                 onChange={(e) => setCloseNotes(e.target.value)}
-                placeholder="Tuliskan catatan tambahan jika ada..."
+                placeholder="Tuliskan catatan operasional kasir/outlet jika ada..."
                 className="w-full p-3 border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#E4002B]/20 focus:border-[#E4002B]"
                 rows={3}
               />
@@ -813,7 +829,7 @@ export default function DailyClosingPage({
                 className="px-4 py-2 bg-[#E4002B] hover:bg-red-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer"
               >
                 {validating && <Loader2 className="w-4 h-4 animate-spin" />}
-                Konfirmasi Close
+                Tutup Buku Sekarang
               </button>
             </div>
           </div>
@@ -826,7 +842,7 @@ export default function DailyClosingPage({
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-gray-200 shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                <RotateCcw className="w-5 h-5 text-amber-600" /> Reopen Daily Closing
+                <RotateCcw className="w-5 h-5 text-amber-600" /> Buka Kembali Tutup Buku
               </h3>
               <button 
                 onClick={() => setShowReopenModal(false)}
@@ -837,15 +853,15 @@ export default function DailyClosingPage({
             </div>
 
             <p className="text-xs text-gray-600">
-              Membuka kembali daily closing memerlukan otoritas Owner / Super Admin dan wajib disertai alasan resmi yang akan dicatat di Audit Trail.
+              Membuka kembali operasional yang sudah ditutup memerlukan otorisasi Owner / Super Admin dan wajib menyertakan alasan resmi yang akan dicatat di riwayat audit.
             </p>
 
             <div>
-              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">Alasan Reopen (Wajib)</label>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">Alasan Pembukaan Kembali (Wajib)</label>
               <textarea
                 value={reopenReason}
                 onChange={(e) => setReopenReason(e.target.value)}
-                placeholder="Misal: Koreksi transaksi kasir, penyesuaian setoran bank..."
+                placeholder="Contoh: Koreksi nomor resi/berat paket, penyesuaian bukti transfer kasir..."
                 className="w-full p-3 border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                 rows={3}
                 required
@@ -865,7 +881,7 @@ export default function DailyClosingPage({
                 className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {validating && <Loader2 className="w-4 h-4 animate-spin" />}
-                Konfirmasi Reopen
+                Konfirmasi Buka Kembali
               </button>
             </div>
           </div>
@@ -873,12 +889,12 @@ export default function DailyClosingPage({
       )}
 
       {/* MODAL: RESOLVE EXCEPTION */}
-      {selectedException && (
+      {selectedException && isOwner && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-gray-200 shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600" /> Selesaikan Exception
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" /> Penyelesaian Kendala Operasional
               </h3>
               <button 
                 onClick={() => setSelectedException(null)}
@@ -889,29 +905,29 @@ export default function DailyClosingPage({
             </div>
 
             <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-xs space-y-1">
-              <div className="font-bold text-gray-900">Type: {selectedException.type}</div>
+              <div className="font-bold text-gray-900">Jenis Kendala: {selectedException.type}</div>
               <div className="text-gray-600">{selectedException.reason}</div>
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">Keputusan / Decision</label>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">Keputusan Penyelesaian</label>
               <select
                 value={resolutionType}
                 onChange={(e) => setResolutionType(e.target.value)}
                 className="w-full p-2.5 border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
               >
-                <option value="RESOLVED">Selesaikan Exception (Resolved)</option>
+                <option value="RESOLVED">Selesaikan & Tutup Kendala (Resolved)</option>
                 <option value="ACCEPTED">Ditoleransi / Disetujui Owner (Accepted)</option>
-                <option value="REJECTED">Ditolak (Rejected)</option>
+                <option value="REJECTED">Ditolak / Perlu Koreksi Admin (Rejected)</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">Catatan Penyelesaian (Notes)</label>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">Catatan & Dasar Keputusan (Wajib)</label>
               <textarea
                 value={resolutionNotes}
                 onChange={(e) => setResolutionNotes(e.target.value)}
-                placeholder="Jelaskan dasar keputusan penyelesaian..."
+                placeholder="Jelaskan alasan atau kronologi penyelesaian..."
                 className="w-full p-3 border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                 rows={3}
               />
@@ -929,7 +945,7 @@ export default function DailyClosingPage({
                 disabled={!resolutionNotes.trim()}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                Simpan Penyelesaian
+                Simpan Keputusan
               </button>
             </div>
           </div>

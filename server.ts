@@ -5712,9 +5712,10 @@ app.post("/api/reconciliation/closingStatus", (req, res) => {
 // === PHASE 30 DAILY CLOSING ENGINE ENDPOINTS ===
 app.post("/api/dailyClosing/validate", (req, res) => {
   const db = readDb();
-  const { outlet_id, tanggal, actor_id, actor_name, actor_role } = req.body || {};
+  const { outlet_id, outlet_name, tanggal, actor_id, actor_name, actor_role } = req.body || {};
   const result = validateDailyClosing(db, {
     outlet_id,
+    outlet_name,
     tanggal,
     actor: {
       actor_id: actor_id || "USER-01",
@@ -5730,9 +5731,10 @@ app.post("/api/dailyClosing/validate", (req, res) => {
 
 app.post("/api/dailyClosing/close", (req, res) => {
   const db = readDb();
-  const { outlet_id, tanggal, notes, actor_id, actor_name, actor_role } = req.body || {};
+  const { outlet_id, outlet_name, tanggal, notes, actor_id, actor_name, actor_role } = req.body || {};
   const result = executeDailyClosing(db, {
     outlet_id,
+    outlet_name,
     tanggal,
     notes,
     actor: {
@@ -5764,9 +5766,10 @@ app.post("/api/dailyClosing/status", (req, res) => {
 
 app.post("/api/dailyClosing/reopen", (req, res) => {
   const db = readDb();
-  const { outlet_id, tanggal, reason, actor_id, actor_name, actor_role } = req.body || {};
+  const { outlet_id, outlet_name, tanggal, reason, actor_id, actor_name, actor_role } = req.body || {};
   const result = reopenDailyClosing(db, {
     outlet_id,
+    outlet_name,
     tanggal,
     reason,
     actor: {

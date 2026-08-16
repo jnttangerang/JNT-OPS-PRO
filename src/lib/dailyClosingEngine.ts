@@ -66,6 +66,15 @@ export interface DailyClosingRecord {
   updated_at: string;
 }
 
+function getOutletDisplayName(db: any, outletId: string, providedName?: string): string {
+  if (providedName && providedName.trim() !== "" && providedName !== outletId) {
+    return providedName.trim();
+  }
+  const outlets = db.Master_Outlet || db.Outlets || db.outlets || db.MASTER_OUTLET || [];
+  const found = outlets.find((o: any) => o.outlet_id === outletId || o.id === outletId || o.nama_outlet === outletId || o.kode_outlet === outletId);
+  return found?.nama_outlet || found?.nama || found?.name || outletId;
+}
+
 function ensureClosingTable(db: any): DailyClosingRecord[] {
   if (!db.DailyClosing) {
     db.DailyClosing = [];
@@ -93,11 +102,12 @@ export function validateDailyClosing(
   db: any,
   params: {
     outlet_id: string;
+    outlet_name?: string;
     tanggal: string;
     actor: ActorInfo;
   }
 ): { status: "success" | "blocked" | "error"; error_code?: string; message: string; data?: DailyClosingRecord; blocking_reasons?: string[] } {
-  const { outlet_id, tanggal, actor } = params;
+  const { outlet_id, outlet_name, tanggal, actor } = params;
 
   if (!outlet_id) {
     return { status: "error", error_code: "INVALID_PARAM", message: "outlet_id wajib diisi." };
@@ -110,11 +120,13 @@ export function validateDailyClosing(
   const closingId = generateClosingId(outlet_id, tanggal);
   let existing = list.find((r) => r.closing_id === closingId);
 
+  const resolvedOutletName = getOutletDisplayName(db, outlet_id, outlet_name);
+
   if (existing && existing.status === "CLOSED") {
     return {
       status: "error",
       error_code: "PERIOD_ALREADY_CLOSED",
-      message: `Periode daily closing '${tanggal}' untuk outlet '${outlet_id}' sudah dalam status CLOSED. Reopen terlebih dahulu untuk memproses ulang.`,
+      message: `Periode tutup buku '${tanggal}' untuk outlet '${resolvedOutletName}' sudah dalam status CLOSED. Buka kembali (Reopen) terlebih dahulu untuk memproses ulang.`,
       data: existing
     };
   }
@@ -295,7 +307,7 @@ export function validateDailyClosing(
     return {
       status: "blocked",
       error_code: reconClosingStatus.open_critical_count > 0 ? "OPEN_CRITICAL_EXCEPTION" : "CLOSING_BLOCKED",
-      message: `Daily closing diblokir untuk outlet '${outlet_id}' tanggal '${tanggal}'.`,
+      message: `Tutup buku terkendala untuk outlet '${resolvedOutletName}' tanggal '${tanggal}'.`,
       data: { ...targetRecord },
       blocking_reasons
     };
@@ -314,7 +326,7 @@ export function validateDailyClosing(
     });
     return {
       status: "success",
-      message: `Daily closing valid dan READY untuk outlet '${outlet_id}' tanggal '${tanggal}'.`,
+      message: `Tutup buku valid dan SIAP untuk outlet '${resolvedOutletName}' tanggal '${tanggal}'.`,
       data: { ...targetRecord }
     };
   }
@@ -324,29 +336,31 @@ export function executeDailyClosing(
   db: any,
   params: {
     outlet_id: string;
+    outlet_name?: string;
     tanggal: string;
     actor: ActorInfo;
     notes?: string;
   }
 ): { status: "success" | "error"; error_code?: string; message: string; data?: DailyClosingRecord; blocking_reasons?: string[] } {
-  const { outlet_id, tanggal, actor, notes } = params;
+  const { outlet_id, outlet_name, tanggal, actor, notes } = params;
+  const resolvedOutletName = getOutletDisplayName(db, outlet_id, outlet_name);
 
   const existing = getDailyClosingRecord(db, outlet_id, tanggal);
   if (existing && existing.status === "CLOSED") {
     return {
       status: "success",
-      message: "Daily closing sudah berstatus CLOSED.",
+      message: `Tutup buku sudah berstatus SUDAH DITUTUP untuk outlet '${resolvedOutletName}'.`,
       data: existing
     };
   }
 
-  const valRes = validateDailyClosing(db, { outlet_id, tanggal, actor });
+  const valRes = validateDailyClosing(db, { outlet_id, outlet_name, tanggal, actor });
 
   if (valRes.status === "blocked" || valRes.data?.status === "BLOCKED") {
     return {
       status: "error",
       error_code: valRes.error_code || "CLOSING_BLOCKED",
-      message: "Proses closing diblokir karena syarat validasi belum terpenuhi.",
+      message: "Proses tutup buku diblokir karena syarat validasi belum terpenuhi.",
       data: valRes.data,
       blocking_reasons: valRes.blocking_reasons
     };
@@ -384,7 +398,7 @@ export function executeDailyClosing(
 
   return {
     status: "success",
-    message: `Daily closing berhasil diselesaikan (CLOSED) untuk outlet '${outlet_id}' tanggal '${tanggal}'.`,
+    message: `Tutup buku berhasil diselesaikan (SUDAH DITUTUP) untuk outlet '${resolvedOutletName}' tanggal '${tanggal}'.`,
     data: record
   };
 }
@@ -393,12 +407,14 @@ export function reopenDailyClosing(
   db: any,
   params: {
     outlet_id: string;
+    outlet_name?: string;
     tanggal: string;
     reason: string;
     actor: ActorInfo;
   }
 ): { status: "success" | "error"; error_code?: string; message: string; data?: DailyClosingRecord } {
-  const { outlet_id, tanggal, reason, actor } = params;
+  const { outlet_id, outlet_name, tanggal, reason, actor } = params;
+  const resolvedOutletName = getOutletDisplayName(db, outlet_id, outlet_name);
 
   if (!actor || !actor.actor_role) {
     return { status: "error", error_code: "INVALID_ACTOR", message: "Identitas dan role actor wajib disertakan." };
@@ -409,7 +425,7 @@ export function reopenDailyClosing(
     return {
       status: "error",
       error_code: "REOPEN_NOT_AUTHORIZED",
-      message: "Akses ditolak. Wewenang Owner atau Super Admin diperlukan untuk meng-reopen daily closing."
+      message: "Akses ditolak. Wewenang Owner atau Super Admin diperlukan untuk membuka kembali (reopen) tutup buku."
     };
   }
 
@@ -426,7 +442,7 @@ export function reopenDailyClosing(
     return {
       status: "error",
       error_code: "NOT_FOUND",
-      message: `Record daily closing tidak ditemukan untuk outlet '${outlet_id}' tanggal '${tanggal}'.`
+      message: `Data tutup buku tidak ditemukan untuk outlet '${resolvedOutletName}' tanggal '${tanggal}'.`
     };
   }
 

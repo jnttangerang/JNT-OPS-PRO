@@ -159,10 +159,13 @@ export function syncReconciliationExceptions(db: any, reconciliationResult: Reco
  */
 export function checkReviewPermission(role?: string, action?: string): boolean {
   const upperRole = (role || "").toUpperCase();
-  if (upperRole === "OWNER") return true;
-  if (action === "reopen") return false; // Only Owner/Super Admin can reopen manually
+  const isOwnerOrSuper = upperRole === "OWNER" || upperRole === "SUPER_ADMIN" || upperRole === "DEVELOPER";
+  
+  if (isOwnerOrSuper) return true;
+  // Resolving exceptions (accepting/tolerating or overriding) and reopening closed periods are strictly Owner authority
+  if (action === "resolve" || action === "reopen") return false;
   if (upperRole === "ADMIN" || upperRole === "OPERATOR" || upperRole === "STAFF") return true;
-  return true; // Default fallback for system/admin operations
+  return false;
 }
 
 /**
