@@ -23,7 +23,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
   const isOwner = session.role === "OWNER";
 
   // Filter States
-  const [selectedOutletFilter, setSelectedOutletFilter] = useState(outlets.length > 0 ? outlets[0].outlet_id : "");
+  const [selectedOutletFilter, setSelectedOutletFilter] = useState((outlets && outlets.length > 0) ? outlets[0].outlet_id : "");
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 15); // Default 15 days back
@@ -100,7 +100,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
     ];
     
     dashboardData.monthly_reports.forEach(report => {
-      report.outlets.forEach(outlet => {
+      (report.outlets || []).forEach(outlet => {
         rows.push([
           report.month,
           outlet.nama_outlet,
@@ -346,26 +346,26 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
               <h3 className="text-sm font-bold text-gray-800">Target Harian (Hari Ini)</h3>
             </div>
             <span className="text-xs font-semibold text-gray-500">
-              {dashboardData.target_harian.current} / {dashboardData.target_harian.target} Transaksi
+              {(dashboardData?.target_harian?.current || 0)} / {(dashboardData?.target_harian?.target || 100)} Transaksi
             </span>
           </div>
           
           <div className="w-full bg-gray-100 rounded-full h-3.5 mb-1.5 overflow-hidden border border-gray-200">
             <div 
               className={`h-3.5 rounded-full transition-all duration-700 ease-out ${
-                (dashboardData.target_harian.current / dashboardData.target_harian.target) >= 1 
+                ((dashboardData?.target_harian?.current || 0) / (dashboardData?.target_harian?.target || 100)) >= 1 
                   ? "bg-emerald-500" 
                   : "bg-indigo-500"
               }`}
               style={{ 
-                width: `${Math.min(100, Math.max(0, (dashboardData.target_harian.current / dashboardData.target_harian.target) * 100))}%` 
+                width: `${Math.min(100, Math.max(0, ((dashboardData?.target_harian?.current || 0) / (dashboardData?.target_harian?.target || 100)) * 100))}%` 
               }}
             ></div>
           </div>
           <div className="flex justify-between text-[10px] font-mono text-gray-400">
             <span>0%</span>
             <span>
-              {Math.round((dashboardData.target_harian.current / dashboardData.target_harian.target) * 100)}% Tercapai
+              {Math.round(((dashboardData?.target_harian?.current || 0) / (dashboardData?.target_harian?.target || 100)) * 100)}% Tercapai
             </span>
             <span>100%</span>
           </div>
@@ -473,10 +473,10 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
               {dashboardData?.monthly_reports && dashboardData.monthly_reports.length > 0 ? (
                 dashboardData.monthly_reports.map((report) => (
                   <React.Fragment key={report.month}>
-                    {report.outlets.map((outlet, idx) => (
+                    {(report.outlets || []).map((outlet, idx) => (
                       <tr key={`${report.month}-${outlet.outlet_id}`} className="hover:bg-gray-50/50">
                         {idx === 0 && (
-                          <td className="p-3 font-bold text-gray-800 align-top" rowSpan={report.outlets.length}>
+                          <td className="p-3 font-bold text-gray-800 align-top" rowSpan={(report.outlets || []).length}>
                             {new Date(report.month + "-01").toLocaleDateString("id-ID", { month: "long", year: "numeric" })}
                           </td>
                         )}
@@ -497,7 +497,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
                         Subtotal {new Date(report.month + "-01").toLocaleDateString("id-ID", { month: "short", year: "numeric" })}
                       </td>
                       <td className="p-3 text-right text-gray-600 font-mono">
-                        {report.outlets.reduce((acc, curr) => acc + curr.transaksi, 0)}
+                        {(report.outlets || []).reduce((acc: any, curr: any) => acc + curr.transaksi, 0)}
                       </td>
                       <td className="p-3 text-right text-gray-800 font-mono">
                         {report.total_omset.toLocaleString("id-ID")}

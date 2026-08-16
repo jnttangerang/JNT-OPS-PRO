@@ -5,6 +5,7 @@ import {
   History, RotateCcw, X, Info, FileText, Check, AlertOctagon, CornerUpLeft
 } from "lucide-react";
 import { toast } from "../../utils/toast";
+import { useAppsScript } from "../../hooks/useAppsScript";
 
 export interface DailyClosingPageProps {
   session: {
@@ -25,6 +26,8 @@ export default function DailyClosingPage({
   activeOutletId,
   onChangeActiveOutlet
 }: DailyClosingPageProps) {
+  const { callBackend } = useAppsScript();
+  
   // Default to activeOutletId or session's outlet or first outlet
   const defaultOutlet = activeOutletId || session?.outlet_id_home || outlets[0]?.outlet_id || "OUT-A";
   const [selectedOutlet, setSelectedOutlet] = useState<string>(defaultOutlet);
@@ -118,6 +121,30 @@ export default function DailyClosingPage({
     actor_name: session?.nama_lengkap || session?.username || "Operator",
     actor_role: session?.role || "ADMIN"
   });
+
+  // Action: Create Setoran
+  const handleCreateSetoran = async () => {
+    if (!confirm("Buat Laporan Setoran sejumlah Wajib Setor saat ini?")) return;
+    setLoading(true);
+    try {
+      const res = await callBackend("createSetoran", {
+        outlet_id: selectedOutlet,
+        tanggal: closingDate,
+        admin_id: session?.user_id || session?.username || "SYSTEM"
+      });
+      if (res.status === "success") {
+        toast.success(res.message || "Laporan setoran berhasil dibuat.");
+        fetchData();
+      } else {
+        toast.error(res.message || "Gagal membuat laporan setoran.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Terjadi kesalahan sistem saat membuat laporan setoran.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Action: Validate Closing
   const handleValidate = async () => {
@@ -527,7 +554,7 @@ export default function DailyClosingPage({
               </span>
             </div>
             <div className="pt-2">
-              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-[11px] text-gray-600">
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-[11px] text-gray-600 mb-3">
                 {closingStatusData?.setoran_status === "MATCHED" ? (
                   <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Setoran owner telah sesuai dengan perhitungan sistem.
@@ -538,6 +565,17 @@ export default function DailyClosingPage({
                   </span>
                 )}
               </div>
+              
+              {closingStatusData?.setoran_status !== "MATCHED" && closingStatusData?.status !== "CLOSED" && session?.role === "ADMIN" && (
+                <button
+                  onClick={handleCreateSetoran}
+                  disabled={loading || closingStatusData?.setoran_required <= 0}
+                  className="w-full flex justify-center items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  <DollarSign className="w-4 h-4" />
+                  Buat Laporan Setoran
+                </button>
+              )}
             </div>
           </div>
         </div>

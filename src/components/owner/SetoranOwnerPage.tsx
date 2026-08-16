@@ -142,7 +142,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
   };
 
   if (detail) {
-    const { header, summary, transactions } = detail;
+    const { header = {}, summary = {}, transactions = [] } = detail;
     return (
       <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
         <button 

@@ -99,10 +99,16 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
     );
   }
 
-  const { summary, targetHarian, byAdmin, byEkspedisi, statusSetoranList, aktivitasLogs, pembatalanLogs, grafik, alerts } = data;
+  const { summary, targetHarian, byAdmin, byEkspedisi, statusSetoranList, aktivitasLogs, pembatalanLogs, grafik, alerts } = data || {};
 
-  const totalSetoran = statusSetoranList.reduce((sum: number, s: any) => sum + s.total_setoran, 0);
-  const sudahDisetor = statusSetoranList.filter((s:any) => s.status === "Sudah Disetujui").reduce((sum: number, s: any) => sum + s.total_setoran, 0);
+  const safeTargetHarian = targetHarian || { current: 0, target: 100 };
+  const safeStatusSetoranList = statusSetoranList || [];
+  const safeAktivitasLogs = aktivitasLogs || [];
+  const safePembatalanLogs = pembatalanLogs || [];
+  const safeByAdmin = byAdmin || [];
+  const safeAlerts = Array.isArray(alerts) ? alerts : [];
+  const totalSetoran = safeStatusSetoranList.reduce((sum: number, s: any) => sum + s.total_setoran, 0);
+  const sudahDisetor = safeStatusSetoranList.filter((s:any) => s.status === "Sudah Disetujui").reduce((sum: number, s: any) => sum + s.total_setoran, 0);
   const sisaSetoran = totalSetoran - sudahDisetor;
 
   return (
@@ -115,7 +121,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
             Dashboard Operasional Admin
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Outlet: {outlets.find(o => o.outlet_id === activeOutletId)?.nama_outlet || "Semua"}
+            Outlet: {(outlets || []).find(o => o.outlet_id === activeOutletId)?.nama_outlet || "Semua"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -125,7 +131,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
             onChange={(e) => onChangeActiveOutlet && onChangeActiveOutlet(e.target.value)}
             className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs outline-none text-gray-700 font-bold cursor-pointer"
           >
-            {outlets.map((o) => (
+            {(outlets || []).map((o) => (
               <option key={o.outlet_id} value={o.outlet_id}>{o.nama_outlet}</option>
             ))}
           </select>
@@ -201,13 +207,13 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
         </div>
       </div>
 
-      {alerts && alerts.length > 0 && (
+      {safeAlerts.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div>
             <h4 className="text-sm font-bold text-amber-800">Alert Operasional</h4>
             <ul className="text-xs text-amber-700 list-disc list-inside mt-1">
-              {alerts.map((a: string, i: number) => (
+              {safeAlerts.map((a: string, i: number) => (
                 <li key={i}>{a}</li>
               ))}
             </ul>
@@ -223,13 +229,13 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
             <h3 className="text-sm font-bold text-gray-800">Target Resi Hari Ini</h3>
           </div>
           <div className="flex justify-between text-xs text-gray-500 mb-1">
-            <span>Progress: {targetHarian.current} / {targetHarian.target}</span>
-            <span className="font-bold">{Math.min(100, Math.round((targetHarian.current/targetHarian.target)*100))}%</span>
+            <span>Progress: {safeTargetHarian.current} / {safeTargetHarian.target}</span>
+            <span className="font-bold">{Math.min(100, Math.round((safeTargetHarian.current/safeTargetHarian.target)*100))}%</span>
           </div>
           <div className="w-full bg-gray-100 rounded-full h-3">
             <div 
               className="bg-indigo-500 h-3 rounded-full" 
-              style={{ width: `${Math.min(100, Math.max(0, (targetHarian.current/targetHarian.target)*100))}%` }}
+              style={{ width: `${Math.min(100, Math.max(0, (safeTargetHarian.current/safeTargetHarian.target)*100))}%` }}
             ></div>
           </div>
         </div>
@@ -379,9 +385,9 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {byAdmin.length === 0 ? (
+            {safeByAdmin.length === 0 ? (
               <tr><td colSpan={6} className="text-center p-6 text-xs text-gray-400 font-medium">Belum ada data transaksi admin.</td></tr>
-            ) : byAdmin.map((a:any) => (
+            ) : safeByAdmin.map((a:any) => (
               <tr key={a.admin_id} className="hover:bg-gray-50/50">
                 <td className="p-3 font-bold text-gray-800">{a.nama}</td>
                 <td className="p-3 text-center">{a.express}</td>
@@ -459,13 +465,13 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
             <CheckCircle className="h-4 w-4 text-emerald-500" /> Status Setoran Harian
           </h3>
           <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
-            {statusSetoranList.length === 0 ? (
+            {safeStatusSetoranList.length === 0 ? (
               <p className="text-center text-xs text-gray-400 py-6 font-medium">Belum ada setoran.</p>
-            ) : statusSetoranList.map((s:any, i: number) => (
+            ) : safeStatusSetoranList.map((s:any, i: number) => (
               <div key={s.date || i} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border border-gray-100 rounded-lg gap-2">
                 <div>
                   <p className="font-bold text-gray-800 text-sm">{s.date}</p>
-                  <p className="text-[10px] text-gray-500">{s.transaksi.length} Transaksi</p>
+                  <p className="text-[10px] text-gray-500">{(s.transaksi || []).length} Transaksi</p>
                 </div>
                 <div className="text-left sm:text-right w-full sm:w-auto flex flex-row sm:flex-col justify-between sm:justify-center items-center sm:items-end">
                   <p className="font-bold text-gray-800 font-mono">Rp {s.total_setoran.toLocaleString("id-ID")}</p>
@@ -488,13 +494,13 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
               <XCircle className="h-4 w-4 text-red-500" /> Riwayat Pembatalan
             </h3>
             <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-lg">
-              {pembatalanLogs.length} Batal
+              {safePembatalanLogs.length} Batal
             </span>
           </div>
           <div className="space-y-3 max-h-64 overflow-y-auto pr-2 text-xs">
-            {pembatalanLogs.length === 0 ? (
+            {safePembatalanLogs.length === 0 ? (
               <p className="text-center text-xs text-gray-400 py-6 font-medium">Belum ada riwayat pembatalan.</p>
-            ) : pembatalanLogs.map((l:any, i: number) => (
+            ) : safePembatalanLogs.map((l:any, i: number) => (
               <div key={l.log_id || i} className="p-3 bg-red-50/50 border border-red-100 rounded-lg">
                 <div className="flex justify-between font-bold text-gray-800 mb-1">
                   <span>{l.nama_lengkap}</span>
@@ -513,9 +519,9 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
           <Clock className="h-4 w-4 text-gray-500" /> Aktivitas Terakhir (Log)
         </h3>
         <div className="space-y-2 max-h-60 overflow-y-auto text-xs pr-2">
-          {aktivitasLogs.length === 0 ? (
+          {safeAktivitasLogs.length === 0 ? (
             <p className="text-center text-gray-400 py-6 font-medium">Belum ada log aktivitas tercatat.</p>
-          ) : aktivitasLogs.map((log:any, i: number) => (
+          ) : safeAktivitasLogs.map((log:any, i: number) => (
             <div key={log.log_id || i} className="flex justify-between items-center p-2.5 hover:bg-gray-50 rounded-lg border-b border-gray-50 last:border-0">
               <div className="flex items-center gap-3">
                 <span className={`px-2 py-1 rounded font-bold text-[9px] ${
