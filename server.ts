@@ -1505,7 +1505,31 @@ const UTILITY_ACTIONS = new Set([
   "addReview",
   "deleteReview",
   "analyzeReview",
-  "apps-script"
+  "apps-script",
+  "dailyClosing",
+  "reconciliation",
+  "reconcileTransaction",
+  "reconcileDaily",
+  "reconcileOutlet",
+  "getReconciliationSummary",
+  "auditTrail",
+  "getAuditTrail",
+  "getAuditTrailByTransaction",
+  "getAuditTrailByCustomer",
+  "getAuditTrailByImport",
+  "auditTransaction",
+  "getAuditData",
+  "updateAuditDecision",
+  "validateClosing",
+  "executeClosing",
+  "settlement",
+  "financial-close",
+  "control-tower",
+  "management",
+  "control",
+  "workflow",
+  "intelligence",
+  "management-review"
 ]);
 
 app.use("/api/:action", async (req, res, next) => {

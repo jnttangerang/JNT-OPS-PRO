@@ -58,6 +58,8 @@ export default function DailyClosingPage({
     }
   }, [activeOutletId]);
 
+  const selectedOutletName = outlets.find((o) => o.outlet_id === selectedOutlet)?.nama_outlet || selectedOutlet;
+
   // Fetch status, exceptions, and audit logs on outlet or date change
   const fetchData = useCallback(async () => {
     if (!selectedOutlet || !closingDate) return;
@@ -352,7 +354,7 @@ export default function DailyClosingPage({
               >
                 {outlets.map((o) => (
                   <option key={o.outlet_id} value={o.outlet_id}>
-                    {o.nama_outlet} ({o.outlet_id})
+                    {o.nama_outlet}
                   </option>
                 ))}
               </select>
@@ -399,7 +401,7 @@ export default function DailyClosingPage({
               {getStatusBadge(statusVal)}
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              Outlet <strong className="text-gray-800">{selectedOutlet}</strong> • Tanggal <strong className="text-gray-800">{closingDate}</strong>
+              Outlet <strong className="text-gray-800">{selectedOutletName}</strong> • Tanggal <strong className="text-gray-800">{closingDate}</strong>
             </p>
           </div>
 
@@ -633,7 +635,7 @@ export default function DailyClosingPage({
         {exceptions.length === 0 ? (
           <div className="py-8 text-center text-gray-400 text-xs">
             <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
-            Tidak ada open exception untuk outlet <strong>{selectedOutlet}</strong>.
+            Tidak ada open exception untuk outlet <strong>{selectedOutletName}</strong>.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -784,7 +786,7 @@ export default function DailyClosingPage({
             </div>
 
             <p className="text-xs text-gray-600">
-              Anda akan mengunci seluruh operasional harian outlet <strong className="text-gray-800">{selectedOutlet}</strong> pada tanggal <strong className="text-gray-800">{closingDate}</strong>.
+              Anda akan mengunci seluruh operasional harian outlet <strong className="text-gray-800">{selectedOutletName}</strong> pada tanggal <strong className="text-gray-800">{closingDate}</strong>.
             </p>
 
             <div>
