@@ -108,6 +108,7 @@ export default function PreInputPage({
         is_draft: true,
         status: "Draft",
         admin_id: session.user_id,
+        admin_name: session.nama_lengkap || session.username || session.user_id,
         outlet_id_tugas: activeOutletId,
         nama_pengirim: String(namaPengirim || "").trim(),
         hp_pengirim: String(hpPengirim || "").trim(),
@@ -762,26 +763,31 @@ export default function PreInputPage({
     return sorted.slice(0, 5).map((item) => {
       const dt = new Date(item.updated_at || item.timestamp || Date.now());
       const timeStr = dt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
-      const user = item.admin_id || "Admin";
       const st = String(item.status || "Draft").toUpperCase();
 
-      let actionDesc = "Draft dibuat";
+      let statusDisplay = "DRAFT";
       if (st === "SELESAI") {
-        actionDesc = "Transaksi selesai & terbayar";
+        statusDisplay = "SELESAI";
       } else if (st === "SIAP_DIBAYAR" || st === "SIAP DIBAYAR" || item.no_resi) {
-        actionDesc = `Nomor Resi ditambahkan (${item.no_resi || "Tersimpan"})`;
+        statusDisplay = "SIAP BAYAR";
       } else if (st === "INPUT_YOYI" || st === "PROSES YOYI") {
-        actionDesc = "Masuk proses input YoYi/JTC";
+        statusDisplay = "PROSES YOYI";
       } else if (st === "DIBATALKAN") {
-        actionDesc = "Draft dibatalkan";
+        statusDisplay = "BATAL";
       }
+
+      let senderName = item.nama_pengirim ? item.nama_pengirim.toUpperCase() : "?";
+      if (senderName.length > 6) senderName = senderName.substring(0, 6);
+
+      let receiverName = item.nama_penerima ? item.nama_penerima.toUpperCase() : "?";
+      if (receiverName.length > 6) receiverName = receiverName.substring(0, 6);
+
+      const txDisplay = `${senderName} → ${receiverName}`;
 
       return {
         time: timeStr,
-        user,
-        action: actionDesc,
-        txId: item.transaksi_id,
-        resi: item.no_resi
+        txDisplay,
+        statusDisplay
       };
     });
   }, [drafts]);
@@ -893,6 +899,7 @@ export default function PreInputPage({
         is_draft: isDraftManual,
         status: isDraftManual ? "Draft" : "Siap Dibayar",
         admin_id: session.user_id,
+        admin_name: session.nama_lengkap || session.username || session.user_id,
         outlet_id_tugas: activeOutletId,
         nama_pengirim: String(namaPengirim || "").trim(),
         hp_pengirim: String(hpPengirim || "").trim(),
@@ -1656,7 +1663,7 @@ Catatan : ${catatanAdmin || "-"}
                       ref={namaInputRef}
                       type="text"
                       value={namaPengirim}
-                      onChange={(e) => handleSenderChange(e.target.value, "nama")}
+                      onChange={(e) => handleSenderChange(e.target.value.toUpperCase(), "nama")}
                       className="w-full pl-3 pr-8 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
                       placeholder="Silahkan masukan nama"
                     />
@@ -1744,7 +1751,7 @@ Catatan : ${catatanAdmin || "-"}
                   </label>
                   <textarea
                     value={alamatPengirim}
-                    onChange={(e) => handleSenderChange(e.target.value, "alamat")}
+                    onChange={(e) => handleSenderChange(e.target.value.toUpperCase(), "alamat")}
                     rows={2}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B] resize-none"
                     placeholder="Nama jalan, nomor rumah, RT/RW, kelurahan, kecamatan, kab/kota, provinsi."
@@ -1802,7 +1809,7 @@ Catatan : ${catatanAdmin || "-"}
                       ref={namaPenerimaInputRef}
                       type="text"
                       value={namaPenerima}
-                      onChange={(e) => handlePenerimaChange(e.target.value, "nama")}
+                      onChange={(e) => handlePenerimaChange(e.target.value.toUpperCase(), "nama")}
                       className="w-full pl-3 pr-8 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
                       placeholder="Silahkan masukan nama"
                     />
@@ -1878,7 +1885,7 @@ Catatan : ${catatanAdmin || "-"}
 
                   <textarea
                     value={alamatPenerima}
-                    onChange={(e) => setAlamatPenerima(e.target.value)}
+                    onChange={(e) => setAlamatPenerima(e.target.value.toUpperCase())}
                     rows={2}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B] resize-none"
                     placeholder="Alamat penerima..."
@@ -1955,7 +1962,7 @@ Catatan : ${catatanAdmin || "-"}
                   <input
                     type="text"
                     value={namaBarang}
-                    onChange={(e) => setNamaBarang(e.target.value)}
+                    onChange={(e) => setNamaBarang(e.target.value.toUpperCase())}
                     className="w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
                     placeholder="Contoh: Laptop Asus, Pakaian, Makanan"
                   />
@@ -2543,12 +2550,10 @@ Catatan : ${catatanAdmin || "-"}
                           <span className="font-mono text-[10px] font-bold text-gray-500 bg-white px-1.5 py-0.5 rounded border border-gray-200 shrink-0">
                             {act.time}
                           </span>
-                          <span className="font-bold text-gray-800 shrink-0">{act.user}</span>
-                          <span className="text-gray-300">↓</span>
-                          <span className="text-gray-600 truncate">{act.action}</span>
+                          <span className="font-bold text-gray-800 shrink-0 truncate">{act.txDisplay}</span>
                         </div>
                         <span className="font-mono text-[10px] text-red-600 font-semibold shrink-0">
-                          {act.txId}
+                          {act.statusDisplay}
                         </span>
                       </div>
                     ))

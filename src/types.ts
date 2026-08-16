@@ -111,6 +111,7 @@ export interface PreInputBackup {
   transaksi_id: string;
   timestamp: string;
   admin_id: string;
+  admin_name?: string;
   outlet_id_tugas: string;
   nama_pengirim: string;
   hp_pengirim: string;
