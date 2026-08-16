@@ -60,72 +60,14 @@ export function useAppsScript() {
     async <T = any>(action: string, params: any = {}): Promise<T> => {
       setLoading(true);
 
-      // Utility and financial engine actions that are handled locally on Node/Express server
+      // Utility actions that are handled locally on Node/Express server
       const nodeOnlyActions = [
         "analyzeResiPhoto",
         "perbaikiAlamatAI",
         "ping",
         "testConnection",
         "uploadFile",
-        "getAdminDashboardData",
-        "getDashboardData",
-        "getDetailTransaksi",
-        "updateTransaksi",
-        "saveTransaksi",
-        "getRiwayatTransaksi",
-        "deleteTransaksi",
-        "checkDuplicateResi",
-        "getAllSettings",
-        "getPreInputDrafts",
-        "getPreInput",
-        "getCustomerDetailFull",
-        "getCustomerHistory",
-        "deleteBulkCustomers",
-        "updateCustomer",
-        "dailyClosing",
-        "reconciliation",
-        "auditTrail",
-        "getAuditTrail",
-        "settlement",
-        "financialClose",
-        "financial-close",
-        "control",
-        "workflow",
-        "managementReview",
-        "management-review",
-        "management",
-        "managementIntelligence",
-        "controlTower",
-        "reconcileTransaction",
-        "reconcileDaily",
-        "reconcileOutlet",
-        "getReconciliationSummary",
-        "getAuditTrailByTransaction",
-        "getAuditTrailByCustomer",
-        "getAuditTrailByImport",
-        "auditTransaction",
-        "getAuditData",
-        "updateAuditDecision",
-        "validateClosing",
-        "executeClosing",
-        "getReportingSummary",
-        "getReportingTransactions",
-        "getReportingSettlement",
-        "getReportingAudit",
-        "dailySummary",
-        "apiDailySummary",
-        "detectAnomalies",
-        "apiDetectAnomalies",
-        "askAssistant",
-        "apiAskAssistant",
-        "getKategoriKeuangan",
-        "saveKategoriKeuangan",
-        "updateKategoriKeuangan",
-        "setKategoriAktif",
-        "getKeuanganOutlet",
-        "saveKeuanganOutlet",
-        "updateKeuanganOutlet",
-        "deleteKeuanganOutlet"
+        // The remaining actions will be directed to Google Apps Script
       ];
       const isNodeOnlyAction = nodeOnlyActions.some((act) => action === act || action.startsWith(act + "/"));
 
@@ -165,7 +107,8 @@ export function useAppsScript() {
       try {
         const customUrl = typeof window !== "undefined" ? localStorage.getItem("APPS_SCRIPT_URL") : null;
         const envUrl = (import.meta as any).env?.VITE_APPS_SCRIPT_URL;
-        const appsScriptUrl = !isNodeOnlyAction && (customUrl || (envUrl && envUrl.trim() !== "")) ? (customUrl || envUrl) : null;
+        const defaultUrl = "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+        const appsScriptUrl = !isNodeOnlyAction ? (customUrl || (envUrl && envUrl.trim() !== "" ? envUrl : defaultUrl)) : null;
 
         if (appsScriptUrl) {
           let response: Response | null = null;
