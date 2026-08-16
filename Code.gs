@@ -3016,15 +3016,17 @@ var TransactionService = {
     var ongkirDasar = Number(data.ongkir_dasar) || 0;
     
     var biayaDasarLayanan = biayaLain + biayaAsuransi + ongkirDasar;
+    var biayaDitagihkanLayanan = data.metode_bayar === "DFOD" ? 0 : biayaDasarLayanan;
+
     var totalUangDibayarCustomer = Number(data.total_dibayar_customer) || 0;
-    var pembulatan = totalUangDibayarCustomer > 0 ? (totalUangDibayarCustomer - biayaDasarLayanan) : 0;
+    var pembulatan = totalUangDibayarCustomer > 0 ? (totalUangDibayarCustomer - biayaDitagihkanLayanan) : 0;
     
     var biayaAmplop = Number(data.biaya_amplop) || 0;
     var biayaPacking = Number(data.biaya_packing) || 0;
     var biayaTambahan = biayaAmplop + biayaPacking;
     
-    var grandTotal = biayaDasarLayanan + pembulatan + biayaTambahan;
-    var setoranKeOwner = biayaDasarLayanan + pembulatan;
+    var grandTotal = biayaDitagihkanLayanan + pembulatan + biayaTambahan;
+    var setoranKeOwner = biayaDitagihkanLayanan + pembulatan;
     var kasOperasional = biayaTambahan;
     return {
       biaya_lain: biayaLain,

@@ -158,7 +158,7 @@ export interface EXPResi {
   biaya_yoyi: number;
   total_dibayar_customer: number;
   pembulatan: number;
-  metode_bayar: "Tunai" | "QRIS" | "Transfer" | "Order by APP";
+  metode_bayar: "Tunai" | "QRIS" | "Transfer" | "Order by APP" | "DFOD";
   bukti_bayar_url: string;
   biaya_amplop: number;
   biaya_packing: number;
@@ -193,7 +193,7 @@ export interface CRGResi {
   biaya_jtc: number;
   total_dibayar_customer: number;
   pembulatan: number;
-  metode_bayar: "Tunai" | "QRIS" | "Transfer" | "Order by APP";
+  metode_bayar: "Tunai" | "QRIS" | "Transfer" | "Order by APP" | "DFOD";
   bukti_bayar_url: string;
   biaya_amplop: number;
   biaya_packing: number;

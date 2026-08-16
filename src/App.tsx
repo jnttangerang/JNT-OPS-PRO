@@ -155,7 +155,7 @@ function AppContent() {
           title: "OPERASIONAL",
           items: [
             { id: "admin-dashboard", label: "Dashboard", icon: Landmark },
-            { id: "pre-input", label: "Pre-Input & Workspace", icon: Clipboard },
+            { id: "pre-input", label: "Input Customer", icon: Clipboard },
             { id: "transaksi", label: "Resi & Bayar", icon: FileText },            
             { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
             { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },

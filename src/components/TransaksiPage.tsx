@@ -103,7 +103,7 @@ export default function TransaksiPage({
   const [biayaAsuransiInput, setBiayaAsuransiInput] = useState("");
   const [ongkirDasarInput, setOngkirDasarInput] = useState("");
   const [totalUangDibayarInput, setTotalUangDibayarInput] = useState("");
-  const [metodeBayar, setMetodeBayar] = useState<"Tunai" | "QRIS" | "Transfer" | "Order by APP">("Tunai");
+  const [metodeBayar, setMetodeBayar] = useState<"Tunai" | "QRIS" | "Transfer" | "Order by APP" | "DFOD">("Tunai");
 
   // Upload proof of payment
   const [buktiBayarUrl, setBuktiBayarUrl] = useState("");
@@ -536,9 +536,10 @@ export default function TransaksiPage({
 
   // Biaya YoYi (for Express) or JTC (for Cargo)
   const biayaDasarLayanan = biayaLain + biayaAsuransi + ongkirDasar;
+  const biayaDitagihkanLayanan = metodeBayar === "DFOD" ? 0 : biayaDasarLayanan;
 
   const totalUangDibayarCustomer = cleanNumber(totalUangDibayarInput);
-  const pembulatan = totalUangDibayarCustomer > 0 ? (totalUangDibayarCustomer - biayaDasarLayanan) : 0;
+  const pembulatan = totalUangDibayarCustomer > 0 ? (totalUangDibayarCustomer - biayaDitagihkanLayanan) : 0;
 
   // Surcharges
   const biayaAmplop = (aktifkanBiayaTambahan && jenisLayanan === "Express") ? cleanNumber(biayaAmplopInput) : 0;
@@ -546,8 +547,8 @@ export default function TransaksiPage({
   const biayaTambahan = biayaAmplop + biayaPacking;
 
   // FINAL ALLOCATIONS
-  const grandTotal = biayaDasarLayanan + pembulatan + biayaTambahan;
-  const setoranKeOwner = biayaDasarLayanan + pembulatan;
+  const grandTotal = biayaDitagihkanLayanan + pembulatan + biayaTambahan;
+  const setoranKeOwner = biayaDitagihkanLayanan + pembulatan;
   const kasOperasional = biayaTambahan;
 
   // Phase 15.2 - Lock Field & Step Validations
@@ -560,9 +561,8 @@ export default function TransaksiPage({
     (jenisLayanan === "Express" ? tipeProdukExp : tipeProdukCrg) && ongkirDasar > 0
   );
   const stepPembayaran = Boolean(
-    totalUangDibayarCustomer >= biayaDasarLayanan &&
-    totalUangDibayarCustomer > 0 &&
-    (metodeBayar === "Tunai" || Boolean(buktiBayarUrl || fotoResiUrl || fotoResiPreview))
+    (metodeBayar === "DFOD" ? (totalUangDibayarCustomer >= 0) : (totalUangDibayarCustomer >= biayaDasarLayanan && totalUangDibayarCustomer > 0)) &&
+    (metodeBayar === "Tunai" || metodeBayar === "DFOD" || Boolean(buktiBayarUrl || fotoResiUrl || fotoResiPreview))
   );
 
   const isAllStepsValid = stepFotoPaket && stepFotoResi && stepBarcode && stepProdukYoYi && stepPembayaran;
@@ -1810,10 +1810,11 @@ export default function TransaksiPage({
                       <option value="QRIS">QRIS Barcode</option>
                       <option value="Transfer">Transfer Bank</option>
                       <option value="Order by APP">Order by APP (Aplikasi J&T)</option>
+                      <option value="DFOD">DFOD (Bayar Tujuan)</option>
                     </select>
                   </div>
 
-                  {metodeBayar !== "Tunai" && (
+                  {metodeBayar !== "Tunai" && metodeBayar !== "DFOD" && (
                     <div className="bg-red-50/40 p-3.5 rounded-xl border border-red-100/50 space-y-2.5 animate-fade-in">
                       <div className="flex justify-between items-center">
                         <span className="text-[11px] font-bold text-red-800">

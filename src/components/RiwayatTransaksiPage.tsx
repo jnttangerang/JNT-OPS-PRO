@@ -249,7 +249,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
 
     setSavingEdit(true);
     try {
-      const res = await callBackend("updateTransaksi", {
+      const flatPayload = {
         old_resi_id: originalResiId,
         resi_id: editItem.resi_id,
         transaksi_id: editItem.transaksi_id,
@@ -274,7 +274,16 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
         setoran_ke_owner: editItem.setoran_ke_owner,
         kas_operasional: editItem.kas_operasional,
         status_resi: editItem.status_resi,
-        catatan: editItem.catatan
+        catatan: editItem.catatan,
+        total_dibayar_customer: editItem.grand_total,
+        admin_id_pencatat: session.user_id,
+        outlet_id_input: editItem.outlet_id || session.outlet_id_home
+      };
+
+      const res = await callBackend("updateTransaksi", {
+        ...flatPayload,
+        jenis_layanan: editItem.tipe || "Express",
+        data: flatPayload
       });
 
       if (res.status === "success") {
@@ -782,6 +791,8 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                       <option value="Transfer">Transfer</option>
                       <option value="QRIS">QRIS</option>
                       <option value="EDC">EDC</option>
+                      <option value="Order by APP">Order by APP</option>
+                      <option value="DFOD">DFOD</option>
                     </select>
                   </div>
                 </div>
