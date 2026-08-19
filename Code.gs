@@ -224,14 +224,22 @@ function apiLogin(params) {
     var row = usersData[i];
     var userData = rowToObject_(headers, row);
     
-    if (userData.username && userData.username.toString().toLowerCase() === username.toLowerCase()) {
-      var passMatch = (userData.password_hash === inputHash || userData.password_hash === password);
+    var matchUser = (userData.username && userData.username.toString().trim().toLowerCase() === username.toLowerCase()) ||
+                    (userData.user_id && userData.user_id.toString().trim().toLowerCase() === username.toLowerCase());
+    if (matchUser) {
+      var passMatch = (
+        userData.password_hash === inputHash || 
+        userData.password_hash === password ||
+        (userData.password_hash && userData.password_hash.toString().trim() === inputHash) ||
+        (userData.password_hash && userData.password_hash.toString().trim() === password)
+      );
       if (passMatch) {
-        var statusStr = (userData.status_aktif || "").toString().toUpperCase();
-        if (statusStr !== "AKTIF") {
+        var rawStatus = (userData.status_aktif !== undefined && userData.status_aktif !== null) ? userData.status_aktif.toString().trim().toUpperCase() : "AKTIF";
+        var isInactive = (rawStatus === "NON-AKTIF" || rawStatus === "NONAKTIF" || rawStatus === "INAKTIF" || rawStatus === "TIDAK AKTIF" || rawStatus === "FALSE" || rawStatus === "0" || rawStatus === "OFF" || rawStatus === "DISABLED");
+        if (isInactive) {
           return { status: "error", message: "Akun ini sudah tidak aktif." };
         }
-        writeAuditLog(userData.user_id, "LOGIN", "Pengguna '" + userData.nama_lengkap + "' berhasil login.", userData.outlet_id_home);
+        writeAuditLog(userData.user_id, "LOGIN", "Pengguna '" + (userData.nama_lengkap || userData.username) + "' berhasil login.", userData.outlet_id_home);
         return {
           status: "success",
           data: {
@@ -239,7 +247,7 @@ function apiLogin(params) {
             username: userData.username,
             role: userData.role,
             outlet_id_home: userData.outlet_id_home,
-            nama_lengkap: userData.nama_lengkap
+            nama_lengkap: userData.nama_lengkap || userData.username
           }
         };
       }
@@ -335,15 +343,16 @@ function apiGetUsers() {
   for (var i = 1; i < rows.length; i++) {
     var obj = rowToObject_(headers, rows[i]);
     if (!obj.user_id && !obj.username) continue;
-    var status = (obj.status_aktif || "AKTIF").toString().toUpperCase();
-    if (status === "AKTIF") {
+    var rawStatus = (obj.status_aktif !== undefined && obj.status_aktif !== null) ? obj.status_aktif.toString().trim().toUpperCase() : "AKTIF";
+    var isInactive = (rawStatus === "NON-AKTIF" || rawStatus === "NONAKTIF" || rawStatus === "INAKTIF" || rawStatus === "TIDAK AKTIF" || rawStatus === "FALSE" || rawStatus === "0" || rawStatus === "OFF" || rawStatus === "DISABLED");
+    if (!isInactive) {
       users.push({
         user_id: (obj.user_id || "").toString(),
         username: (obj.username || "").toString(),
         nama_lengkap: (obj.nama_lengkap || obj.username || "").toString(),
         role: (obj.role || "ADMIN").toString(),
         outlet_id_home: (obj.outlet_id_home || "").toString(),
-        status_aktif: status,
+        status_aktif: "AKTIF",
         no_wa: (obj.no_wa || "").toString()
       });
     }
@@ -591,9 +600,12 @@ function apiImportYoYi(params) {
       return { status: "error", message: "Jumlah dibayar customer wajib diisi dan > 0" };
     }
     
-    // 2. Validasi outlet
+    // 2. Validasi outlet & admin
     if (!input.outlet_id) {
-      return { status: "error", message: "Outlet tidak valid" };
+      return { status: "error", message: "Outlet ID wajib diisi" };
+    }
+    if (!input.admin_id) {
+      return { status: "error", message: "Admin ID wajib diisi" };
     }
     
     // 3. Cek duplicate resi (gunakan existing checker)
@@ -1178,13 +1190,30 @@ function apiGetDetailTransaksi(params) {
   }
 
   var outletMap = {};
-  for (var o = 1; o < dbOutlets.length; o++) outletMap[dbOutlets[o][0].toString()] = dbOutlets[o][1].toString();
+  var outletRows = DatabaseService.getSheetData("Outlets");
+  if (outletRows && outletRows.length > 1) {
+    var oHeaders = outletRows[0];
+    for (var o = 1; o < outletRows.length; o++) {
+      var oObj = rowToObject_(oHeaders, outletRows[o]);
+      if (oObj.outlet_id) outletMap[oObj.outlet_id] = oObj.nama_outlet || oObj.outlet_id;
+    }
+  }
 
   var userMap = {};
-  for (var u = 1; u < dbUsers.length; u++) userMap[dbUsers[u][0].toString()] = dbUsers[u][1].toString();
+  var userRows = DatabaseService.getSheetData("Users");
+  if (userRows && userRows.length > 1) {
+    var uHeaders = userRows[0];
+    for (var u = 1; u < userRows.length; u++) {
+      var uObj = rowToObject_(uHeaders, userRows[u]);
+      if (uObj.user_id) userMap[uObj.user_id] = uObj.nama_lengkap || uObj.username || uObj.user_id;
+    }
+  }
 
   var outId = (resiObj && resiObj.outlet_id_input) || (preObj && preObj.outlet_id_tugas) || "";
   var adminId = (resiObj && resiObj.admin_id_pencatat) || (preObj && preObj.admin_id) || "";
+
+  var adminName = adminId && userMap[adminId] ? userMap[adminId] : adminId;
+  var outletName = outId && outletMap[outId] ? outletMap[outId] : outId;
 
   var detail = {
     resi_id: (resiObj && resiObj.resi_id) || resiId || "",
@@ -1193,9 +1222,9 @@ function apiGetDetailTransaksi(params) {
     tipe: tipe,
     tipe_produk: (resiObj && resiObj.tipe_produk) || "EZ",
     admin_id: adminId,
-    admin_name: userMap[adminId] || adminId,
+    admin_name: adminName,
     outlet_id: outId,
-    outlet_name: outletMap[outId] || outId,
+    outlet_name: outletName,
     nama_pengirim: (preObj && preObj.nama_pengirim) || "",
     hp_pengirim: (preObj && preObj.hp_pengirim) || "",
     alamat_pengirim: (preObj && preObj.alamat_pengirim) || "",
@@ -3274,6 +3303,12 @@ var TransactionService = {
   saveTransaction: function(jenisLayanan, data) {
     if (!jenisLayanan || !data) {
       throw new Error("Data transaksi tidak lengkap");
+    }
+    if (!data.admin_id_pencatat) {
+      throw new Error("admin_id_pencatat wajib diisi");
+    }
+    if (!data.outlet_id_input) {
+      throw new Error("outlet_id_input wajib diisi");
     }
     var resiId = (data.resi_id || "").trim().toUpperCase();
     if (!this.validateTransaction(resiId)) {

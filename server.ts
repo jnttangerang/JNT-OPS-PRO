@@ -260,33 +260,73 @@ const initialDb = {
   Users: [
     {
       user_id: "USR-001",
+      username: "owner",
+      password_hash: "hash_owner123",
+      role: "OWNER",
+      outlet_id_home: "OUT-001",
+      nama_lengkap: "AKMAL FAJAR",
+      status_aktif: "AKTIF",
+      no_wa: "08123456789"
+    },
+    {
+      user_id: "USR-002",
+      username: "admin",
+      password_hash: "hash_admin123",
+      role: "ADMIN",
+      outlet_id_home: "OUT-001",
+      nama_lengkap: "ADMIN (SYSTEM)",
+      status_aktif: "AKTIF",
+      no_wa: "08123456789"
+    },
+    {
+      user_id: "USR-003",
       username: "admin1",
       password_hash: "hash_admin123",
       role: "ADMIN",
       outlet_id_home: "OUT-001",
-      nama_lengkap: "Admin Balaraja (OUT-001)",
+      nama_lengkap: "FITRI FAJRIA",
       status_aktif: "AKTIF",
-      no_wa: "08111111111"
+      no_wa: "08123456789"
     },
     {
-      user_id: "USR-002",
+      user_id: "USR-004",
       username: "admin2",
       password_hash: "hash_admin123",
       role: "ADMIN",
-      outlet_id_home: "OUT-002",
-      nama_lengkap: "Admin Jayanti (OUT-002)",
-      status_aktif: "AKTIF",
-      no_wa: "08222222222"
+      outlet_id_home: "OUT-001",
+      nama_lengkap: "M. HARI YANTO",
+      status_aktif: "NON-AKTIF",
+      no_wa: "08123456789"
     },
     {
-      user_id: "USR-003",
-      username: "owner1",
-      password_hash: "hash_owner123",
-      role: "OWNER",
-      outlet_id_home: "OUT-001",
-      nama_lengkap: "Hendra Wijaya (Owner)",
+      user_id: "USR-005",
+      username: "admin3",
+      password_hash: "hash_admin123",
+      role: "ADMIN",
+      outlet_id_home: "OUT-002",
+      nama_lengkap: "RISKA AMUDIA",
       status_aktif: "AKTIF",
-      no_wa: "08333333333"
+      no_wa: "08123456789"
+    },
+    {
+      user_id: "USR_1786776839376",
+      username: "admin4",
+      password_hash: "hash_admin123",
+      role: "ADMIN",
+      outlet_id_home: "OUT-002",
+      nama_lengkap: "AYUNDA PERMATA",
+      status_aktif: "AKTIF",
+      no_wa: "08123456789"
+    },
+    {
+      user_id: "USR_1786776882250",
+      username: "admin5",
+      password_hash: "hash_admin123",
+      role: "ADMIN",
+      outlet_id_home: "OUT-002",
+      nama_lengkap: "TIARA OLIVIA",
+      status_aktif: "AKTIF",
+      no_wa: "08123456789"
     }
   ],
   Outlets: [
@@ -2479,8 +2519,14 @@ const handleSaveTransaksiRequest = (req: any, res: any) => {
     const kasOperasional = Number(data.kas_operasional ?? data.kas_outlet) || (biayaAmplop + biayaPacking);
 
     const transId = data.transaksi_id || ("TRX-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5));
-    const outletId = data.outlet_id_input || data.activeOutletId || data.outlet_id || "OUT-001";
-    const adminId = data.admin_id_pencatat || data.admin_id || "ADMIN";
+    const outletId = data.outlet_id_input || data.activeOutletId || data.outlet_id;
+    const adminId = data.admin_id_pencatat || data.admin_id;
+    if (!outletId) {
+      return res.status(400).json({ status: "error", message: "outlet_id_input wajib diisi" });
+    }
+    if (!adminId) {
+      return res.status(400).json({ status: "error", message: "admin_id_pencatat wajib diisi" });
+    }
 
     if (jenis_layanan === "Express" || jenis_layanan === "REGULAR") {
       const newExp = {
@@ -2725,8 +2771,14 @@ app.post("/api/importYoYi", (req, res) => {
     return res.status(400).json({ status: "error", message: `RESI SUDAH TERDAFTAR — ${rid}` });
   }
 
-  const outletId = input.outlet_id || "OUT-001";
-  const adminId = input.admin_id || "ADMIN";
+  const outletId = input.outlet_id;
+  const adminId = input.admin_id;
+  if (!outletId) {
+    return res.status(400).json({ status: "error", message: "outlet_id wajib diisi untuk import YoYi" });
+  }
+  if (!adminId) {
+    return res.status(400).json({ status: "error", message: "admin_id wajib diisi untuk import YoYi" });
+  }
   const timestamp = new Date().toISOString();
   const txDate = input.tanggal_transaksi || timestamp.split("T")[0];
   const txTime = input.jam_transaksi || timestamp.split("T")[1]?.slice(0, 8) || "00:00:00";
@@ -3660,7 +3712,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
 
   const userMap: Record<string, string> = {};
   (db.Users || []).forEach((u: any) => {
-    userMap[u.user_id] = u.username || u.nama_lengkap;
+    userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
   });
 
   const backupMap: Record<string, any> = {};
@@ -4785,12 +4837,12 @@ app.post("/api/executeClosing", (req, res) => {
 function getReportingRawTransactions(db: any) {
   const userMap: Record<string, string> = {};
   (db.Users || []).forEach((u: any) => {
-    userMap[u.user_id] = u.nama_lengkap || u.username;
+    userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
   });
 
   const outletMap: Record<string, string> = {};
   (db.Outlets || []).forEach((o: any) => {
-    outletMap[o.outlet_id] = o.nama_outlet;
+    outletMap[o.outlet_id] = o.nama_outlet || o.outlet_id;
   });
 
   const raw: any[] = [];
@@ -4823,9 +4875,9 @@ function getReportingRawTransactions(db: any) {
       timestamp: tx.created_at || tx.timestamp || new Date().toISOString(),
       tanggal: txDate,
       admin_id: tx.admin_id,
-      admin_nama: userMap[tx.admin_id] || tx.admin_id || "System",
+      admin_nama: userMap[tx.admin_id] || tx.admin_id || "",
       outlet_id: tx.outlet_id,
-      outlet_nama: outletMap[tx.outlet_id] || tx.outlet_id || "Outlet",
+      outlet_nama: outletMap[tx.outlet_id] || tx.outlet_id || "",
       tipe_layanan: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express",
       tipe_produk: tx.tipe_produk || "Reguler",
       total_customer: sum.customer_payment,

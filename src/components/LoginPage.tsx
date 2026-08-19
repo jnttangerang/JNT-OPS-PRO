@@ -33,9 +33,10 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       const res = await callBackend("getUsers");
       if (res && res.status === "success" && Array.isArray(res.data)) {
         const activeAdmins: AdminUser[] = res.data.filter((u: any) => {
-          const isActive = (u.status_aktif || "AKTIF").toString().toUpperCase() === "AKTIF";
+          const rawStatus = (u.status_aktif !== undefined && u.status_aktif !== null) ? u.status_aktif.toString().trim().toUpperCase() : "AKTIF";
+          const isInactive = (rawStatus === "NON-AKTIF" || rawStatus === "NONAKTIF" || rawStatus === "INAKTIF" || rawStatus === "TIDAK AKTIF" || rawStatus === "FALSE" || rawStatus === "0" || rawStatus === "DISABLED");
           const role = (u.role || "ADMIN").toString().toUpperCase();
-          return isActive && role !== "OWNER";
+          return !isInactive && role !== "OWNER";
         });
         setAdminList(activeAdmins);
       }
@@ -145,7 +146,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               type="button"
               onClick={() => {
                 setSelectedRole("OWNER");
-                setUsername("owner1");
+                setUsername("owner");
                 setPassword("owner123");
               }}
               className={`flex-1 py-2.5 text-xs font-semibold rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer ${
@@ -210,16 +211,16 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                     disabled={loading || loadingAdmins}
                   >
                     {loadingAdmins ? (
-                      <option value="">Memuat daftar pegawai...</option>
+                      <option value="">Memuat daftar admin...</option>
                     ) : adminList.length === 0 ? (
-                      <option value="">-- Tidak ada pegawai aktif --</option>
+                      <option value="">-- Tidak ada admin aktif --</option>
                     ) : (
                       <>
                         <option value="" disabled hidden>
-                          - Pilih nama pegawai -
+                          - Pilih nama admin -
                         </option>
                         {adminList.map((adm) => (
-                          <option key={adm.username} value={adm.username}>
+                          <option key={adm.user_id || adm.username} value={adm.username}>
                             {adm.nama_lengkap || adm.username}
                           </option>
                         ))}
