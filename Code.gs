@@ -591,44 +591,60 @@ function apiSaveDataPreInput(params) {
  */
 
 function apiImportYoYi(params) {
+  Logger.log("[apiImportYoYi] Request received: " + JSON.stringify(params));
   try {
+    if (!params || !params.parsed || !params.input) {
+      Logger.log("[apiImportYoYi] Error: Payload parsed atau input tidak lengkap");
+      return { status: "error", message: "Data import YoYi tidak lengkap (parsed/input kosong)" };
+    }
     const parsed = params.parsed;
     const input = params.input;
     
     // 1. Validasi input
-    if (!input.jumlah_dibayar || input.jumlah_dibayar <= 0) {
+    const resiNum = (parsed.nomor_resi || "").toString().trim().toUpperCase();
+    if (!resiNum) {
+      Logger.log("[apiImportYoYi] Error: Nomor resi kosong");
+      return { status: "error", message: "Nomor resi YoYi tidak ditemukan dalam data" };
+    }
+
+    const jumlahDibayar = Number(input.jumlah_dibayar) || 0;
+    if (jumlahDibayar <= 0) {
+      Logger.log("[apiImportYoYi] Error: Jumlah dibayar <= 0 (" + jumlahDibayar + ")");
       return { status: "error", message: "Jumlah dibayar customer wajib diisi dan > 0" };
     }
     
     // 2. Validasi outlet & admin
     if (!input.outlet_id) {
+      Logger.log("[apiImportYoYi] Error: Outlet ID kosong");
       return { status: "error", message: "Outlet ID wajib diisi" };
     }
     if (!input.admin_id) {
+      Logger.log("[apiImportYoYi] Error: Admin ID kosong");
       return { status: "error", message: "Admin ID wajib diisi" };
     }
     
-    // 3. Cek duplicate resi (gunakan existing checker)
-    if (!TransactionService.validateTransaction(parsed.nomor_resi)) {
-        return { status: "error", message: "RESI SUDAH TERDAFTAR — " + parsed.nomor_resi };
+    // 3. Cek duplicate resi
+    if (!TransactionService.validateTransaction(resiNum)) {
+      Logger.log("[apiImportYoYi] Error: Resi duplikat " + resiNum);
+      return { status: "error", message: "RESI SUDAH TERDAFTAR — " + resiNum };
     }
     
-    // 4. Buat PreInput Backup agar terbaca di Riwayat
+    // 4. Buat PreInput Backup agar sinkron di Riwayat
     const txId = TransactionService.generateTransactionId();
     const backupObj = {
       transaksi_id: txId,
       timestamp: new Date().toISOString(),
       admin_id: input.admin_id,
       outlet_id_tugas: input.outlet_id,
-      nama_pengirim: parsed.nama_pengirim || "YoYi Import",
+      nama_pengirim: parsed.nama_pengirim || "YoYi Pengirim",
       hp_pengirim: parsed.no_hp_pengirim || "",
       alamat_pengirim: parsed.alamat_pengirim || "",
-      nama_penerima: parsed.nama_penerima || "Customer",
+      nama_penerima: parsed.nama_penerima || "YoYi Penerima",
       hp_penerima: parsed.no_hp_penerima || "",
       alamat_penerima: parsed.alamat_penerima || "",
-      nama_barang: parsed.nama_barang || "",
-      berat_kg: parsed.berat_kg || 0,
-      volume: "0",
+      nama_barang: parsed.nama_barang || "Paket YoYi",
+      berat_kg: Number(parsed.berat_kg) || 1,
+      volume: "0 x 0 x 0",
       nilai_barang: 0,
       foto_paket_url: "",
       status: "SELESAI",
@@ -636,40 +652,44 @@ function apiImportYoYi(params) {
     };
     DatabaseService.insertRow("PreInput_Backup", backupObj);
     
-    // Panggil apiSaveTransaksi dengan data yang sudah dimapping
+    // 5. Simpan transaksi ke EXP_Resi & MASTER_TRANSAKSI
     const transactionData = {
       transaksi_id: txId,
-      nomor_resi: parsed.nomor_resi,
-      nama_pengirim: parsed.nama_pengirim,
-      hp_pengirim: parsed.no_hp_pengirim,
-      alamat_pengirim: parsed.alamat_pengirim,
-      nama_penerima: parsed.nama_penerima,
-      hp_penerima: parsed.no_hp_penerima,
-      alamat_penerima: parsed.alamat_penerima,
-      nama_barang: parsed.nama_barang,
-      berat_kg: parsed.berat_kg,
-      ongkir_dasar: parsed.ongkir_dasar,
-      biaya_asuransi: parsed.asuransi,
-      biaya_lain: parsed.biaya_lain,
-      metode_bayar: input.metode_bayar_ongkir,
-      biaya_amplop: input.biaya_amplop || 0,
-      biaya_packing: input.biaya_packing || 0,
+      resi_id: resiNum,
+      nomor_resi: resiNum,
+      nama_pengirim: parsed.nama_pengirim || "",
+      hp_pengirim: parsed.no_hp_pengirim || "",
+      alamat_pengirim: parsed.alamat_pengirim || "",
+      nama_penerima: parsed.nama_penerima || "",
+      hp_penerima: parsed.no_hp_penerima || "",
+      alamat_penerima: parsed.alamat_penerima || "",
+      nama_barang: parsed.nama_barang || "Paket YoYi",
+      berat_kg: Number(parsed.berat_kg) || 0,
+      ongkir_dasar: Number(parsed.ongkir_dasar) || 0,
+      biaya_asuransi: Number(parsed.asuransi) || 0,
+      biaya_lain: Number(parsed.biaya_lain) || 0,
+      biaya_yoyi: Number(parsed.total_yoyi) || 0,
+      metode_bayar: input.metode_bayar_ongkir || "Tunai",
+      biaya_amplop: Number(input.biaya_amplop) || 0,
+      biaya_packing: Number(input.biaya_packing) || 0,
       metode_pembayaran_tambahan: input.metode_bayar_tambahan || "Tunai",
-      total_dibayar_customer: input.jumlah_dibayar,
+      total_dibayar_customer: jumlahDibayar,
       admin_id_pencatat: input.admin_id,
       outlet_id_input: input.outlet_id,
-      status: "SELESAI", // Karena resi sudah ada dari YoYi
-      // Map other optional fields
+      outlet_id: input.outlet_id,
+      status: "SELESAI",
       source_order: "YoYi",
-      tipe_produk: parsed.tipe_produk,
-      // Map to correct model based on TransactionService
-      resi_id: parsed.nomor_resi,
-      outlet_id: input.outlet_id
+      tipe_produk: parsed.tipe_produk || "EZ",
+      ekspedisi: "Express"
     };
     
-    return apiSaveTransaksi({ jenis_layanan: "REGULAR", data: transactionData });
+    Logger.log("[apiImportYoYi] Saving transaction for resi " + resiNum + " with txId " + txId);
+    const saveResult = apiSaveTransaksi({ jenis_layanan: "Express", data: transactionData });
+    Logger.log("[apiImportYoYi] Save result: " + JSON.stringify(saveResult));
+    return saveResult;
   } catch(e) {
-    return { status: "error", message: e.message };
+    Logger.log("[apiImportYoYi] Exception: " + e.toString());
+    return { status: "error", message: e.message || e.toString() };
   }
 }
 

@@ -1279,6 +1279,39 @@ function addAuditLog(userId: string, action: string, detail: string, outletId: s
 
 // === API ROUTES ===
 
+// Endpoint Verifikasi Koneksi ke Apps Script
+app.get("/api/test-connection", async (req, res) => {
+  try {
+    const appsScriptUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL;
+    if (!appsScriptUrl || !appsScriptUrl.trim()) {
+      return res.status(500).json({ 
+        status: "error", 
+        message: "APPS_SCRIPT_URL tidak ditemukan pada environment variables Vercel/Server" 
+      });
+    }
+    const response = await fetch(appsScriptUrl.trim(), {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action: "ping", data: {} })
+    });
+    const text = await response.text();
+    let json: any;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { rawText: text };
+    }
+    return res.json({ 
+      status: "success", 
+      message: "Terhubung ke Google Apps Script", 
+      appsScriptUrl: appsScriptUrl.trim().replace(/(.{15}).+(.{10})/, "$1...$2"), 
+      response: json 
+    });
+  } catch (error: any) {
+    return res.status(500).json({ status: "error", message: error.message });
+  }
+});
+
 // === PRODUCTION LOCKDOWN & PROXY MIDDLEWARE ===
 const PRODUCTION_MODE = true;
 
@@ -1287,92 +1320,11 @@ const UTILITY_ACTIONS = new Set([
   "testConnection",
   "perbaikiAlamatAI",
   "parseYoYiOrder",
-  "importYoYi",
-  "saveTransaksi",
-  "apiSaveTransaksi",
   "analyzeResiPhoto",
-  "uploadFile",
-  "syncGoogleReviews",
-  "addReview",
-  "deleteReview",
   "analyzeReview",
-  "apps-script",
-  "dailyClosing",
-  "reconciliation",
-  "reconcileTransaction",
-  "reconcileDaily",
-  "reconcileOutlet",
-  "getReconciliationSummary",
-  "auditTrail",
-  "getAuditTrail",
-  "getAuditTrailByTransaction",
-  "getAuditTrailByCustomer",
-  "getAuditTrailByImport",
-  "reconstructTransactionHistory",
-  "reconstructHistory",
-  "auditTransaction",
-  "getAuditData",
-  "updateAuditDecision",
-  "validateClosing",
-  "executeClosing",
-  "settlement",
-  "financial-close",
-  "control-tower",
-  "management",
-  "control",
-  "workflow",
-  "intelligence",
-  "management-review",
-  "searchCustomer",
-  "getRiwayatPenerima",
-  "checkDuplicateResi",
-  "deletePreInputDraft",
-  "saveDataPreInput",
-  "savePreInput",
-  "getPreInputDrafts",
-  "updatePreInputStatus",
-  "getPreInput",
-  "getPreInputDetails",
-  "getCustomerHistory",
-  "getBukuPengirim",
-  "getBukuPenerima",
-  "deleteBulkCustomers",
-  "updateCustomer",
-  "getCustomersMaster",
-  "getCustomerDetailFull",
-  "getAdminDashboardData",
-  "getDashboardData",
-  "getRiwayatTransaksi",
-  "deleteTransaksi",
-  "getDetailTransaksi",
-  "updateTransaksi",
-  "getSetoranList",
-  "getSetoranDetail",
-  "createSetoran",
-  "approveSetoran",
-  "rejectSetoran",
-  "getReportingSummary",
-  "getReportingTransactions",
-  "getReportingSettlement",
-  "getReportingAudit",
-  "dailySummary",
-  "apiDailySummary",
-  "detectAnomalies",
-  "apiDetectAnomalies",
   "askAssistant",
-  "apiAskAssistant",
-  "getKategoriKeuangan",
-  "saveKategoriKeuangan",
-  "updateKategoriKeuangan",
-  "setKategoriAktif",
-  "getKeuanganOutlet",
-  "saveKeuanganOutlet",
-  "updateKeuanganOutlet",
-  "deleteKeuanganOutlet",
-  "getAllData",
-  "getStatistik",
-  "getOutlets",
-  "getUsers"
+  "syncGoogleReviews",
+  "testDriveConnection"
 ]);
 
 app.use("/api/:action", async (req, res, next) => {
@@ -1408,8 +1360,13 @@ app.use("/api/:action", async (req, res, next) => {
         return next();
       }
       if (json && json.status === "error") {
-        console.log(`Apps Script returned error for ${action} (${json.message}), falling back to local route handler...`);
-        return next();
+        const errMsg = json.message || "";
+        // Only fallback if Apps Script action is unrecognized
+        if (errMsg.includes("Aksi tidak dikenali") || errMsg.includes("unrecognized")) {
+          console.log(`Apps Script action not recognized for ${action}, falling back to local route handler...`);
+          return next();
+        }
+        return res.status(400).json(json);
       }
       return res.json(json);
     } catch (err: any) {
@@ -2480,8 +2437,39 @@ app.post(["/api/getPreInput", "/api/getPreInputDetails"], (req, res) => {
 });
 
 // 9. SAVE TRANSAKSI (EXP_Resi or CRG_Resi) - apiSaveTransaksi handler
-const handleSaveTransaksiRequest = (req: any, res: any) => {
+const handleSaveTransaksiRequest = async (req: any, res: any) => {
   try {
+    const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
+    if (appsScriptUrl && appsScriptUrl.trim() && req.headers["x-test-mode"] !== "true") {
+      try {
+        const response = await fetch(appsScriptUrl.trim(), {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "saveTransaksi", data: req.body || {} })
+        });
+        const text = await response.text();
+        let json: any;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          console.warn("Apps Script returned non-JSON for saveTransaksi, falling back to local handler:", text.slice(0, 200));
+          json = null;
+        }
+        if (json) {
+          if (json.status === "error") {
+            const errMsg = json.message || "";
+            if (!errMsg.includes("Aksi tidak dikenali") && !errMsg.includes("unrecognized")) {
+              return res.status(400).json(json);
+            }
+          } else {
+            return res.json(json);
+          }
+        }
+      } catch (err: any) {
+        console.error("Error proxying saveTransaksi to Apps Script:", err.message);
+      }
+    }
+
     const body = req.body || {};
     const jenis_layanan = body.jenis_layanan || body.layanan || body.data?.jenis_layanan || "Express";
     const data = body.data || body;
@@ -2752,10 +2740,44 @@ app.post("/api/saveTransaksi", handleSaveTransaksiRequest);
 app.post("/api/apiSaveTransaksi", handleSaveTransaksiRequest);
 
 // 9b. IMPORT YOYI DIRECT SAVE
-app.post("/api/importYoYi", (req, res) => {
+app.post("/api/importYoYi", async (req, res) => {
   const { parsed, input } = req.body;
   if (!parsed || !input) {
     return res.status(400).json({ status: "error", message: "Data import YoYi tidak lengkap" });
+  }
+
+  const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
+  if (appsScriptUrl && appsScriptUrl.trim() && req.headers["x-test-mode"] !== "true") {
+    try {
+      const response = await fetch(appsScriptUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "importYoYi",
+          data: { parsed, input }
+        })
+      });
+      const text = await response.text();
+      let json: any;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        console.warn("Apps Script returned non-JSON for importYoYi:", text.slice(0, 200));
+        json = null;
+      }
+      if (json) {
+        if (json.status === "error") {
+          const errMsg = json.message || "";
+          if (!errMsg.includes("Aksi tidak dikenali") && !errMsg.includes("unrecognized")) {
+            return res.status(400).json(json);
+          }
+        } else {
+          return res.json(json);
+        }
+      }
+    } catch (err: any) {
+      console.error("Error proxying importYoYi to Apps Script:", err.message);
+    }
   }
 
   const db = readDb();
