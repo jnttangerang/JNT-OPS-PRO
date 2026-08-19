@@ -2843,8 +2843,8 @@ const handleSaveTransaksiRequest = (req: any, res: any) => {
         transaksi_id: transId,
         outlet_id: outletId,
         admin_id: adminId,
-        tanggal_transaksi: timestamp.split("T")[0],
-        jam_transaksi: timestamp.split("T")[1]?.slice(0, 8),
+        tanggal_transaksi: data.tanggal_transaksi || timestamp.split("T")[0],
+        jam_transaksi: data.jam_transaksi || timestamp.split("T")[1]?.slice(0, 8),
         no_resi: rid,
         ekspedisi: data.ekspedisi || (jenis_layanan === "Cargo" ? "Cargo" : "Express"),
         tipe_produk: data.tipe_produk || (jenis_layanan === "Cargo" ? "FastTrack" : "EZ"),
@@ -3493,11 +3493,11 @@ function filterTransactions(combined: any[], filterOutlet: string, dateStart?: s
   }
   if (dateStart) {
     const start = new Date(dateStart).getTime();
-    filtered = filtered.filter((r: any) => new Date(r.created_at || r.tanggal_transaksi).getTime() >= start);
+    filtered = filtered.filter((r: any) => new Date(r.tanggal_transaksi || r.created_at).getTime() >= start);
   }
   if (dateEnd) {
     const end = new Date(dateEnd).getTime() + 86400000;
-    filtered = filtered.filter((r: any) => new Date(r.created_at || r.tanggal_transaksi).getTime() <= end);
+    filtered = filtered.filter((r: any) => new Date(r.tanggal_transaksi || r.created_at).getTime() <= end);
   }
   return filtered;
 }

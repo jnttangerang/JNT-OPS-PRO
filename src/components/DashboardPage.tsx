@@ -7,6 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell
 } from "recharts";
+import { format, subDays } from "date-fns";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, DashboardData, AuditLog } from "../types";
 
@@ -25,12 +26,10 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
   // Filter States
   const [selectedOutletFilter, setSelectedOutletFilter] = useState((outlets && outlets.length > 0) ? outlets[0].outlet_id : "");
   const [startDate, setStartDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 15); // Default 15 days back
-    return d.toISOString().split("T")[0];
+    return format(subDays(new Date(), 15), "yyyy-MM-dd");
   });
   const [endDate, setEndDate] = useState(() => {
-    return new Date().toISOString().split("T")[0];
+    return format(new Date(), "yyyy-MM-dd");
   });
 
   // Dashboard Data State

@@ -6,6 +6,7 @@ import {
   Pencil, Trash2, History, ExternalLink, Clock, Download
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
+import { format } from "date-fns";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, PreInputBackup } from "../types";
 import { toast } from "../utils/toast";
@@ -959,7 +960,10 @@ export default function TransaksiPage({
 
     const activeItem = (preInputData?.nama_barang || matchingYoyi?.parsed_data?.nama_barang || "").trim();
 
+    const now = new Date();
     const transactionData = {
+      tanggal_transaksi: format(now, "yyyy-MM-dd"),
+      jam_transaksi: format(now, "HH:mm"),
       resi_id: (resiId || "").trim().toUpperCase(),
       transaksi_id: pendingTxId || preInputData?.transaksi_id || ("TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5)),
       admin_id_pencatat: session.user_id,
