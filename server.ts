@@ -1343,13 +1343,10 @@ app.use("/api/:action", async (req, res, next) => {
 
   if (appsScriptUrl && appsScriptUrl.trim()) {
     try {
-      // Compatibility mapping
-      const targetAction = action === "getDashboardData" ? "getAdminDashboardData" : action;
-      
       const response = await fetch(appsScriptUrl.trim(), {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: targetAction, data: req.body || {} })
+        body: JSON.stringify({ action: action, data: req.body || {} })
       });
       const text = await response.text();
       let json: any;
@@ -6118,9 +6115,66 @@ app.post("/api/reconciliation/closingStatus", (req, res) => {
   return res.json({ status: "success", data: statusInfo });
 });
 
+// Helper to sync live transaction and setoran data from Google Sheets when running in proxy/serverless mode
+async function syncDbWithAppsScript(db: any) {
+  const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
+  if (!appsScriptUrl || !appsScriptUrl.trim()) return db;
+
+  try {
+    const [txRes, setoranRes] = await Promise.all([
+      fetch(appsScriptUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "getRiwayatTransaksi", data: { filterOutlet: "ALL" } })
+      }).then(r => r.json()).catch(() => null),
+      fetch(appsScriptUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "getSetoranList", data: {} })
+      }).then(r => r.json()).catch(() => null)
+    ]);
+
+    if (txRes && txRes.status === "success" && Array.isArray(txRes.data)) {
+      db.MASTER_TRANSAKSI = txRes.data.map((tx: any) => ({
+        id: tx.transaksi_id || tx.id || tx.resi_id,
+        transaksi_id: tx.transaksi_id || tx.id,
+        no_resi: tx.resi_id || tx.no_resi,
+        outlet_id: tx.outlet_id_input || tx.outlet_id || "OUT-001",
+        admin_id: tx.admin_id_pencatat || tx.admin_id || "SYSTEM",
+        tanggal_transaksi: (tx.timestamp || tx.tanggal_transaksi || "").slice(0, 10),
+        jam_transaksi: (tx.timestamp || "").includes("T") ? tx.timestamp.split("T")[1].slice(0, 8) : "00:00:00",
+        created_at: tx.timestamp || tx.created_at || new Date().toISOString(),
+        ekspedisi: tx.tipe_layanan || tx.ekspedisi || "Express",
+        tipe_produk: tx.tipe_produk || "",
+        snapshot_nama_pengirim: tx.pengirim || tx.snapshot_nama_pengirim || "",
+        snapshot_nama_penerima: tx.penerima || tx.snapshot_nama_penerima || "",
+        nama_barang: tx.nama_barang || "Paket",
+        metode_bayar: tx.metode_bayar || "CASH",
+        ongkir_customer: Number(tx.ongkir_dasar) || 0,
+        packing: Number(tx.biaya_packing) || 0,
+        amplop: Number(tx.biaya_amplop) || 0,
+        biaya_lain: Number(tx.biaya_lain) || 0,
+        total_customer: Number(tx.grand_total) || Number(tx.total_dibayar_customer) || 0,
+        wajib_setor_owner: Number(tx.setoran_ke_owner) || 0,
+        kas_outlet: Number(tx.kas_operasional) || 0,
+        status_transaksi: tx.status_resi === "BATAL" ? "CANCELLED" : "PAID",
+        status_setoran: tx.status_setoran || "PENDING",
+        status_audit: tx.status_audit || "PENDING"
+      }));
+    }
+
+    if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
+      db.Master_Setoran = setoranRes.data;
+    }
+  } catch (e: any) {
+    console.warn("syncDbWithAppsScript warning:", e.message);
+  }
+  return db;
+}
+
 // === PHASE 30 DAILY CLOSING ENGINE ENDPOINTS ===
-app.post("/api/dailyClosing/validate", (req, res) => {
-  const db = readDb();
+app.post("/api/dailyClosing/validate", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const { outlet_id, outlet_name, tanggal, actor_id, actor_name, actor_role } = req.body || {};
   const result = validateDailyClosing(db, {
     outlet_id,
@@ -6138,8 +6192,8 @@ app.post("/api/dailyClosing/validate", (req, res) => {
   return res.json(result);
 });
 
-app.post("/api/dailyClosing/close", (req, res) => {
-  const db = readDb();
+app.post("/api/dailyClosing/close", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const { outlet_id, outlet_name, tanggal, notes, actor_id, actor_name, actor_role } = req.body || {};
   const result = executeDailyClosing(db, {
     outlet_id,
@@ -6157,24 +6211,24 @@ app.post("/api/dailyClosing/close", (req, res) => {
   return res.json(result);
 });
 
-app.get("/api/dailyClosing/status", (req, res) => {
-  const db = readDb();
+app.get("/api/dailyClosing/status", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const { outlet_id, tanggal, date } = req.query as any;
   const targetDate = tanggal || date;
   const statusInfo = getDailyClosingStatus(db, outlet_id, targetDate);
   return res.json(statusInfo);
 });
 
-app.post("/api/dailyClosing/status", (req, res) => {
-  const db = readDb();
+app.post("/api/dailyClosing/status", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const { outlet_id, tanggal, date } = req.body || {};
   const targetDate = tanggal || date;
   const statusInfo = getDailyClosingStatus(db, outlet_id, targetDate);
   return res.json(statusInfo);
 });
 
-app.post("/api/dailyClosing/reopen", (req, res) => {
-  const db = readDb();
+app.post("/api/dailyClosing/reopen", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const { outlet_id, outlet_name, tanggal, reason, actor_id, actor_name, actor_role } = req.body || {};
   const result = reopenDailyClosing(db, {
     outlet_id,

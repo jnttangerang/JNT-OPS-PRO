@@ -823,19 +823,15 @@ function apiUploadFile(params) {
 }
 
 /**
- * 9. Mengambil data ringkasan dashboard OWNER
+ * 9. Mengambil data ringkasan dashboard OWNER & ADMIN
  */
 function apiGetDashboardData(params) {
   params = params || {};
   var role = (params.role || params.user_role || "").toString().toUpperCase();
-  var filterOutlet = params.filterOutlet || "ALL";
-  var filterTipeLayanan = params.filterTipeLayanan || "ALL";
-  var dateStart = params.dateStart;
-  var dateEnd = params.dateEnd;
-
-  if (role !== "ADMIN" && role !== "OWNER") {
-    return { status: "error", message: "Akses Ditolak! Hanya role ADMIN dan OWNER yang dapat membuka Dashboard." };
-  }
+  var filterOutlet = (params.filterOutlet || params.outlet_id || "ALL").toString();
+  var filterTipeLayanan = (params.filterTipeLayanan || "ALL").toString();
+  var dateStart = params.dateStart ? String(params.dateStart).slice(0, 10) : "";
+  var dateEnd = params.dateEnd ? String(params.dateEnd).slice(0, 10) : "";
 
   var dbExp = DatabaseService.getSheetData("EXP_Resi");
   var dbCrg = DatabaseService.getSheetData("CRG_Resi");
@@ -843,93 +839,181 @@ function apiGetDashboardData(params) {
   var dbOutlets = DatabaseService.getSheetData("Outlets");
   var dbLogs = DatabaseService.getSheetData("AuditLogs");
   var dbUsers = DatabaseService.getSheetData("Users");
+  var dbSetoran = DatabaseService.getSheetData("Master_Setoran");
 
   var backupMap = {};
-  for (var k = 1; k < dbBackup.length; k++) {
-    backupMap[dbBackup[k][0].toString()] = {
-      pengirim: dbBackup[k][4].toString(),
-      penerima: dbBackup[k][7].toString()
-    };
+  if (dbBackup && dbBackup.length > 1) {
+    var bHeaders = dbBackup[0];
+    for (var k = 1; k < dbBackup.length; k++) {
+      var bObj = rowToObject_(bHeaders, dbBackup[k]);
+      var txKey = (bObj.transaksi_id || "").toString();
+      if (txKey) {
+        backupMap[txKey] = {
+          pengirim: bObj.nama_pengirim || "Umum",
+          penerima: bObj.nama_penerima || "Umum"
+        };
+      }
+    }
   }
 
   var userMap = {};
-  for (var u = 1; u < dbUsers.length; u++) {
-    userMap[dbUsers[u][0].toString()] = dbUsers[u][5].toString();
+  var usersList = [];
+  if (dbUsers && dbUsers.length > 1) {
+    var uHeaders = dbUsers[0];
+    for (var u = 1; u < dbUsers.length; u++) {
+      var uObj = rowToObject_(uHeaders, dbUsers[u]);
+      var uid = (uObj.user_id || uObj.username || "").toString();
+      if (uid) {
+        userMap[uid] = uObj.nama_lengkap || uObj.username || uid;
+        usersList.push(uObj);
+      }
+    }
   }
 
   var combined = [];
+  var pembatalanLogs = [];
 
-  for (var i = 1; i < dbExp.length; i++) {
-    var rExp = dbExp[i];
-    var txId = rExp[1].toString();
-    var lookup = backupMap[txId] || { pengirim: "Umum", penerima: "Umum" };
-    combined.push({
-      resi_id: rExp[0].toString(),
-      transaksi_id: txId,
-      timestamp: rExp[2].toString(),
-      admin_id_pencatat: rExp[3].toString(),
-      outlet_id_input: rExp[4].toString(),
-      tipe_produk: rExp[5].toString(),
-      grand_total: Number(rExp[18]) || 0,
-      setoran_ke_owner: Number(rExp[19]) || 0,
-      kas_operasional: Number(rExp[20]) || 0,
-      tipe_layanan: "Express",
-      pengirim: lookup.pengirim,
-      penerima: lookup.penerima
-    });
-  }
+  // Parse Express Transactions
+  if (dbExp && dbExp.length > 1) {
+    var expHeaders = dbExp[0];
+    for (var i = 1; i < dbExp.length; i++) {
+      var rExp = rowToObject_(expHeaders, dbExp[i]);
+      var resiIdExp = (rExp.resi_id || "").toString().trim();
+      var txIdExp = (rExp.transaksi_id || resiIdExp).toString().trim();
+      if (!resiIdExp && !txIdExp) continue;
 
-  for (var j = 1; j < dbCrg.length; j++) {
-    var rCrg = dbCrg[j];
-    var txIdC = rCrg[1].toString();
-    var lookupC = backupMap[txIdC] || { pengirim: "Umum", penerima: "Umum" };
-    combined.push({
-      resi_id: rCrg[0].toString(),
-      transaksi_id: txIdC,
-      timestamp: rCrg[2].toString(),
-      admin_id_pencatat: rCrg[3].toString(),
-      outlet_id_input: rCrg[4].toString(),
-      tipe_produk: rCrg[5].toString(),
-      grand_total: Number(rCrg[21]) || 0,
-      setoran_ke_owner: Number(rCrg[22]) || 0,
-      kas_operasional: Number(rCrg[23]) || 0,
-      tipe_layanan: "Cargo",
-      pengirim: lookupC.pengirim,
-      penerima: lookupC.penerima
-    });
-  }
+      var lookupExp = backupMap[txIdExp] || { pengirim: "Umum", penerima: "Umum" };
+      var isBatalExp = (rExp.status_resi || "").toString().toUpperCase() === "BATAL" ||
+                       (rExp.status_resi || "").toString().toUpperCase() === "CANCELLED";
 
-  var filtered = combined;
-  if (filterOutlet !== "ALL") {
-    filtered = filtered.filter(function (r) { return r.outlet_id_input === filterOutlet; });
-  }
-  if (filterTipeLayanan !== "ALL") {
-    filtered = filtered.filter(function (r) { return r.tipe_layanan === filterTipeLayanan; });
-  }
-  if (dateStart) {
-    var startMs = new Date(dateStart).getTime();
-    filtered = filtered.filter(function (r) { return new Date(r.timestamp).getTime() >= startMs; });
-  }
-  if (dateEnd) {
-    var endMs = new Date(dateEnd).getTime() + 86400000;
-    filtered = filtered.filter(function (r) { return new Date(r.timestamp).getTime() <= endMs; });
+      var grandTotalExp = Number(rExp.grand_total) || Number(rExp.total_dibayar_customer) || 0;
+      var setoranExp = Number(rExp.setoran_ke_owner) || 0;
+      var kasExp = Number(rExp.kas_operasional) || ((Number(rExp.biaya_packing) || 0) + (Number(rExp.biaya_amplop) || 0));
+
+      var txItemExp = {
+        resi_id: resiIdExp,
+        transaksi_id: txIdExp,
+        timestamp: (rExp.timestamp || "").toString(),
+        admin_id_pencatat: (rExp.admin_id_pencatat || "SYSTEM").toString(),
+        outlet_id_input: (rExp.outlet_id_input || "OUT-001").toString(),
+        tipe_produk: (rExp.tipe_produk || "").toString(),
+        grand_total: grandTotalExp,
+        setoran_ke_owner: setoranExp,
+        kas_operasional: kasExp,
+        tipe_layanan: "Express",
+        pengirim: lookupExp.pengirim,
+        penerima: lookupExp.penerima,
+        status_resi: isBatalExp ? "BATAL" : "AKTIF"
+      };
+
+      if (isBatalExp) {
+        pembatalanLogs.push(txItemExp);
+      } else {
+        combined.push(txItemExp);
+      }
+    }
   }
 
+  // Parse Cargo Transactions
+  if (dbCrg && dbCrg.length > 1) {
+    var crgHeaders = dbCrg[0];
+    for (var j = 1; j < dbCrg.length; j++) {
+      var rCrg = rowToObject_(crgHeaders, dbCrg[j]);
+      var resiIdCrg = (rCrg.resi_id || "").toString().trim();
+      var txIdCrg = (rCrg.transaksi_id || resiIdCrg).toString().trim();
+      if (!resiIdCrg && !txIdCrg) continue;
+
+      var lookupCrg = backupMap[txIdCrg] || { pengirim: "Umum", penerima: "Umum" };
+      var isBatalCrg = (rCrg.status_resi || "").toString().toUpperCase() === "BATAL" ||
+                       (rCrg.status_resi || "").toString().toUpperCase() === "CANCELLED";
+
+      var grandTotalCrg = Number(rCrg.grand_total) || Number(rCrg.total_dibayar_customer) || 0;
+      var setoranCrg = Number(rCrg.setoran_ke_owner) || 0;
+      var kasCrg = Number(rCrg.kas_operasional) || ((Number(rCrg.biaya_packing) || 0) + (Number(rCrg.biaya_amplop) || 0));
+
+      var txItemCrg = {
+        resi_id: resiIdCrg,
+        transaksi_id: txIdCrg,
+        timestamp: (rCrg.timestamp || "").toString(),
+        admin_id_pencatat: (rCrg.admin_id_pencatat || "SYSTEM").toString(),
+        outlet_id_input: (rCrg.outlet_id_input || "OUT-001").toString(),
+        tipe_produk: (rCrg.tipe_produk || "").toString(),
+        grand_total: grandTotalCrg,
+        setoran_ke_owner: setoranCrg,
+        kas_operasional: kasCrg,
+        tipe_layanan: "Cargo",
+        pengirim: lookupCrg.pengirim,
+        penerima: lookupCrg.penerima,
+        status_resi: isBatalCrg ? "BATAL" : "AKTIF"
+      };
+
+      if (isBatalCrg) {
+        pembatalanLogs.push(txItemCrg);
+      } else {
+        combined.push(txItemCrg);
+      }
+    }
+  }
+
+  // Filter transactions
+  var filtered = combined.filter(function(r) {
+    if (filterOutlet !== "ALL" && r.outlet_id_input !== filterOutlet) return false;
+    if (filterTipeLayanan !== "ALL" && r.tipe_layanan !== filterTipeLayanan) return false;
+
+    var txDateStr = (r.timestamp || "").slice(0, 10);
+    if (dateStart && txDateStr && txDateStr < dateStart) return false;
+    if (dateEnd && txDateStr && txDateStr > dateEnd) return false;
+
+    return true;
+  });
+
+  // Calculate Metrics
   var totalOmsetGlobal = 0;
   var totalSetoranOwner = 0;
   var totalKasOperasional = 0;
+  var totalResiExpress = 0;
+  var totalResiCargo = 0;
+  var setoranExpress = 0;
+  var setoranCargo = 0;
+
+  var todayDateStr = new Date().toISOString().slice(0, 10);
+  var totalResiToday = 0;
 
   filtered.forEach(function (r) {
     totalOmsetGlobal += r.grand_total;
     totalSetoranOwner += r.setoran_ke_owner;
     totalKasOperasional += r.kas_operasional;
+
+    if (r.tipe_layanan === "Express") {
+      totalResiExpress++;
+      setoranExpress += r.setoran_ke_owner;
+    } else if (r.tipe_layanan === "Cargo") {
+      totalResiCargo++;
+      setoranCargo += r.setoran_ke_owner;
+    }
+
+    if ((r.timestamp || "").slice(0, 10) === todayDateStr) {
+      totalResiToday++;
+    }
   });
 
+  // Target Harian per Outlet
+  var targetHarianVal = 100;
   var outletOmsetMap = {};
-  for (var o = 1; o < dbOutlets.length; o++) {
-    var oid = dbOutlets[o][0].toString();
-    var name = dbOutlets[o][1].toString().replace("J&T Express - ", "").replace("J&T Cargo - ", "");
-    outletOmsetMap[oid] = { nama: name, omset: 0, setoran: 0, kas: 0, count: 0 };
+  if (dbOutlets && dbOutlets.length > 1) {
+    var outHeaders = dbOutlets[0];
+    for (var o = 1; o < dbOutlets.length; o++) {
+      var outObj = rowToObject_(outHeaders, dbOutlets[o]);
+      var oid = (outObj.outlet_id || "").toString();
+      if (!oid) continue;
+      var outName = (outObj.nama_outlet || oid).toString().replace("J&T Express - ", "").replace("J&T Cargo - ", "");
+      outletOmsetMap[oid] = { nama: outName, omset: 0, setoran: 0, kas: 0, count: 0 };
+
+      if (filterOutlet === oid || (filterOutlet === "ALL" && o === 1)) {
+        targetHarianVal = Number(outObj.target_resi_harian) ||
+                          (Number(outObj.target_express) || 0) + (Number(outObj.target_cargo) || 0) || 100;
+      }
+    }
   }
 
   filtered.forEach(function (r) {
@@ -953,59 +1037,93 @@ function apiGetDashboardData(params) {
     };
   });
 
+  // Daily Trend / Grafik
   var dailyMap = {};
   filtered.forEach(function (r) {
-    var dStr = r.timestamp.split("T")[0];
-    if (!dailyMap[dStr]) dailyMap[dStr] = { date: dStr, Express: 0, Cargo: 0, total: 0 };
-    dailyMap[dStr][r.tipe_layanan] += r.grand_total;
+    var dStr = (r.timestamp || "").slice(0, 10) || "Unknown";
+    if (!dailyMap[dStr]) dailyMap[dStr] = { date: dStr, Express: 0, Cargo: 0, total: 0, setoran: 0, kas: 0, resi: 0 };
+    dailyMap[dStr][r.tipe_layanan] = (dailyMap[dStr][r.tipe_layanan] || 0) + r.grand_total;
     dailyMap[dStr].total += r.grand_total;
+    dailyMap[dStr].setoran += r.setoran_ke_owner;
+    dailyMap[dStr].kas += r.kas_operasional;
+    dailyMap[dStr].resi += 1;
   });
 
   var dailyTrend = Object.keys(dailyMap).sort().map(function (key) {
     return dailyMap[key];
   });
 
+  // By Admin Breakdown
+  var byAdmin = calculateAdminSummary(filtered, usersList);
+
+  // Status Setoran List
+  var statusSetoranList = [];
+  if (dbSetoran && dbSetoran.length > 1) {
+    var sHeaders = dbSetoran[0];
+    for (var sIdx = 1; sIdx < dbSetoran.length; sIdx++) {
+      var sObj = rowToObject_(sHeaders, dbSetoran[sIdx]);
+      var sTgl = (sObj.tanggal || "").toString().slice(0, 10);
+      var sOut = (sObj.outlet_id || "").toString();
+
+      if (filterOutlet !== "ALL" && sOut !== filterOutlet) continue;
+      if (dateStart && sTgl && sTgl < dateStart) continue;
+      if (dateEnd && sTgl && sTgl > dateEnd) continue;
+
+      var sStatusLabel = sObj.status === "DISETUJUI" ? "Sudah Disetujui" :
+                         sObj.status === "DITOLAK" ? "Ditolak" : "Menunggu Approval";
+
+      statusSetoranList.push({
+        setoran_id: sObj.setoran_id || "",
+        tanggal: sTgl,
+        date: sTgl,
+        outlet_id: sOut,
+        outlet_name: sObj.outlet_name || outletOmsetMap[sOut]?.nama || sOut,
+        admin_pembuat: sObj.admin_pembuat || "",
+        jumlah_resi: Number(sObj.jumlah_resi) || 0,
+        total_setoran: Number(sObj.total_setoran_owner) || Number(sObj.total_setor) || 0,
+        total_setoran_owner: Number(sObj.total_setoran_owner) || 0,
+        total_kas_outlet: Number(sObj.total_kas_outlet) || 0,
+        status: sStatusLabel,
+        raw_status: sObj.status || "PENDING",
+        closing_status: sObj.closing_status || "OPEN"
+      });
+    }
+  }
+
+  // Audit Logs
   var auditLogs = [];
-  var filteredLogs = [];
+  var aktivitasLogs = [];
+  if (dbLogs && dbLogs.length > 1) {
+    var lHeaders = dbLogs[0];
+    for (var logI = 1; logI < dbLogs.length; logI++) {
+      var logObj = rowToObject_(lHeaders, dbLogs[logI]);
+      var logOutlet = (logObj.outlet_id || "").toString();
+      var logTime = (logObj.timestamp || "").toString();
+      var logTgl = logTime.slice(0, 10);
 
-  for (var logI = 1; logI < dbLogs.length; logI++) {
-    var logRow = dbLogs[logI];
-    var logOutlet = logRow[5].toString();
-    var logTime = logRow[1].toString();
+      if (filterOutlet !== "ALL" && logOutlet && logOutlet !== filterOutlet) continue;
+      if (dateStart && logTgl && logTgl < dateStart) continue;
+      if (dateEnd && logTgl && logTgl > dateEnd) continue;
 
-    if (filterOutlet !== "ALL" && logOutlet !== filterOutlet) continue;
-
-    if (dateStart) {
-      var startMsLog = new Date(dateStart).getTime();
-      if (new Date(logTime).getTime() < startMsLog) continue;
+      var logItem = {
+        log_id: logObj.log_id || ("LOG-" + logI),
+        timestamp: logTime,
+        user_id: logObj.user_id || "SYSTEM",
+        nama_lengkap: userMap[logObj.user_id] || logObj.user_id || "Sistem",
+        aksi: logObj.aksi || "ACTION",
+        detail: logObj.detail || "",
+        outlet_id: logOutlet
+      };
+      auditLogs.push(logItem);
+      aktivitasLogs.push(logItem);
+      if (auditLogs.length >= 50) break;
     }
-
-    if (dateEnd) {
-      var endMsLog = new Date(dateEnd).getTime() + 86400000;
-      if (new Date(logTime).getTime() > endMsLog) continue;
-    }
-
-    filteredLogs.push(logRow);
   }
 
-  var limit = Math.min(filteredLogs.length, 50);
-  for (var logIdx = 0; logIdx < limit; logIdx++) {
-    var logRowF = filteredLogs[logIdx];
-    var logUid = logRowF[2].toString();
-    auditLogs.push({
-      log_id: logRowF[0].toString(),
-      timestamp: logRowF[1].toString(),
-      user_id: logUid,
-      nama_lengkap: userMap[logUid] || "Sistem",
-      aksi: logRowF[3].toString(),
-      detail: logRowF[4].toString(),
-      outlet_id: logRowF[5].toString()
-    });
-  }
-
+  // Monthly Reports
   var monthlyMap = {};
   filtered.forEach(function (r) {
-    var monthStr = r.timestamp.substring(0, 7);
+    var monthStr = (r.timestamp || "").slice(0, 7) || "Unknown";
     if (!monthlyMap[monthStr]) {
       monthlyMap[monthStr] = { month: monthStr, total_omset: 0, outletsMap: {} };
     }
@@ -1039,9 +1157,41 @@ function apiGetDashboardData(params) {
     return b.month > a.month ? 1 : -1;
   });
 
+  var recentSorted = filtered.slice().sort(function(a, b) {
+    return (b.timestamp || "").localeCompare(a.timestamp || "");
+  });
+
+  var alerts = [];
+  if (totalOmsetGlobal > 0 && statusSetoranList.filter(function(s) { return s.raw_status === "PENDING" || s.raw_status === "MENUNGGU_APPROVAL"; }).length > 0) {
+    alerts.push("Terdapat setoran outlet yang masih menunggu verifikasi/approval.");
+  }
+
   return {
     status: "success",
     data: {
+      summary: {
+        totalTransaksi: filtered.length,
+        totalResiExpress: totalResiExpress,
+        totalResiCargo: totalResiCargo,
+        grandTotalCustomer: totalOmsetGlobal,
+        totalWajibSetorOwner: totalSetoranOwner,
+        totalKasOutlet: totalKasOperasional
+      },
+      targetHarian: {
+        current: totalResiToday,
+        target: targetHarianVal
+      },
+      byAdmin: byAdmin,
+      byEkspedisi: {
+        Express: { resi: totalResiExpress, setoran: setoranExpress },
+        Cargo: { resi: totalResiCargo, setoran: setoranCargo }
+      },
+      statusSetoranList: statusSetoranList,
+      aktivitasLogs: aktivitasLogs,
+      pembatalanLogs: pembatalanLogs,
+      grafik: dailyTrend,
+      alerts: alerts,
+      recentTransactions: recentSorted.slice(0, 10),
       stats: {
         totalOmsetGlobal: totalOmsetGlobal,
         totalSetoranOwner: totalSetoranOwner,
@@ -1051,7 +1201,6 @@ function apiGetDashboardData(params) {
       outletPerformance: outletPerformance,
       dailyTrend: dailyTrend,
       auditLogs: auditLogs,
-      recentTransactions: filtered.slice(0, 10),
       monthly_reports: monthlyReports
     }
   };
