@@ -2939,8 +2939,8 @@ app.post("/api/importYoYi", (req, res) => {
   const outletId = input.outlet_id || "OUT-001";
   const adminId = input.admin_id || "ADMIN";
   const timestamp = new Date().toISOString();
-  const txDate = timestamp.split("T")[0];
-  const txTime = timestamp.split("T")[1]?.slice(0, 8) || "00:00:00";
+  const txDate = input.tanggal_transaksi || timestamp.split("T")[0];
+  const txTime = input.jam_transaksi || timestamp.split("T")[1]?.slice(0, 8) || "00:00:00";
   const transId = "TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5);
 
   // Financial calculations
@@ -3560,16 +3560,18 @@ function calculateByEkspedisi(filtered: any[]) {
   return result;
 }
 
-function calculateGrafik(combined: any[], filterOutlet: string) {
+function calculateGrafik(combined: any[], filterOutlet: string, todayStr?: string) {
   const last7Days: any[] = [];
+  const todayDate = new Date(todayStr || new Date().toISOString().split("T")[0]);
+  
   for (let i = 6; i >= 0; i--) {
-    const d = new Date();
+    const d = new Date(todayDate.getTime());
     d.setDate(d.getDate() - i);
     const dateStr = d.toISOString().split("T")[0];
     let dayTotalResi = 0;
     let daySetoran = 0;
     combined.forEach((tx: any) => {
-      const txDate = tx.created_at || tx.tanggal_transaksi || tx.timestamp;
+      const txDate = tx.tanggal_transaksi || tx.created_at || tx.timestamp;
       if (txDate && txDate.startsWith(dateStr) && (!filterOutlet || filterOutlet === "ALL" || tx.outlet_id === filterOutlet)) {
         if (!isTransactionValidForFinance(tx)) return;
         const sum = calculateFinancialSummary(tx);
@@ -3590,7 +3592,7 @@ function calculateStatusSetoran(filtered: any[], dbSetoranData: any[], filterOut
   const setoranMap: Record<string, any> = {};
   filtered.forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
-    const dateStr = (tx.created_at || tx.tanggal_transaksi || tx.timestamp || "").split("T")[0];
+    const dateStr = (tx.tanggal_transaksi || tx.created_at || tx.timestamp || "").split("T")[0];
     if (!dateStr) return;
     
     if (!setoranMap[dateStr]) {
@@ -3609,12 +3611,12 @@ function calculateStatusSetoran(filtered: any[], dbSetoranData: any[], filterOut
   return Object.values(setoranMap).sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
-function calculateTargetHarian(combined: any[], filterOutlet: string, outlets: any[]) {
-  const todayStr = new Date().toISOString().split("T")[0];
+function calculateTargetHarian(combined: any[], filterOutlet: string, outlets: any[], todayStr?: string) {
+  const localToday = todayStr || new Date().toISOString().split("T")[0];
   const currentResiToday = combined.filter((tx:any) => {
     if (!isTransactionValidForFinance(tx)) return false;
-    const txDate = tx.created_at || tx.tanggal_transaksi || tx.timestamp;
-    return txDate && txDate.startsWith(todayStr) && (!filterOutlet || filterOutlet === "ALL" || tx.outlet_id === filterOutlet);
+    const txDate = tx.tanggal_transaksi || tx.created_at || tx.timestamp;
+    return txDate && txDate.startsWith(localToday) && (!filterOutlet || filterOutlet === "ALL" || tx.outlet_id === filterOutlet);
   }).length;
   
   let targetTotal = 0;
@@ -3657,9 +3659,9 @@ app.post("/api/getAdminDashboardData", (req, res) => {
     const summary = calculateDashboardSummary(filtered);
     const byAdmin = calculateByAdmin(filtered, db.Users);
     const byEkspedisi = calculateByEkspedisi(filtered);
-    const grafik = calculateGrafik(combined, filterOutlet);
+    const grafik = calculateGrafik(combined, filterOutlet, dateEnd);
     const statusSetoranList = calculateStatusSetoran(filtered, db.SetoranData, filterOutlet);
-    const targetHarian = calculateTargetHarian(combined, filterOutlet, db.Outlets);
+    const targetHarian = calculateTargetHarian(combined, filterOutlet, db.Outlets, dateEnd);
 
     // Aktivitas Terakhir (Audit Logs)
     let logs = db.AuditLogs;
@@ -3729,7 +3731,7 @@ app.post("/api/getDashboardData", (req, res) => {
   const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd, filterTipeLayanan);
   
   const summary = calculateDashboardSummary(filtered);
-  const target_harian = calculateTargetHarian(combined, filterOutlet, db.Outlets);
+  const target_harian = calculateTargetHarian(combined, filterOutlet, db.Outlets, dateEnd);
 
   // Per-outlet stats (for charts)
   const outletOmsetMap: { [key: string]: { nama: string; omset: number; setoran: number; kas: number; count: number } } = {};
@@ -3769,7 +3771,7 @@ app.post("/api/getDashboardData", (req, res) => {
   // Daily transaction trends (past 7 days or matching date range)
   const dailyMap: { [key: string]: { date: string; Express: number; Cargo: number; total: number } } = {};
   filtered.forEach((r: any) => {
-    const dateStr = (r.timestamp || r.tanggal_transaksi || r.created_at || new Date().toISOString()).split("T")[0]; // YYYY-MM-DD
+    const dateStr = (r.tanggal_transaksi || r.created_at || r.timestamp || new Date().toISOString()).split("T")[0]; // YYYY-MM-DD
     if (!dailyMap[dateStr]) {
       dailyMap[dateStr] = { date: dateStr, Express: 0, Cargo: 0, total: 0 };
     }
@@ -4561,7 +4563,7 @@ app.post("/api/getSetoranDetail", (req, res) => {
   
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
-    let txDate = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
+    let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
     if (txDate === hTanggal && tx.outlet_id === hOutletId) {
       const sum = calculateFinancialSummary(tx);
       txList.push({ 
@@ -4602,7 +4604,7 @@ app.post("/api/createSetoran", (req, res) => {
   
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
-    let txDate = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
+    let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
     if (txDate === tanggal && tx.outlet_id === outlet_id) {
       txList.push(tx);
       const sum = calculateFinancialSummary(tx);
@@ -4769,7 +4771,7 @@ app.post("/api/getAuditData", (req, res) => {
     if (!isTransactionValidForFinance(tx)) return;
     
     if (outlet_id && outlet_id !== "ALL" && tx.outlet_id !== outlet_id) return;
-    let txDate = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
+    let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
     if (date_start && txDate < date_start) return;
     if (date_end && txDate > date_end) return;
     
@@ -4886,7 +4888,7 @@ app.post("/api/validateClosing", (req, res) => {
   
   const processTx = (tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
-    let txDate = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
+    let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
     if (txDate === closingDate && tx.outlet_id === outletId) {
       activeTransactions.push(tx);
       const sum = calculateFinancialSummary(tx);

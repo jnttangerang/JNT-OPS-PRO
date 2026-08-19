@@ -23,6 +23,24 @@ export function calculateFinancialSummary(tx: any) {
     };
   }
 
+  // If transaction already has computed SSOT fields, trust them directly
+  const hasSSOT = tx.wajib_setor_owner !== undefined || tx.kas_outlet !== undefined || tx.kas_operasional !== undefined;
+  
+  if (hasSSOT) {
+    const owner_deposit = safeNum(tx.wajib_setor_owner || tx.setoran_owner || 0);
+    const outlet_cash = safeNum(tx.kas_outlet || tx.kas_operasional || tx.biaya_amplop || tx.amplop || 0) + 
+                        (tx.kas_outlet === undefined && tx.kas_operasional === undefined ? safeNum(tx.biaya_packing || tx.packing || 0) : 0);
+    const customer_payment = safeNum(tx.jumlah_dibayar_customer || tx.grand_total || tx.total_customer || tx.total_dibayar_customer || (owner_deposit + outlet_cash));
+    const rounding = safeNum(tx.pembulatan || 0);
+    
+    return {
+      customer_payment,
+      owner_deposit,
+      outlet_cash,
+      rounding
+    };
+  }
+
   // Pure inputs
   const ongkir_customer = safeNum(tx.ongkir_customer || tx.ongkir_dasar);
   const asuransi = safeNum(tx.asuransi || tx.biaya_asuransi);
