@@ -135,6 +135,7 @@ export interface PreInputBackup {
   nilai_barang: number;
   foto_paket_url: string;
   foto_resi_url?: string;
+  no_resi?: string;
   status: "PENDING" | "SELESAI";
 }
 
@@ -285,11 +286,16 @@ export interface MasterTransaksi {
   nilai_barang?: number;
   jumlah_paket?: number;
   metode_bayar?: string;
+  metode_pembayaran_ongkir?: string;
+  metode_pembayaran_tambahan?: string;
   ongkir_customer?: number;
   packing?: number;
   amplop?: number;
+  biaya_packing?: number;
+  biaya_amplop?: number;
   biaya_lain?: number;
   total_customer?: number;
+  jumlah_dibayar_customer?: number;
   ongkir_yoyi?: number;
   asuransi?: number;
   biaya_lain_yoyi?: number;

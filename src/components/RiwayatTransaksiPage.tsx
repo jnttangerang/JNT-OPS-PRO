@@ -576,7 +576,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
             <div className="bg-gray-50/70 p-4 rounded-xl border border-gray-100 space-y-3">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-gray-500">Nama Barang & Berat:</span>
-                <span className="font-semibold text-gray-800">{selectedDetail.nama_barang || "Paket Standard"} ({selectedDetail.berat_kg} Kg)</span>
+                <span className="font-semibold text-gray-800">{selectedDetail.nama_barang || "Paket"} ({selectedDetail.berat_kg} Kg)</span>
               </div>
               <div className="flex justify-between items-center text-xs">
                 <span className="text-gray-500">Ongkos Kirim Dasar:</span>

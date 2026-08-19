@@ -62,8 +62,23 @@ export function useAppsScript() {
 
       // Utility actions that are handled locally on Node/Express server
       const nodeOnlyActions = [
+        "savePreInput",
+        "getPreInput",
+        "getPreInputDetails",
+        "saveDataPreInput",
+        "getDataPreInput",
+        "getPreInputDrafts",
+        "deletePreInputDraft",
+        "checkDuplicateResi",
+        "searchAddressBook",
+        "saveCustomer",
+        "savePenerima",
+        "searchCustomers",
+        "searchPenerima",
         "analyzeResiPhoto",
         "perbaikiAlamatAI",
+        "parseYoYiOrder",
+        "importYoYi",
         "ping",
         "testConnection",
         "uploadFile",

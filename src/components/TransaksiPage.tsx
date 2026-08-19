@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { 
   Scan, AlertTriangle, ShieldCheck, HelpCircle, FileText, Landmark, Wallet, 
   ToggleLeft, ToggleRight, ArrowRight, CheckCircle, RefreshCw, Upload, Camera,
-  Lock, ArrowLeft, ChevronLeft, ChevronRight, Layers, CornerDownLeft, Check
+  Lock, ArrowLeft, ChevronLeft, ChevronRight, Layers, CornerDownLeft, Check,
+  Pencil, Trash2, History, ExternalLink, Clock, Download
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import useAppsScript from "../hooks/useAppsScript";
@@ -11,6 +12,7 @@ import { toast } from "../utils/toast";
 import { calculateWeight } from "../utils/weightCalculator";
 import { getDisplayImageUrl } from "../utils/image";
 import AddressBookDrawer from "./AddressBookDrawer";
+import ImportYoYiModal, { YoYiImportQueueItem, YoYiParsedData } from "./ImportYoYiModal";
 
 interface TransaksiPageProps {
   session: SessionData;
@@ -31,8 +33,160 @@ export default function TransaksiPage({
 
   // Load pending transaction
   const [pendingTxId, setPendingTxId] = useState<string | null>(null);
+  const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
   const [preInputData, setPreInputData] = useState<PreInputBackup | null>(null);
   const [loadingPreInput, setLoadingPreInput] = useState(false);
+
+  
+  // YoYi Import State
+  const [isYoYiModalOpen, setIsYoYiModalOpen] = useState(false);
+  const [yoyiQueue, setYoyiQueue] = useState<YoYiImportQueueItem[]>([]);
+  
+  useEffect(() => {
+    const saved = localStorage.getItem("yoyi_import_queue");
+    if (saved) {
+      try { setYoyiQueue(JSON.parse(saved)); } catch(e) {}
+    }
+  }, []);
+
+  const updateYoyiQueue = (newQ: YoYiImportQueueItem[]) => {
+    setYoyiQueue(newQ);
+    localStorage.setItem("yoyi_import_queue", JSON.stringify(newQ));
+  };
+
+  const handleAddYoYiToQueue = (item: YoYiImportQueueItem) => {
+    if (yoyiQueue.length >= 20) {
+      toast.error("Antrian penuh. Hapus draft terlebih dahulu.");
+      return;
+    }
+    updateYoyiQueue([...yoyiQueue, item]);
+  };
+
+  const handleRemoveYoYi = (id: string) => {
+    updateYoyiQueue(yoyiQueue.filter(q => q.queue_id !== id));
+  };
+
+  const handleClearAllYoYi = () => {
+    if (window.confirm("Hapus semua draft antrian YoYi?")) {
+      updateYoyiQueue([]);
+      toast.info("Antrian draft YoYi telah dikosongkan.");
+    }
+  };
+
+  const handleApplyYoYiToForm = async (parsed: YoYiParsedData) => {
+    // 1. Set layanan & tipe produk
+    setJenisLayanan("Express");
+    setTipeProdukExp(parsed.tipe_produk || "EZ");
+
+    // 2. Set resi & berat & dimensi
+    const resiNum = (parsed.nomor_resi || "").trim().toUpperCase();
+    setResiId(resiNum);
+    setBeratKg(parsed.berat_kg ? parsed.berat_kg.toString() : "1");
+    setVolP("");
+    setVolL("");
+    setVolT("");
+
+    // 3. Set biaya
+    setOngkirDasarInput(parsed.ongkir_dasar ? parsed.ongkir_dasar.toString() : "0");
+    setBiayaAsuransiInput(parsed.asuransi ? parsed.asuransi.toString() : "0");
+    setBiayaLainInput(parsed.biaya_lain ? parsed.biaya_lain.toString() : "0");
+
+    // 4. Set metode bayar (DFOD detection)
+    if (parsed.metode_perhitungan && parsed.metode_perhitungan.toUpperCase().includes("DFOD")) {
+      setMetodeBayar("DFOD");
+      setTotalUangDibayarInput("0");
+    } else {
+      setMetodeBayar("Tunai");
+      const totalCost = Number(parsed.total_yoyi) || (Number(parsed.ongkir_dasar) + Number(parsed.asuransi) + Number(parsed.biaya_lain));
+      setTotalUangDibayarInput(totalCost > 0 ? totalCost.toString() : "");
+    }
+
+    const txId = "PRE-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5);
+
+    // 5. Extract sender, receiver, and item name with support for all property aliases
+    const parsedAny = parsed as any;
+    const rawSender = (parsed.nama_pengirim || parsedAny.pengirim || parsedAny.shipper || parsedAny.sender || "").trim();
+    const rawReceiver = (parsed.nama_penerima || parsedAny.penerima || parsedAny.consignee || parsedAny.receiver || "").trim();
+    const rawItem = (parsed.nama_barang || parsedAny.deskripsi_barang || parsedAny.isi_paket || parsedAny.barang || parsedAny.item_name || parsedAny.komoditi || "").trim();
+
+    const senderHp = (parsed.no_hp_pengirim || parsedAny.hp_pengirim || parsedAny.telepon_pengirim || parsedAny.telp_pengirim || "").trim();
+    const senderAddress = (parsed.alamat_pengirim || parsedAny.address_pengirim || "").trim();
+    const receiverHp = (parsed.no_hp_penerima || parsedAny.hp_penerima || parsedAny.telepon_penerima || parsedAny.telp_penerima || "").trim();
+    const receiverAddress = (parsed.alamat_penerima || parsedAny.address_penerima || "").trim();
+
+    // Do not fall back to generic placeholders if parsed data exists
+    const senderName = rawSender || "Umum";
+    const receiverName = rawReceiver || "Umum";
+    const itemName = rawItem || "Paket";
+
+    const syntheticPreInput: PreInputBackup = {
+      transaksi_id: txId,
+      timestamp: new Date().toISOString(),
+      admin_id: session?.user_id || session?.username || "ADMIN",
+      outlet_id_tugas: activeOutletId || "OUT-001",
+      nama_pengirim: senderName,
+      hp_pengirim: senderHp,
+      alamat_pengirim: senderAddress,
+      nama_penerima: receiverName,
+      hp_penerima: receiverHp,
+      alamat_penerima: receiverAddress,
+      ekspedisi: "Express",
+      berat_kg: Number(parsed.berat_kg) || 1,
+      volume: "0 x 0 x 0",
+      nama_barang: itemName,
+      nilai_barang: 0,
+      status: "PENDING",
+      catatan_admin: `Import YoYi (${parsed.source_order || "YoYi App"})`,
+      foto_paket_url: "",
+      foto_resi_url: "",
+      no_resi: resiNum
+    };
+    setPreInputData(syntheticPreInput);
+    setPendingTxId(txId);
+    localStorage.setItem("pending_transaksi_id", txId);
+
+    // Also persist pre-input draft to backend so it's safely in db
+    try {
+      await callBackend("savePreInput", {
+        transaksi_id: txId,
+        admin_id: session?.user_id || "ADMIN",
+        outlet_id_tugas: activeOutletId || "OUT-001",
+        nama_pengirim: senderName,
+        hp_pengirim: senderHp,
+        alamat_pengirim: senderAddress,
+        nama_penerima: receiverName,
+        hp_penerima: receiverHp,
+        alamat_penerima: receiverAddress,
+        nama_barang: itemName,
+        berat_kg: Number(parsed.berat_kg) || 1,
+        volume: "0 x 0 x 0",
+        nilai_barang: 0,
+        ekspedisi: "Express",
+        no_resi: resiNum,
+        is_draft: true
+      });
+    } catch (err) {
+      console.warn("Auto-save YoYi preInput draft warning:", err);
+    }
+
+    // 6. Check duplicate resi
+    if (resiNum) {
+      callBackend("checkDuplicateResi", { resi_id: resiNum })
+        .then((res) => {
+          if (res?.isDuplicate) {
+            setDuplicateWarning(res.message || "Nomor resi ini sudah pernah diinput sebelumnya!");
+          } else {
+            setDuplicateWarning(null);
+          }
+        })
+        .catch(() => {});
+    }
+
+    // 7. Scroll ke atas form
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    toast.success(`Data YoYi (${resiNum}) berhasil diisi ke form. Lengkapi foto & pembayaran, lalu simpan.`);
+  };
 
   // Draft Queue State
   const [draftQueue, setDraftQueue] = useState<PreInputBackup[]>([]);
@@ -142,6 +296,36 @@ export default function TransaksiPage({
   const fileInputResiRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
+
+  const handlePasteImage = (e: React.ClipboardEvent, type: "paket" | "resi") => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const previewUrl = URL.createObjectURL(file);
+          if (type === "paket") {
+            if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
+            setFotoPaketBlob(file);
+            setFotoPaketPreview(previewUrl);
+            setFotoPaketUrl("");
+            toast.success("Gambar paket dipaste dari clipboard");
+          } else {
+            if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
+            setFotoResiBlob(file);
+            setFotoResiPreview(previewUrl);
+            setFotoResiUrl("");
+            toast.success("Gambar resi dipaste dari clipboard");
+          }
+        }
+        break;
+      }
+    }
+  };
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: "paket" | "resi") => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -187,9 +371,28 @@ export default function TransaksiPage({
     }
   }, [callBackend, activeOutletId]);
 
+  // Fetch Recent Activity / Riwayat Transaksi List
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
+  const [loadingRecent, setLoadingRecent] = useState<boolean>(false);
+
+  const fetchRecentActivities = useCallback(async () => {
+    setLoadingRecent(true);
+    try {
+      const res = await callBackend("getRiwayatTransaksi", { filterOutlet: activeOutletId });
+      if (res && res.status === "success" && Array.isArray(res.data)) {
+        setRecentActivities(res.data.slice(0, 5));
+      }
+    } catch (err) {
+      console.error("Gagal mengambil riwayat transaksi terbaru:", err);
+    } finally {
+      setLoadingRecent(false);
+    }
+  }, [callBackend, activeOutletId]);
+
   useEffect(() => {
     fetchQueue();
-  }, [fetchQueue]);
+    fetchRecentActivities();
+  }, [fetchQueue, fetchRecentActivities]);
 
   useEffect(() => {
     if (successSheet) {
@@ -648,12 +851,26 @@ export default function TransaksiPage({
     if (!stepFotoPaket) return setFormError("Foto Paket wajib ada sebelum menyimpan transaksi!");
     if (!stepFotoResi) return setFormError("Foto Resi wajib ada sebelum menyimpan transaksi!");
     if (!(resiId || "").trim()) return setFormError("Nomor resi wajib diisi / discan terlebih dahulu!");
-    if (resiDuplicateError) return setFormError("Resi sudah terdaftar! Masukkan resi lain.");
+    if (resiDuplicateError) return setFormError("Nomor resi sudah terdaftar (EXP_Resi/CRG_Resi). Gunakan resi baru.");
+
+    // Pre-flight fresh duplicate verification
+    try {
+      const dupCheck = await callBackend("checkDuplicateResi", { resi_id: (resiId || "").trim().toUpperCase() });
+      if (dupCheck && dupCheck.status === "success" && dupCheck.isDuplicate) {
+        setResiDuplicateError(true);
+        setFormError("⚠️ NOMOR RESI SUDAH TERDAFTAR — Kemungkinan duplikat/fraud. Silakan ganti dengan resi lain.");
+        toast.error("Nomor resi sudah terdaftar!");
+        return;
+      }
+    } catch (e) {
+      console.warn("Pre-flight duplicate check warning:", e);
+    }
+
     if (ongkirDasar <= 0) return setFormError("Ongkir dasar wajib diisi!");
-    if (totalUangDibayarCustomer <= 0) return setFormError("Total uang dibayar customer wajib diisi!");
+    if (metodeBayar !== "DFOD" && totalUangDibayarCustomer <= 0) return setFormError("Total uang dibayar customer wajib diisi!");
     
     // Non-Cash payment verification
-    if (metodeBayar !== "Tunai" && !buktiBayarUrl) {
+    if (metodeBayar !== "Tunai" && metodeBayar !== "DFOD" && !buktiBayarUrl) {
       return setFormError(`Pembayaran '${metodeBayar}' wajib mengunggah bukti bayar!`);
     }
 
@@ -725,11 +942,30 @@ export default function TransaksiPage({
       setUploadingFotoResi(false);
     }
 
+    // Customer / Snapshot - Preserve active sender, receiver, and item name
+    const currentResiUpper = (resiId || "").trim().toUpperCase();
+    const matchingYoyi = yoyiQueue.find(
+      (y) =>
+        (y.resi || "").trim().toUpperCase() === currentResiUpper ||
+        (y.parsed_data?.nomor_resi || "").trim().toUpperCase() === currentResiUpper
+    );
+    const activeSender = (preInputData?.nama_pengirim || matchingYoyi?.parsed_data?.nama_pengirim || "").trim();
+    const activeSenderHp = (preInputData?.hp_pengirim || matchingYoyi?.parsed_data?.no_hp_pengirim || "").trim();
+    const activeSenderAddr = (preInputData?.alamat_pengirim || matchingYoyi?.parsed_data?.alamat_pengirim || "").trim();
+
+    const activeReceiver = (preInputData?.nama_penerima || matchingYoyi?.parsed_data?.nama_penerima || "").trim();
+    const activeReceiverHp = (preInputData?.hp_penerima || matchingYoyi?.parsed_data?.no_hp_penerima || "").trim();
+    const activeReceiverAddr = (preInputData?.alamat_penerima || matchingYoyi?.parsed_data?.alamat_penerima || "").trim();
+
+    const activeItem = (preInputData?.nama_barang || matchingYoyi?.parsed_data?.nama_barang || "").trim();
+
     const transactionData = {
       resi_id: (resiId || "").trim().toUpperCase(),
-      transaksi_id: pendingTxId || "",
+      transaksi_id: pendingTxId || preInputData?.transaksi_id || ("TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5)),
       admin_id_pencatat: session.user_id,
       outlet_id_input: activeOutletId,
+      activeOutletId: activeOutletId,
+      outlet_id: activeOutletId,
       tipe_produk: jenisLayanan === "Express" ? tipeProdukExp : tipeProdukCrg,
       
       // Weight & Volume
@@ -748,26 +984,45 @@ export default function TransaksiPage({
       kelengkapan_motor: finalKelengkapan || undefined,
 
       biaya_lain: biayaLain,
-      biaya_asuransi: biayaAsuransi,
       ongkir_dasar: ongkirDasar,
+      biaya_asuransi: biayaAsuransi,
       biaya_yoyi: jenisLayanan === "Express" ? biayaDasarLayanan : 0,
       biaya_jtc: jenisLayanan === "Cargo" ? biayaDasarLayanan : 0,
-      total_dibayar_customer: totalUangDibayarCustomer,
-      pembulatan: pembulatan,
+
+      // Explicit payment & surcharge fields
       metode_bayar: metodeBayar,
+      metode_pembayaran_ongkir: metodeBayar,
       bukti_bayar_url: buktiBayarUrl,
 
-      // Additional costs Surcharge group
       biaya_amplop: biayaAmplop,
+      biayaAmplop: biayaAmplop,
+      amplop: biayaAmplop,
       biaya_packing: biayaPacking,
+      biayaPacking: biayaPacking,
+      packing: biayaPacking,
+      metode_pembayaran_tambahan: aktifkanBiayaTambahan ? metodeBayarTambahan : "",
       metode_bayar_tambahan: aktifkanBiayaTambahan ? metodeBayarTambahan : "",
       bukti_tambahan_url: aktifkanBiayaTambahan ? buktiTambahanUrl : "",
+
+      jumlah_dibayar_customer: totalUangDibayarCustomer,
+      total_dibayar_customer: totalUangDibayarCustomer,
+      pembulatan: pembulatan,
 
       grand_total: grandTotal,
       setoran_ke_owner: setoranKeOwner,
       kas_operasional: kasOperasional,
+      kas_outlet: kasOperasional,
       foto_paket_url: finalFotoPaketUrl || undefined,
-      foto_resi_url: finalFotoResiUrl || undefined
+      foto_resi_url: finalFotoResiUrl || undefined,
+
+      // Customer / Snapshot
+      nama_pengirim: activeSender || "Umum",
+      hp_pengirim: activeSenderHp,
+      alamat_pengirim: activeSenderAddr,
+      nama_penerima: activeReceiver || "Umum",
+      hp_penerima: activeReceiverHp,
+      alamat_penerima: activeReceiverAddr,
+      nama_barang: activeItem || "Paket"
     };
 
     try {
@@ -781,16 +1036,26 @@ export default function TransaksiPage({
         // Remove local pre-input reference
         localStorage.removeItem("pending_transaksi_id"); 
         
+        // Refresh Recent Activity and Draft Queue immediately
+        fetchRecentActivities();
+        fetchQueue();
+
         // Show success sheet instead of immediate reset
         setSuccessSheet({ resi: (resiId || "").trim().toUpperCase(), total: grandTotal });
         setCountdown(5);
       } else {
         const msg = response.message || "Gagal menyimpan transaksi.";
+        if (msg.includes("RESI SUDAH TERDAFTAR") || msg.includes("duplikat")) {
+          setResiDuplicateError(true);
+        }
         setFormError(msg);
         toast.error(msg);
       }
     } catch (e: any) {
       const msg = e.message || "Terjadi kesalahan koneksi saat menyimpan transaksi.";
+      if (msg.includes("RESI SUDAH TERDAFTAR") || msg.includes("duplikat")) {
+        setResiDuplicateError(true);
+      }
       setFormError(msg);
       toast.error(msg);
     }
@@ -902,16 +1167,24 @@ export default function TransaksiPage({
   }, [isAllStepsValid, loading, successSheet, activeDraftIndex, draftQueue, onNavigate, fotoPaketUrl, fotoPaketPreview, fotoResiUrl, fotoResiPreview, resiId, resiDuplicateError, ongkirDasar, totalUangDibayarCustomer, biayaDasarLayanan, metodeBayar, buktiBayarUrl]);
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-6">
+    <div className="w-full max-w-[1600px] mx-auto px-3 sm:px-6 py-5">
 
       {/* HEADER SECTION */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-6 mb-6">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <span className="bg-red-50 text-[#E4002B] text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest font-mono">
-              MODUL KEUANGAN & RESI
-            </span>
-            <h1 className="text-2xl font-bold text-gray-800 font-sans mt-2">
+            <div className="flex items-center gap-2">
+              <span className="bg-red-50 text-[#E4002B] text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-widest font-mono">
+                MODUL KEUANGAN & RESI
+              </span>
+              {yoyiQueue.length > 0 && (
+                <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
+                  {yoyiQueue.length} Antrian YoYi
+                </span>
+              )}
+            </div>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800 font-sans mt-2">
               Kalkulator Finansial & Input Resi
             </h1>
             <p className="text-xs text-gray-500 mt-0.5">
@@ -920,40 +1193,56 @@ export default function TransaksiPage({
           </div>
 
           {/* LOKASI TUGAS OVERRIDE */}
-          <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 flex flex-col gap-1 sm:min-w-[240px]">
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">
-              Lokasi Tugas Aktif:
-            </span>
-            <select
-              value={activeOutletId}
-              onChange={(e) => onChangeActiveOutlet(e.target.value)}
-              className="bg-white border border-gray-200 rounded-lg text-xs py-1.5 px-2.5 font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button 
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setIsYoYiModalOpen(true);
+              }}
+              className="relative z-20 bg-white border border-[#E4002B] text-[#E4002B] hover:bg-red-50 text-xs px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
-              {outlets.map((o) => (
-                <option key={o.outlet_id} value={o.outlet_id}>
-                  {o.nama_outlet}
-                </option>
-              ))}
-            </select>
+              <Download className="w-4 h-4" /> Import YoYi
+            </button>
+
+            <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-200 flex flex-col gap-0.5 sm:min-w-[220px]">
+              <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider font-mono">
+                Lokasi Tugas Aktif:
+              </span>
+              <select
+                value={activeOutletId}
+                onChange={(e) => onChangeActiveOutlet(e.target.value)}
+                className="bg-transparent text-xs py-0.5 font-semibold text-gray-700 focus:outline-none cursor-pointer"
+              >
+                {outlets.map((o) => (
+                  <option key={o.outlet_id} value={o.outlet_id}>
+                    {o.nama_outlet}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
 
-      {formError && (
-        <div className="mb-6 p-4 bg-red-50 border-l-4 border-[#E4002B] rounded-r-xl flex items-start gap-2 text-red-800 text-sm">
-          <AlertTriangle className="h-5 w-5 shrink-0 text-[#E4002B] mt-0.5" />
-          <div>
-            <p className="font-semibold">Kesalahan Validasi</p>
-            <p className="text-xs opacity-90 mt-0.5">{formError}</p>
-          </div>
-        </div>
-      )}
+      {/* 2-COLUMN MAIN LAYOUT (Kiri: Formulir & Kalkulator, Kanan: Sidebar Antrian YoYi & Riwayat) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
-      {/* RENDER TRANSACTION CALCULATOR FORM */}
-      <div className="space-y-6">
+        {/* KOLOM UTAMA (KIRI) */}
+        <div className="lg:col-span-7 xl:col-span-8 space-y-6">
 
-        {/* PHASE 15.2 - PROGRESS INDICATOR OPERASIONAL */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          {formError && (
+            <div className="p-4 bg-red-50 border-l-4 border-[#E4002B] rounded-r-xl flex items-start gap-2 text-red-800 text-sm shadow-xs">
+              <AlertTriangle className="h-5 w-5 shrink-0 text-[#E4002B] mt-0.5" />
+              <div>
+                <p className="font-semibold">Kesalahan Validasi</p>
+                <p className="text-xs opacity-90 mt-0.5">{formError}</p>
+              </div>
+            </div>
+          )}
+
+          {/* PHASE 15.2 - PROGRESS INDICATOR OPERASIONAL */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <div className="flex items-center justify-between gap-1 sm:gap-2 text-center overflow-x-auto pb-2">
             {[
               { label: "Draft", done: true, active: false },
@@ -1335,9 +1624,13 @@ export default function TransaksiPage({
                   <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     
                     {/* CARD FOTO PAKET */}
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div 
+                      className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 focus-within:ring-2 focus-within:ring-[#E4002B]/30 outline-none"
+                      onPaste={(e) => handlePasteImage(e, "paket")}
+                      tabIndex={0}
+                    >
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Fisik Paket</span>
+                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Fisik Paket <span className="font-normal text-[9px] text-gray-500 ml-1">(Klik area ini lalu Ctrl+V untuk Paste)</span></span>
                         {(fotoPaketPreview || fotoPaketUrl) && (
                           <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded">
                             ✓ Siap Upload
@@ -1395,9 +1688,13 @@ export default function TransaksiPage({
                     </div>
 
                     {/* CARD FOTO RESI */}
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div 
+                      className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2 focus-within:ring-2 focus-within:ring-[#E4002B]/30 outline-none"
+                      onPaste={(e) => handlePasteImage(e, "resi")}
+                      tabIndex={0}
+                    >
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Resi Pada Paket</span>
+                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Resi Pada Paket <span className="font-normal text-[9px] text-gray-500 ml-1">(Klik area ini lalu Ctrl+V untuk Paste)</span></span>
                         {(fotoResiPreview || fotoResiUrl) && (
                           <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded">
                             ✓ Siap Upload
@@ -2095,6 +2392,229 @@ export default function TransaksiPage({
           </div>
 
         </div>
+        {/* End of Left / Main Column */}
+
+        {/* SIDEBAR COLUMN (KANAN): Antrian YoYi & Riwayat Transaksi Terbaru */}
+        <div className="lg:col-span-5 xl:col-span-4 space-y-6 lg:sticky lg:top-4">
+
+          {/* 1. KARTU ANTRIAN YOYI (DRAFT SELECTOR) */}
+          <div className="bg-white rounded-2xl shadow-sm border border-orange-200 overflow-hidden">
+            <div className="px-4 py-3.5 bg-orange-50/90 border-b border-orange-200/80 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="bg-orange-100 p-1.5 rounded-lg text-orange-600">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-xs sm:text-sm text-gray-900">Draft YoYi ({yoyiQueue.length})</h3>
+                  <p className="text-[10px] text-gray-500 font-medium">Klik untuk isi ke form</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {yoyiQueue.length > 0 && (
+                  <button 
+                    type="button"
+                    onClick={handleClearAllYoYi} 
+                    className="text-[10px] text-slate-500 hover:text-red-600 bg-white hover:bg-red-50 border border-slate-200 hover:border-red-200 px-2 py-1 rounded-lg font-semibold transition-colors cursor-pointer"
+                    title="Kosongkan semua draft antrian"
+                  >
+                    Hapus Semua
+                  </button>
+                )}
+                <button 
+                  type="button"
+                  onClick={() => setIsYoYiModalOpen(true)}
+                  className="text-[11px] bg-orange-500 hover:bg-orange-600 text-white px-2.5 py-1.5 rounded-lg font-bold shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>+ Import</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3 max-h-[380px] overflow-y-auto space-y-2.5">
+              {yoyiQueue.length === 0 ? (
+                <div className="py-7 px-4 text-center">
+                  <div className="w-9 h-9 mx-auto mb-2 rounded-full bg-orange-50 text-orange-400 flex items-center justify-center">
+                    <Layers className="w-4.5 h-4.5" />
+                  </div>
+                  <p className="text-xs font-semibold text-gray-700">Tidak ada antrian draft YoYi</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5 mb-3">Impor paket dari teks YoYi untuk isi otomatis form</p>
+                  <button
+                    type="button"
+                    onClick={() => setIsYoYiModalOpen(true)}
+                    className="text-xs text-orange-600 bg-orange-50 hover:bg-orange-100 border border-orange-200 font-bold px-3 py-1.5 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Import Data YoYi</span>
+                  </button>
+                </div>
+              ) : (
+                yoyiQueue.map(q => (
+                  <div 
+                    key={q.queue_id} 
+                    className="p-3 border rounded-xl text-xs flex flex-col gap-1.5 transition-all bg-white border-orange-100 hover:border-orange-300 shadow-xs"
+                  >
+                    <div className="flex justify-between items-start font-bold text-gray-800">
+                      <span className="tracking-wide text-xs font-mono text-slate-900 font-bold">{q.resi}</span>
+                      <span className="text-[#d50000] font-bold text-xs">
+                        Rp {(q.parsed_data.total_yoyi || q.parsed_data.ongkir_dasar || 0).toLocaleString("id-ID")}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-gray-600 flex items-center gap-1.5 overflow-hidden">
+                      <span className="truncate font-medium text-slate-700 max-w-[45%]" title={q.parsed_data.nama_pengirim || "Pengirim"}>
+                        {q.parsed_data.nama_pengirim || "Pengirim"}
+                      </span>
+                      <span className="text-gray-400 font-bold shrink-0">→</span>
+                      <span className="truncate font-semibold text-slate-900 max-w-[45%]" title={q.parsed_data.nama_penerima || "Penerima"}>
+                        {q.parsed_data.nama_penerima || "Penerima"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] text-gray-500 pt-0.5">
+                      <span className="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-medium">
+                        {q.parsed_data.tipe_produk || "EZ"} {q.parsed_data.berat_kg ? `• ${q.parsed_data.berat_kg} kg` : ""}
+                      </span>
+                      <span className="text-orange-600 font-semibold">
+                        {q.parsed_data.metode_perhitungan || "Normal"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-end gap-2 mt-1.5 pt-1.5 border-t border-slate-100">
+                      <button 
+                        type="button"
+                        onClick={() => handleRemoveYoYi(q.queue_id)} 
+                        title="Hapus Draft"
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          handleApplyYoYiToForm(q.parsed_data);
+                        }} 
+                        className="inline-flex items-center gap-1 text-[11px] bg-[#E4002B] hover:bg-[#c20023] text-white px-3 py-1 rounded-lg font-bold shadow-xs transition-colors cursor-pointer"
+                      >
+                        <ArrowRight className="w-3 h-3" />
+                        <span>Pilih / Isi ke Form</span>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* 2. KARTU RIWAYAT TRANSAKSI TERBARU */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3.5 bg-gray-50/90 border-b border-gray-200 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-red-50 text-[#E4002B] flex items-center justify-center font-bold">
+                  <History className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-black text-gray-900 tracking-tight">Riwayat Transaksi</h3>
+                  <p className="text-[10px] text-gray-500 font-medium">Transaksi tersimpan di database</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => fetchRecentActivities()}
+                  disabled={loadingRecent}
+                  className="p-1.5 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-1 cursor-pointer shadow-xs disabled:opacity-50"
+                  title="Segarkan Riwayat"
+                >
+                  <RefreshCw className={`h-3 w-3 ${loadingRecent ? "animate-spin text-[#E4002B]" : ""}`} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("riwayat-transaksi")}
+                  className="px-2 py-1 text-[11px] font-bold text-[#E4002B] bg-red-50 border border-red-200/60 rounded-lg hover:bg-red-100/70 transition-colors flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Semua</span>
+                  <ExternalLink className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3 max-h-[440px] overflow-y-auto space-y-2">
+              {loadingRecent && recentActivities.length === 0 ? (
+                <div className="py-8 text-center text-gray-400 text-xs flex flex-col items-center justify-center gap-2">
+                  <RefreshCw className="h-5 w-5 animate-spin text-[#E4002B]" />
+                  <span>Memuat riwayat transaksi...</span>
+                </div>
+              ) : recentActivities.length === 0 ? (
+                <div className="py-7 text-center text-gray-400 text-xs">
+                  Belum ada transaksi tersimpan untuk outlet ini hari ini.
+                </div>
+              ) : (
+                recentActivities.map((tx: any, idx: number) => {
+                  const resi = tx.resi_id || tx.no_resi || tx.id || "-";
+                  const formattedTime = tx.timestamp 
+                    ? new Date(tx.timestamp).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+                    : "-";
+                  const pengirim = tx.pengirim || tx.snapshot_nama_pengirim || "-";
+                  const penerima = tx.penerima || tx.snapshot_nama_penerima || "-";
+                  const grandTotal = Number(tx.grand_total || tx.total_bayar || tx.total_customer_bayar || 0);
+                  const tipe = tx.tipe || tx.jenis_layanan || "Express";
+                  const status = tx.status_resi || tx.status || "AKTIF";
+                  const metode = tx.metode_bayar || tx.metode_pembayaran_ongkir || "Tunai";
+
+                  return (
+                    <div 
+                      key={tx.transaksi_id || resi || idx} 
+                      className="p-3 border border-gray-100 rounded-xl bg-white hover:border-gray-200 hover:shadow-xs transition-all space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono font-bold text-xs text-gray-900 tracking-tight">{resi}</span>
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold ${
+                          status === "BATAL" || status === "Dibatalkan"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-green-100 text-green-700"
+                        }`}>
+                          {status}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-gray-600">
+                        <span className="truncate max-w-[45%]" title={pengirim}>{pengirim}</span>
+                        <span className="text-gray-300 font-bold">→</span>
+                        <span className="truncate max-w-[45%] font-medium text-gray-800" title={penerima}>{penerima}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-gray-50 text-[10px]">
+                        <div className="flex items-center gap-1.5 text-gray-500">
+                          <span className={`px-1.5 py-0.2 rounded font-bold ${
+                            tipe.toLowerCase().includes("cargo") 
+                              ? "bg-amber-50 text-amber-700 border border-amber-200" 
+                              : "bg-blue-50 text-blue-700 border border-blue-200"
+                          }`}>
+                            {tipe}
+                          </span>
+                          <span>•</span>
+                          <span>{metode}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-0.5 font-mono text-gray-400">
+                            <Clock className="w-2.5 h-2.5" />
+                            {formattedTime}
+                          </span>
+                        </div>
+                        <span className="font-mono font-bold text-[#E4002B] text-xs">
+                          Rp {grandTotal.toLocaleString("id-ID")}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+        </div>
+        {/* End of Sidebar Column */}
+
+      </div>
+      {/* End of Grid */}
 
       {/* Form Ends Here */}
 
@@ -2124,12 +2644,12 @@ export default function TransaksiPage({
                   type="button"
                   onClick={() => {
                     setSuccessSheet(null);
-                    onNavigate("dashboard");
+                    onNavigate("riwayat-transaksi");
                   }}
                   className="w-full py-3.5 bg-white border border-gray-300 text-gray-700 font-bold rounded-xl shadow-sm hover:bg-gray-50 transition-colors cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <span className="text-sm">Dashboard</span>
-                  <span className="hidden sm:inline text-[9px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 font-mono">Esc</span>
+                  <History className="h-4 w-4 text-gray-500" />
+                  <span className="text-sm">Riwayat Transaksi</span>
                 </button>
                 <button
                   type="button"
@@ -2153,6 +2673,14 @@ export default function TransaksiPage({
         </div>
       )}
 
+
+      <ImportYoYiModal 
+        isOpen={isYoYiModalOpen} 
+        onClose={() => setIsYoYiModalOpen(false)} 
+        activeOutletId={activeOutletId} 
+        adminId={session?.user_id || session?.username || ""} 
+        onApplyToForm={handleApplyYoYiToForm}
+      />
     </div>
   );
 }
