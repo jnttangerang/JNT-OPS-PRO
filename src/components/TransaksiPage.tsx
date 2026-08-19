@@ -120,11 +120,20 @@ export default function TransaksiPage({
     const receiverName = rawReceiver || "Umum";
     const itemName = rawItem || "Paket";
 
+    if (!activeOutletId) {
+      toast.error("Pilih Outlet Aktif tugas terlebih dahulu!");
+      return;
+    }
+    if (!session?.user_id) {
+      toast.error("Session admin login tidak ditemukan. Silakan login kembali.");
+      return;
+    }
+
     const syntheticPreInput: PreInputBackup = {
       transaksi_id: txId,
       timestamp: new Date().toISOString(),
-      admin_id: session?.user_id || session?.username || "ADMIN",
-      outlet_id_tugas: activeOutletId || "OUT-001",
+      admin_id: session.user_id,
+      outlet_id_tugas: activeOutletId,
       nama_pengirim: senderName,
       hp_pengirim: senderHp,
       alamat_pengirim: senderAddress,
@@ -150,8 +159,8 @@ export default function TransaksiPage({
     try {
       await callBackend("savePreInput", {
         transaksi_id: txId,
-        admin_id: session?.user_id || "ADMIN",
-        outlet_id_tugas: activeOutletId || "OUT-001",
+        admin_id: session.user_id,
+        outlet_id_tugas: activeOutletId,
         nama_pengirim: senderName,
         hp_pengirim: senderHp,
         alamat_pengirim: senderAddress,

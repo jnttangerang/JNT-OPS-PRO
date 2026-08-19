@@ -36,16 +36,16 @@ export interface YoYiImportQueueItem {
 interface ImportYoYiModalProps {
   isOpen: boolean;
   onClose: () => void;
-  activeOutletId?: string;
-  adminId?: string;
+  activeOutletId: string;
+  adminId: string;
   onApplyToForm: (data: YoYiParsedData) => void;
 }
 
 export default function ImportYoYiModal({ 
   isOpen, 
   onClose, 
-  activeOutletId = "OUT-001", 
-  adminId = "ADMIN", 
+  activeOutletId, 
+  adminId, 
   onApplyToForm
 }: ImportYoYiModalProps) {
   const { callBackend, loading } = useAppsScript();

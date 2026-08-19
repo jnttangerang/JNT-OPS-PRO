@@ -264,7 +264,7 @@ const initialDb = {
       password_hash: "hash_admin123",
       role: "ADMIN",
       outlet_id_home: "OUT-001",
-      nama_lengkap: "Siti Aminah (Karawaci)",
+      nama_lengkap: "Admin Balaraja (OUT-001)",
       status_aktif: "AKTIF",
       no_wa: "08111111111"
     },
@@ -274,7 +274,7 @@ const initialDb = {
       password_hash: "hash_admin123",
       role: "ADMIN",
       outlet_id_home: "OUT-002",
-      nama_lengkap: "Budi Santoso (Cikokol)",
+      nama_lengkap: "Admin Jayanti (OUT-002)",
       status_aktif: "AKTIF",
       no_wa: "08222222222"
     },
@@ -292,12 +292,12 @@ const initialDb = {
   Outlets: [
     {
       outlet_id: "OUT-001",
-      nama_outlet: "J&T Express - Tangerang Karawaci",
+      nama_outlet: "J&T Pasir Jaha Balaraja",
       kode_outlet: "TGR01",
       no_wa_outlet: "081234567890",
-      alamat_outlet: "Jl. Karawaci Raya No.12, Karawaci, Tangerang",
-      latitude: -6.2088,
-      longitude: 106.634,
+      alamat_outlet: "Jl. Raya Serang Km 24, Pasir Jaha, Balaraja, Tangerang",
+      latitude: -6.1944,
+      longitude: 106.467,
       radius_operasional: 50,
       status_aktif: "AKTIF",
       target_express: 25,
@@ -305,29 +305,16 @@ const initialDb = {
     },
     {
       outlet_id: "OUT-002",
-      nama_outlet: "J&T Express - Tangerang Cikokol",
+      nama_outlet: "J&T Jayanti Cikande",
       kode_outlet: "TGR02",
       no_wa_outlet: "081234567891",
-      alamat_outlet: "Jl. M.H. Thamrin No.8, Cikokol, Tangerang",
+      alamat_outlet: "Jl. Raya Serang Km 32, Jayanti, Cikande, Tangerang",
       latitude: -6.2155,
       longitude: 106.638,
       radius_operasional: 50,
       status_aktif: "AKTIF",
       target_express: 20,
       target_cargo: 10
-    },
-    {
-      outlet_id: "OUT-003",
-      nama_outlet: "J&T Cargo - Tangerang Balaraja",
-      kode_outlet: "TGR03",
-      no_wa_outlet: "081234567892",
-      alamat_outlet: "Jl. Raya Serang Km 24, Balaraja, Tangerang",
-      latitude: -6.1944,
-      longitude: 106.467,
-      radius_operasional: 100,
-      status_aktif: "AKTIF",
-      target_express: 15,
-      target_cargo: 30
     }
   ],
   SystemSettings: {
@@ -342,262 +329,12 @@ const initialDb = {
     folder_bukti_transfer_admin_owner: "",
     folder_bukti_transfer_owner_dp: ""
   },
-  Master_Customer: [
-    {
-      customer_id: "CST-001",
-      nama_pengirim: "Andi Wijaya",
-      no_hp: "081234567890",
-      alamat_pengirim: "Jl. Imam Bonjol No.45, Karawaci, Tangerang",
-      outlet_id: "OUT-001",
-      last_updated: "2026-07-04T12:00:00.000Z"
-    },
-    {
-      customer_id: "CST-002",
-      nama_pengirim: "Rina Kartika",
-      no_hp: "087799887766",
-      alamat_pengirim: "Perumahan Cikokol Indah Blok B5/10, Cikokol, Tangerang",
-      outlet_id: "OUT-002",
-      last_updated: "2026-07-04T13:30:00.000Z"
-    },
-    {
-      customer_id: "CST-003",
-      nama_pengirim: "CV Sinar Mandiri",
-      no_hp: "0215551234",
-      alamat_pengirim: "Kawasan Industri Balaraja Mas Blok C3, Balaraja, Tangerang",
-      outlet_id: "OUT-003",
-      last_updated: "2026-07-04T14:15:00.000Z"
-    }
-  ],
-  Riwayat_Penerima: [
-    {
-      id: "REC-001",
-      customer_id: "CST-001",
-      nama_penerima: "Dewi Lestari",
-      no_hp_penerima: "085211223344",
-      alamat_penerima: "Jl. Sudirman No.99, Kebayoran Baru, Jakarta Selatan",
-      tanggal_terakhir_kirim: "2026-07-04T12:05:00.000Z"
-    },
-    {
-      id: "REC-002",
-      customer_id: "CST-001",
-      nama_penerima: "Eko Prasetyo",
-      no_hp_penerima: "081944556677",
-      alamat_penerima: "Jl. Diponegoro No.12, Menteng, Jakarta Pusat",
-      tanggal_terakhir_kirim: "2026-07-03T10:00:00.000Z"
-    },
-    {
-      id: "REC-003",
-      customer_id: "CST-002",
-      nama_penerima: "Farhan Siregar",
-      no_hp_penerima: "081399881122",
-      alamat_penerima: "Ruko Sentra Niaga Blok F-12, Manyar, Surabaya, Jawa Timur",
-      tanggal_terakhir_kirim: "2026-07-04T13:35:00.000Z"
-    },
-    {
-      id: "REC-004",
-      customer_id: "CST-003",
-      nama_penerima: "Toko Abadi Jaya",
-      no_hp_penerima: "081122334455",
-      alamat_penerima: "Jl. Malioboro No.87, Sosromenduran, Gedong Tengen, Yogyakarta",
-      tanggal_terakhir_kirim: "2026-07-04T14:20:00.000Z"
-    }
-  ],
-  PreInput_Backup: [
-    {
-      transaksi_id: "TRX-1719999001",
-      timestamp: "2026-07-04T14:00:00.000Z",
-      admin_id: "USR-001",
-      outlet_id_tugas: "OUT-001",
-      nama_pengirim: "Andi Wijaya",
-      hp_pengirim: "081234567890",
-      alamat_pengirim: "Jl. Imam Bonjol No.45, Karawaci, Tangerang",
-      nama_penerima: "Dewi Lestari",
-      hp_penerima: "085211223344",
-      alamat_penerima: "Jl. Sudirman No.99, Kebayoran Baru, Jakarta Selatan",
-      nama_barang: "Dokumen Kontrak Kerja",
-      dasar_berat: "TIMBANGAN",
-      berat_kg: 0.5,
-      volume: "30 x 20 x 1",
-      nilai_barang: 100000,
-      foto_paket_url: "/uploads/seed_paket_doc.jpg",
-      status: "SELESAI",
-      catatan_admin: ""
-    },
-    {
-      transaksi_id: "TRX-1719999002",
-      timestamp: "2026-07-04T15:30:00.000Z",
-      admin_id: "USR-002",
-      outlet_id_tugas: "OUT-002",
-      nama_pengirim: "Rina Kartika",
-      hp_pengirim: "087799887766",
-      alamat_pengirim: "Perumahan Cikokol Indah Blok B5/10, Cikokol, Tangerang",
-      nama_penerima: "Farhan Siregar",
-      hp_penerima: "081399881122",
-      alamat_penerima: "Ruko Sentra Niaga Blok F-12, Manyar, Surabaya, Jawa Timur",
-      nama_barang: "Kosmetik & Skincare",
-      dasar_berat: "TIMBANGAN",
-      berat_kg: 2,
-      volume: "20 x 15 x 10",
-      nilai_barang: 350000,
-      foto_paket_url: "/uploads/seed_paket_cosmetic.jpg",
-      status: "SELESAI",
-      catatan_admin: ""
-    },
-    {
-      transaksi_id: "TRX-1719999003",
-      timestamp: "2026-07-04T16:15:00.000Z",
-      admin_id: "USR-002",
-      outlet_id_tugas: "OUT-003", // admin diperbantukan ke Balaraja
-      nama_pengirim: "CV Sinar Mandiri",
-      hp_pengirim: "0215551234",
-      alamat_pengirim: "Kawasan Industri Balaraja Mas Blok C3, Balaraja, Tangerang",
-      nama_penerima: "Toko Abadi Jaya",
-      hp_penerima: "081122334455",
-      alamat_penerima: "Jl. Malioboro No.87, Sosromenduran, Gedong Tengen, Yogyakarta",
-      nama_barang: "Sparepart Mesin Bubut",
-      dasar_berat: "TIMBANGAN",
-      berat_kg: 45,
-      volume: "60 x 50 x 40",
-      nilai_barang: 2500000,
-      foto_paket_url: "/uploads/seed_paket_cargo.jpg",
-      status: "SELESAI",
-      catatan_admin: ""
-    },
-    {
-      transaksi_id: "TRX-1719999004",
-      timestamp: "2026-07-04T18:00:00.000Z",
-      admin_id: "USR-001",
-      outlet_id_tugas: "OUT-001",
-      nama_pengirim: "Andi Wijaya",
-      hp_pengirim: "081234567890",
-      alamat_pengirim: "Jl. Imam Bonjol No.45, Karawaci, Tangerang",
-      nama_penerima: "Eko Prasetyo",
-      hp_penerima: "081944556677",
-      alamat_penerima: "Jl. Diponegoro No.12, Menteng, Jakarta Pusat",
-      nama_barang: "Pakaian Anak-anak",
-      dasar_berat: "TIMBANGAN",
-      berat_kg: 1.5,
-      volume: "25 x 18 x 5",
-      nilai_barang: 200000,
-      foto_paket_url: "",
-      status: "PENDING",
-      catatan_admin: ""
-    }
-  ],
-  EXP_Resi: [
-    {
-      resi_id: "JT12345678901",
-      transaksi_id: "TRX-1719999001",
-      timestamp: "2026-07-04T14:10:00.000Z",
-      admin_id_pencatat: "USR-001",
-      outlet_id_input: "OUT-001",
-      tipe_produk: "DOC",
-      biaya_lain: 1000,
-      biaya_asuransi: 200,
-      ongkir_dasar: 11000,
-      biaya_yoyi: 12200,
-      total_dibayar_customer: 13000,
-      pembulatan: 800,
-      metode_bayar: "Tunai",
-      bukti_bayar_url: "",
-      biaya_amplop: 2000,
-      biaya_packing: 3000,
-      metode_bayar_tambahan: "Tunai",
-      bukti_tambahan_url: "",
-      grand_total: 18000,
-      setoran_ke_owner: 13000,
-      kas_operasional: 5000
-    },
-    {
-      resi_id: "JT12345678902",
-      transaksi_id: "TRX-1719999002",
-      timestamp: "2026-07-04T15:45:00.000Z",
-      admin_id_pencatat: "USR-002",
-      outlet_id_input: "OUT-002",
-      tipe_produk: "EZ",
-      biaya_lain: 0,
-      biaya_asuransi: 700,
-      ongkir_dasar: 22000,
-      biaya_yoyi: 22700,
-      total_dibayar_customer: 23000,
-      pembulatan: 300,
-      metode_bayar: "QRIS",
-      bukti_bayar_url: "/uploads/bukti_bayar_seed1.jpg",
-      biaya_amplop: 0,
-      biaya_packing: 0,
-      metode_bayar_tambahan: "",
-      bukti_tambahan_url: "",
-      grand_total: 23000,
-      setoran_ke_owner: 23000,
-      kas_operasional: 0
-    }
-  ],
-  CRG_Resi: [
-    {
-      resi_id: "JTC98765432101",
-      transaksi_id: "TRX-1719999003",
-      timestamp: "2026-07-04T16:30:00.000Z",
-      admin_id_pencatat: "USR-002",
-      outlet_id_input: "OUT-003",
-      tipe_produk: "FastTrack",
-      biaya_asuransi: 5000,
-      ongkir_dasar: 180000,
-      biaya_jtc: 185000,
-      total_dibayar_customer: 185000,
-      pembulatan: 0,
-      metode_bayar: "Transfer",
-      bukti_bayar_url: "/uploads/bukti_bayar_seed2.jpg",
-      biaya_amplop: 0,
-      biaya_packing: 15000,
-      metode_bayar_tambahan: "Tunai",
-      bukti_tambahan_url: "",
-      grand_total: 200000,
-      setoran_ke_owner: 185000,
-      kas_operasional: 15000
-    }
-  ],
-  AuditLogs: [
-    {
-      log_id: "LOG-001",
-      timestamp: "2026-07-04T12:00:00.000Z",
-      user_id: "USR-001",
-      aksi: "LOGIN",
-      detail: "Admin 'Siti Aminah' berhasil login.",
-      outlet_id: "OUT-001"
-    },
-    {
-      log_id: "LOG-002",
-      timestamp: "2026-07-04T14:02:00.000Z",
-      user_id: "USR-001",
-      aksi: "PREINPUT_SIMPAN",
-      detail: "Menyimpan data awal pre-input untuk pengirim 'Andi Wijaya' ke penerima 'Dewi Lestari' (TRX-1719999001)",
-      outlet_id: "OUT-001"
-    },
-    {
-      log_id: "LOG-003",
-      timestamp: "2026-07-04T14:12:00.000Z",
-      user_id: "USR-001",
-      aksi: "TRANSAKSI_SIMPAN",
-      detail: "Menyimpan resi Express 'JT12345678901' (DOC) untuk TRX-1719999001. Grand Total: Rp 18.000",
-      outlet_id: "OUT-001"
-    },
-    {
-      log_id: "LOG-004",
-      timestamp: "2026-07-04T15:47:00.000Z",
-      user_id: "USR-002",
-      aksi: "TRANSAKSI_SIMPAN",
-      detail: "Menyimpan resi Express 'JT12345678902' (EZ) untuk TRX-1719999002. Grand Total: Rp 23.000",
-      outlet_id: "OUT-002"
-    },
-    {
-      log_id: "LOG-005",
-      timestamp: "2026-07-04T16:32:00.000Z",
-      user_id: "USR-002",
-      aksi: "TRANSAKSI_SIMPAN",
-      detail: "Menyimpan resi Cargo 'JTC98765432101' (FastTrack) untuk TRX-1719999003. Grand Total: Rp 200.000",
-      outlet_id: "OUT-003"
-    }
-  ],
+  Master_Customer: [],
+  Riwayat_Penerima: [],
+  PreInput_Backup: [],
+  EXP_Resi: [],
+  CRG_Resi: [],
+  AuditLogs: [],
   MASTER_TRANSAKSI: [],
   MASTER_PENGIRIMAN: []
 };
@@ -1531,6 +1268,8 @@ const UTILITY_ACTIONS = new Set([
   "getAuditTrailByTransaction",
   "getAuditTrailByCustomer",
   "getAuditTrailByImport",
+  "reconstructTransactionHistory",
+  "reconstructHistory",
   "auditTransaction",
   "getAuditData",
   "updateAuditDecision",
@@ -1543,7 +1282,57 @@ const UTILITY_ACTIONS = new Set([
   "control",
   "workflow",
   "intelligence",
-  "management-review"
+  "management-review",
+  "searchCustomer",
+  "getRiwayatPenerima",
+  "checkDuplicateResi",
+  "deletePreInputDraft",
+  "saveDataPreInput",
+  "savePreInput",
+  "getPreInputDrafts",
+  "updatePreInputStatus",
+  "getPreInput",
+  "getPreInputDetails",
+  "getCustomerHistory",
+  "getBukuPengirim",
+  "getBukuPenerima",
+  "deleteBulkCustomers",
+  "updateCustomer",
+  "getCustomersMaster",
+  "getCustomerDetailFull",
+  "getAdminDashboardData",
+  "getDashboardData",
+  "getRiwayatTransaksi",
+  "deleteTransaksi",
+  "getDetailTransaksi",
+  "updateTransaksi",
+  "getSetoranList",
+  "getSetoranDetail",
+  "createSetoran",
+  "approveSetoran",
+  "rejectSetoran",
+  "getReportingSummary",
+  "getReportingTransactions",
+  "getReportingSettlement",
+  "getReportingAudit",
+  "dailySummary",
+  "apiDailySummary",
+  "detectAnomalies",
+  "apiDetectAnomalies",
+  "askAssistant",
+  "apiAskAssistant",
+  "getKategoriKeuangan",
+  "saveKategoriKeuangan",
+  "updateKategoriKeuangan",
+  "setKategoriAktif",
+  "getKeuanganOutlet",
+  "saveKeuanganOutlet",
+  "updateKeuanganOutlet",
+  "deleteKeuanganOutlet",
+  "getAllData",
+  "getStatistik",
+  "getOutlets",
+  "getUsers"
 ]);
 
 app.use("/api/:action", async (req, res, next) => {
@@ -2514,7 +2303,7 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
     catatan: preInputObj.catatan_admin
   });
 
-  console.log("DB KEYS BEFORE WRITE:", Object.keys(db));
+  
 
   writeDb(db);
 
