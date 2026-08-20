@@ -5737,8 +5737,8 @@ app.post("/api/setKategoriAktif", handleSetKategoriAktif);
 
 // === KEUANGAN OUTLET (LEDGER) ENDPOINTS ===
 
-const handleGetKeuanganOutlet = (req: any, res: any) => {
-  const db = readDb();
+const handleGetKeuanganOutlet = async (req: any, res: any) => {
+  const db = await syncDbWithAppsScript(readDb());
   const params = { ...req.query, ...req.body };
   const list = db.KeuanganOutlet || [];
   const catList = db.MasterKategoriKeuangan || [];
@@ -6121,7 +6121,7 @@ async function syncDbWithAppsScript(db: any) {
   if (!appsScriptUrl || !appsScriptUrl.trim()) return db;
 
   try {
-    const [txRes, setoranRes] = await Promise.all([
+    const [txRes, setoranRes, keuanganRes] = await Promise.all([
       fetch(appsScriptUrl.trim(), {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -6131,6 +6131,11 @@ async function syncDbWithAppsScript(db: any) {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: "getSetoranList", data: {} })
+      }).then(r => r.json()).catch(() => null),
+      fetch(appsScriptUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "getKeuanganOutlet", data: {} })
       }).then(r => r.json()).catch(() => null)
     ]);
 
@@ -6165,6 +6170,11 @@ async function syncDbWithAppsScript(db: any) {
 
     if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
       db.Master_Setoran = setoranRes.data;
+    }
+
+    if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data)) {
+      db.KeuanganOutlet = keuanganRes.data;
+      writeDb(db);
     }
   } catch (e: any) {
     console.warn("syncDbWithAppsScript warning:", e.message);
