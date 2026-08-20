@@ -60,7 +60,7 @@ export function useAppsScript() {
     async <T = any>(action: string, params: any = {}): Promise<T> => {
       setLoading(true);
 
-      // Utility actions that are handled locally on Node/Express server (AI & vision processing)
+      // Utility actions that are handled locally on Node/Express server (AI & vision processing & local storage)
       const nodeOnlyActions = [
         "ping",
         "testConnection",
@@ -70,7 +70,17 @@ export function useAppsScript() {
         "analyzeReview",
         "askAssistant",
         "syncGoogleReviews",
-        "testDriveConnection"
+        "testDriveConnection",
+        "getKeuanganOutlet",
+        "saveKeuanganOutlet",
+        "updateKeuanganOutlet",
+        "deleteKeuanganOutlet",
+        "getKategoriKeuangan",
+        "saveKategoriKeuangan",
+        "updateKategoriKeuangan",
+        "deleteKategoriKeuangan",
+        "backfillKeuanganOutlet",
+        "apiBackfillKeuanganOutletFromTransactions"
       ];
       const isNodeOnlyAction = nodeOnlyActions.some((act) => action === act || action.startsWith(act + "/"));
 

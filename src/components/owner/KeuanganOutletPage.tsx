@@ -56,6 +56,9 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
   const [formBuktiUrl, setFormBuktiUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Modal View Bukti State
+  const [previewBuktiUrl, setPreviewBuktiUrl] = useState<string | null>(null);
+
   const [backfilling, setBackfilling] = useState(false);
 
   // Trigger Backfill Historis

@@ -447,7 +447,9 @@ const defaultKategoriKeuangan = [
   { id: "KAT-203", jenis: "PEMASUKAN", nama: "Insentif", aktif: true, urutan: 3, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
   { id: "KAT-204", jenis: "PEMASUKAN", nama: "Cashback", aktif: true, urutan: 4, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
   { id: "KAT-205", jenis: "PEMASUKAN", nama: "Pendapatan Lain", aktif: true, urutan: 5, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
-  { id: "KAT-206", jenis: "PEMASUKAN", nama: "Lainnya", aktif: true, urutan: 6, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" }
+  { id: "KAT-206", jenis: "PEMASUKAN", nama: "Lainnya", aktif: true, urutan: 6, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-207", jenis: "PEMASUKAN", nama: "Packing", aktif: true, urutan: 7, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" },
+  { id: "KAT-208", jenis: "PEMASUKAN", nama: "Amplop", aktif: true, urutan: 8, created_at: "2026-07-26T00:00:00.000Z", updated_at: "2026-07-26T00:00:00.000Z", created_by: "SYSTEM" }
 ];
 
 function normalizePhone(phone: any): string {
@@ -1195,7 +1197,15 @@ function readDb() {
           cleanList.push(item);
         }
       }
-      if (cleanList.length !== parsed.MasterKategoriKeuangan.length) {
+      // Ensure all standard default categories exist
+      for (const defCat of defaultKategoriKeuangan) {
+        if (!seenIds.has(defCat.id)) {
+          cleanList.push(defCat);
+          seenIds.add(defCat.id);
+          updated = true;
+        }
+      }
+      if (cleanList.length !== parsed.MasterKategoriKeuangan.length || updated) {
         parsed.MasterKategoriKeuangan = cleanList;
         updated = true;
       }
@@ -1217,6 +1227,81 @@ function readDb() {
         parsed[key] = [];
         updated = true;
       }
+    }
+
+    if (parsed.EXP_Resi.length === 0) {
+      const todayIso = new Date().toISOString();
+      parsed.EXP_Resi = [
+        {
+          resi_id: "JD0576839515",
+          timestamp: todayIso,
+          admin_id_pencatat: "USR-002",
+          outlet_id_input: "OUT-001",
+          nama_pengirim: "Budi Santoso",
+          no_hp_pengirim: "081298765432",
+          nama_penerima: "Dewi Lestari",
+          no_hp_penerima: "081312345678",
+          biaya_packing: 0,
+          biaya_amplop: 2000,
+          ongkir_dasar: 15000,
+          total_bayar: 17000,
+          metode_pembayaran_ongkir: "CASH",
+          status: "SELESAI",
+          status_resi: "VALID"
+        },
+        {
+          resi_id: "JD0578137440",
+          timestamp: todayIso,
+          admin_id_pencatat: "USR-002",
+          outlet_id_input: "OUT-001",
+          nama_pengirim: "Siti Rahma",
+          no_hp_pengirim: "081299887766",
+          nama_penerima: "Andi Wijaya",
+          no_hp_penerima: "081544332211",
+          biaya_packing: 0,
+          biaya_amplop: 2000,
+          ongkir_dasar: 12000,
+          total_bayar: 14000,
+          metode_pembayaran_ongkir: "CASH",
+          status: "SELESAI",
+          status_resi: "VALID"
+        },
+        {
+          resi_id: "JD0578248369",
+          timestamp: todayIso,
+          admin_id_pencatat: "USR-002",
+          outlet_id_input: "OUT-001",
+          nama_pengirim: "PT Jaya Mandiri",
+          no_hp_pengirim: "081122334455",
+          nama_penerima: "CV Sentosa",
+          no_hp_penerima: "081266778899",
+          biaya_packing: 15000,
+          biaya_amplop: 0,
+          ongkir_dasar: 45000,
+          total_bayar: 60000,
+          metode_pembayaran_ongkir: "CASH",
+          status: "SELESAI",
+          status_resi: "VALID"
+        },
+        {
+          resi_id: "JD0578077660",
+          timestamp: todayIso,
+          admin_id_pencatat: "USR-002",
+          outlet_id_input: "OUT-001",
+          nama_pengirim: "Rian Hidayat",
+          no_hp_pengirim: "081388990011",
+          nama_penerima: "Bambang Pamungkas",
+          no_hp_penerima: "081244556677",
+          biaya_packing: 15000,
+          biaya_amplop: 0,
+          ongkir_dasar: 30000,
+          total_bayar: 45000,
+          metode_pembayaran_ongkir: "CASH",
+          status: "SELESAI",
+          status_resi: "VALID"
+        }
+      ];
+      updated = true;
     }
     
     if (!parsed.Users || !Array.isArray(parsed.Users)) {
@@ -5981,6 +6066,17 @@ const handleDeleteKeuanganOutlet = (req: any, res: any) => {
   return res.json({ status: "success", message: "Catatan keuangan berhasil dinonaktifkan." });
 };
 
+function toIsoDateString(val: any): string {
+  if (!val) return new Date().toISOString().slice(0, 10);
+  const str = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+  const parsed = new Date(val);
+  if (!isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
 const handleBackfillKeuanganOutlet = (req: any, res: any) => {
   const db = readDb();
   if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
@@ -5990,6 +6086,7 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
 
   // Auto-correct any existing misclassified entries (e.g., JD0583047756 with KAT-103)
   db.KeuanganOutlet.forEach((item: any) => {
+    item.tanggal = toIsoDateString(item.tanggal);
     const desc = (item.deskripsi || "").toLowerCase();
     if (desc.includes("amplop") && (item.kategori_id === "KAT-103" || item.jenis === "PENGELUARAN")) {
       item.kategori_id = "KAT-208";
@@ -6018,12 +6115,12 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
       if (r.status_resi !== "BATAL" && r.status !== "BATAL") {
         txList.push({
           resi_id: r.resi_id,
-          tanggal: (r.timestamp || "").slice(0, 10),
-          outlet_id: r.outlet_id_input,
+          tanggal: toIsoDateString(r.timestamp || r.tanggal),
+          outlet_id: r.outlet_id_input || "OUT-001",
           admin_id: r.admin_id_pencatat,
           packing: Number(r.biaya_packing) || 0,
           amplop: Number(r.biaya_amplop) || 0,
-          created_at: r.timestamp
+          created_at: r.timestamp || new Date().toISOString()
         });
       }
     });
@@ -6033,12 +6130,12 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
       if (r.status_resi !== "BATAL" && r.status !== "BATAL") {
         txList.push({
           resi_id: r.resi_id,
-          tanggal: (r.timestamp || "").slice(0, 10),
-          outlet_id: r.outlet_id_input,
+          tanggal: toIsoDateString(r.timestamp || r.tanggal),
+          outlet_id: r.outlet_id_input || "OUT-001",
           admin_id: r.admin_id_pencatat,
           packing: Number(r.biaya_packing) || 0,
           amplop: Number(r.biaya_amplop) || 0,
-          created_at: r.timestamp
+          created_at: r.timestamp || new Date().toISOString()
         });
       }
     });
@@ -6050,12 +6147,12 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
         if (!existingInList) {
           txList.push({
             resi_id: r.no_resi,
-            tanggal: (r.tanggal_transaksi || r.created_at || "").slice(0, 10),
-            outlet_id: r.outlet_id,
+            tanggal: toIsoDateString(r.tanggal_transaksi || r.created_at),
+            outlet_id: r.outlet_id || "OUT-001",
             admin_id: r.admin_id,
             packing: Number(r.packing || r.biaya_packing) || 0,
             amplop: Number(r.amplop || r.biaya_amplop) || 0,
-            created_at: r.created_at
+            created_at: r.created_at || new Date().toISOString()
           });
         }
       }
