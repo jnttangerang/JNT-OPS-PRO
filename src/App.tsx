@@ -518,7 +518,7 @@ function AppContent() {
               } />
               
               <Route path="/keuangan-outlet" element={
-                <KeuanganOutletPage session={session} outlets={outlets} />
+                <KeuanganOutletPage session={session} outlets={outlets} activeOutletId={activeOutletId} onChangeActiveOutlet={handleActiveOutletChange} />
               } />
               
               <Route path="/admin-dashboard" element={

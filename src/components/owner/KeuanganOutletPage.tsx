@@ -12,9 +12,11 @@ import { SessionData, Outlet, KeuanganOutlet, KategoriKeuangan } from "../../typ
 interface KeuanganOutletPageProps {
   session: SessionData;
   outlets: Outlet[];
+  activeOutletId: string;
+  onChangeActiveOutlet?: (id: string) => void;
 }
 
-export default function KeuanganOutletPage({ session, outlets }: KeuanganOutletPageProps) {
+export default function KeuanganOutletPage({ session, outlets, activeOutletId, onChangeActiveOutlet }: KeuanganOutletPageProps) {
   const { callBackend } = useAppsScript();
   const [loading, setLoading] = useState(false);
   const [ledgerList, setLedgerList] = useState<KeuanganOutlet[]>([]);
@@ -25,22 +27,29 @@ export default function KeuanganOutletPage({ session, outlets }: KeuanganOutletP
   const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
 
   const isAdmin = session.role === "ADMIN";
-  const userHomeOutlet = session.outlet_id_home || (outlets[0]?.outlet_id || "");
 
   // Filters
   const [filterTanggalAwal, setFilterTanggalAwal] = useState(firstDayOfMonth);
   const [filterTanggalAkhir, setFilterTanggalAkhir] = useState(todayStr);
-  const [filterOutlet, setFilterOutlet] = useState(isAdmin ? userHomeOutlet : "ALL");
+  const [filterOutlet, setFilterOutlet] = useState(activeOutletId || "ALL");
   const [filterJenis, setFilterJenis] = useState<"ALL" | "PEMASUKAN" | "PENGELUARAN">("ALL");
   const [filterKategori, setFilterKategori] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Sync filterOutlet with global activeOutletId
+  useEffect(() => {
+    if (activeOutletId) {
+      setFilterOutlet(activeOutletId);
+      setFormOutletId(activeOutletId === "ALL" ? "" : activeOutletId);
+    }
+  }, [activeOutletId]);
 
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<KeuanganOutlet | null>(null);
   const [formJenis, setFormJenis] = useState<"PEMASUKAN" | "PENGELUARAN">("PENGELUARAN");
   const [formTanggal, setFormTanggal] = useState(todayStr);
-  const [formOutletId, setFormOutletId] = useState(userHomeOutlet);
+  const [formOutletId, setFormOutletId] = useState(activeOutletId === "ALL" ? "" : activeOutletId);
   const [formKategoriId, setFormKategoriId] = useState("");
   const [formNominal, setFormNominal] = useState<number | "">("");
   const [formDeskripsi, setFormDeskripsi] = useState("");
@@ -436,12 +445,15 @@ export default function KeuanganOutletPage({ session, outlets }: KeuanganOutletP
             <Building2 className="h-3.5 w-3.5 text-gray-400" />
             {isAdmin ? (
               <span className="font-bold text-gray-800">
-                {outlets.find(o => o.outlet_id === userHomeOutlet)?.nama_outlet || userHomeOutlet}
+                {outlets.find(o => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
               </span>
             ) : (
               <select
                 value={filterOutlet}
-                onChange={(e) => setFilterOutlet(e.target.value)}
+                onChange={(e) => {
+                  setFilterOutlet(e.target.value);
+                  if (onChangeActiveOutlet) onChangeActiveOutlet(e.target.value);
+                }}
                 className="bg-transparent font-bold text-gray-800 focus:outline-none cursor-pointer"
               >
                 <option value="ALL">Semua Outlet</option>

@@ -3524,38 +3524,46 @@ var TransactionService = {
     
     // 1. Kas Outlet — Otomatis Catat Biaya Packing
     if (fin.biaya_packing > 0) {
-      var kasEntry = {
-        id: "KNG-" + new Date().getTime(),
-        tanggal: txDate,
-        outlet_id: data.outlet_id_input,
-        jenis: "PEMASUKAN",
-        kategori_id: "KAT-102", // ID kategori "Packing"
-        nominal: fin.biaya_packing,
-        deskripsi: "Biaya Packing untuk resi " + resiId,
-        bukti_url: "",
-        dibuat_oleh: data.admin_id_pencatat,
-        created_at: timestamp,
-        aktif: "TRUE"
-      };
-      DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntry);
+      var deskripsiPacking = "Biaya Packing untuk resi " + resiId;
+      var existingPacking = DatabaseService.findRowByColumn("KEUANGAN_OUTLET", "deskripsi", deskripsiPacking);
+      if (!existingPacking) {
+        var kasEntry = {
+          id: "KNG-" + new Date().getTime(),
+          tanggal: txDate,
+          outlet_id: data.outlet_id_input,
+          jenis: "PEMASUKAN",
+          kategori_id: "KAT-102", // ID kategori "Packing"
+          nominal: fin.biaya_packing,
+          deskripsi: deskripsiPacking,
+          bukti_url: "",
+          dibuat_oleh: data.admin_id_pencatat,
+          created_at: timestamp,
+          aktif: "TRUE"
+        };
+        DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntry);
+      }
     }
     
     // 1b. Kas Outlet — Otomatis Catat Biaya Amplop
     if (fin.biaya_amplop > 0) {
-      var kasEntryAmplop = {
-        id: "KNG-" + (new Date().getTime() + 1),
-        tanggal: txDate,
-        outlet_id: data.outlet_id_input,
-        jenis: "PEMASUKAN",
-        kategori_id: "KAT-103", // ID kategori "Amplop"
-        nominal: fin.biaya_amplop,
-        deskripsi: "Biaya Amplop untuk resi " + resiId,
-        bukti_url: "",
-        dibuat_oleh: data.admin_id_pencatat,
-        created_at: timestamp,
-        aktif: "TRUE"
-      };
-      DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntryAmplop);
+      var deskripsiAmplop = "Biaya Amplop untuk resi " + resiId;
+      var existingAmplop = DatabaseService.findRowByColumn("KEUANGAN_OUTLET", "deskripsi", deskripsiAmplop);
+      if (!existingAmplop) {
+        var kasEntryAmplop = {
+          id: "KNG-" + (new Date().getTime() + 1),
+          tanggal: txDate,
+          outlet_id: data.outlet_id_input,
+          jenis: "PEMASUKAN",
+          kategori_id: "KAT-103", // ID kategori "Amplop"
+          nominal: fin.biaya_amplop,
+          deskripsi: deskripsiAmplop,
+          bukti_url: "",
+          dibuat_oleh: data.admin_id_pencatat,
+          created_at: timestamp,
+          aktif: "TRUE"
+        };
+        DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntryAmplop);
+      }
     }
     
     var existingPre = data.transaksi_id ? DatabaseService.findRowByColumn("PreInput_Backup", "transaksi_id", data.transaksi_id) : null;
