@@ -145,6 +145,9 @@ function handleRouting(action, params) {
       return apiSetKategoriAktif(params);
     case "getKeuanganOutlet":
       return apiGetKeuanganOutlet(params);
+    case "backfillKeuanganOutlet":
+    case "apiBackfillKeuanganOutlet":
+      return apiBackfillKeuanganOutletFromTransactions();
     case "saveKeuanganOutlet":
       return apiSaveKeuanganOutlet(params);
     case "updateKeuanganOutlet":
@@ -2347,7 +2350,7 @@ function simulateSha256(input) {
 // Jangan hapus/reorder kolom existing di sini — itu mengubah posisi index yang
 // sudah dipakai kode lain (mis. getRange(row, N)).
 // ==========================================
-var DB_SCHEMA_VERSION = 11; // v11: tambah MASTER_PENGIRIMAN (Foundation Operasional Aktivitas Pengiriman)
+var DB_SCHEMA_VERSION = 12; // v12: tambah resi_id pada KEUANGAN_OUTLET & kategori Amplop/Packing (Pemasukan)
 
 var DB_SCHEMA = {
   // Kolom lama TIDAK BOLEH dihapus/direorder — hanya tambah di ujung kanan.
@@ -2384,7 +2387,7 @@ var DB_SCHEMA = {
     "catatan_owner", "closing_status", "closing_at", "closing_by"],
   MASTER_KATEGORI_KEUANGAN: ["id", "jenis", "nama", "aktif", "urutan", "created_at", "updated_at", "created_by"],
   KEUANGAN_OUTLET: ["id", "tanggal", "outlet_id", "jenis", "kategori_id", "nominal", "deskripsi", "bukti_url",
-    "dibuat_oleh", "created_at", "aktif"],
+    "dibuat_oleh", "created_at", "aktif", "resi_id"],
   // Sheet baru — belum ada di spreadsheet, akan dibuat oleh initializeDatabase().
   IMPORT_LOG: ["id", "created_at", "owner", "outlet_id", "outlet_name", "spreadsheet_id", "spreadsheet_name", "sheet_name",
     "total_preview", "total_new", "total_update", "total_skipped", "status", "completed_at", "frontend_version", "backend_version", "db_schema_version", "app_version"],
@@ -3522,47 +3525,91 @@ var TransactionService = {
     
     DatabaseService.insertRow(targetSheetName, rowObj);
     
+    Logger.log("[saveTransaction] Checking ledger entries for resi: " + resiId + " | biaya_packing: " + fin.biaya_packing + " | biaya_amplop: " + fin.biaya_amplop + " | outlet: " + data.outlet_id_input);
+    
     // 1. Kas Outlet — Otomatis Catat Biaya Packing
     if (fin.biaya_packing > 0) {
       var deskripsiPacking = "Biaya Packing untuk resi " + resiId;
-      var existingPacking = DatabaseService.findRowByColumn("KEUANGAN_OUTLET", "deskripsi", deskripsiPacking);
-      if (!existingPacking) {
+      var rowsKo = DatabaseService.getSheetData("KEUANGAN_OUTLET");
+      var hasPacking = false;
+      if (rowsKo && rowsKo.length >= 2) {
+        var hKo = rowsKo[0];
+        var rIdx = hKo.indexOf("resi_id");
+        var dIdx = hKo.indexOf("deskripsi");
+        var kIdx = hKo.indexOf("kategori_id");
+        for (var p = 1; p < rowsKo.length; p++) {
+          var rRow = rowsKo[p];
+          var matchResi = rIdx !== -1 && (rRow[rIdx] || "").toString().trim().toUpperCase() === resiId;
+          var matchDesk = dIdx !== -1 && ((rRow[dIdx] || "").toString().trim() === deskripsiPacking || (rRow[dIdx] || "").toString().toUpperCase().indexOf(resiId) !== -1);
+          var katVal = kIdx !== -1 ? (rRow[kIdx] || "").toString().trim() : "";
+          if ((matchResi && (katVal === "KAT-207" || katVal === "KAT-102" || matchDesk)) || matchDesk) {
+            hasPacking = true;
+            break;
+          }
+        }
+      }
+      if (!hasPacking) {
         var kasEntry = {
-          id: "KNG-" + new Date().getTime(),
+          id: "KNG-" + new Date().getTime() + "-P",
           tanggal: txDate,
           outlet_id: data.outlet_id_input,
           jenis: "PEMASUKAN",
-          kategori_id: "KAT-102", // ID kategori "Packing"
+          kategori_id: "KAT-207", // ID kategori "Packing" (PEMASUKAN)
           nominal: fin.biaya_packing,
           deskripsi: deskripsiPacking,
           bukti_url: "",
           dibuat_oleh: data.admin_id_pencatat,
           created_at: timestamp,
-          aktif: "TRUE"
+          aktif: "TRUE",
+          resi_id: resiId
         };
         DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntry);
+        Logger.log("[saveTransaction] Successfully inserted KEUANGAN_OUTLET Packing entry for resi: " + resiId + " (Rp " + fin.biaya_packing + ")");
+      } else {
+        Logger.log("[saveTransaction] Skipped duplicate KEUANGAN_OUTLET Packing entry for resi: " + resiId);
       }
     }
     
     // 1b. Kas Outlet — Otomatis Catat Biaya Amplop
     if (fin.biaya_amplop > 0) {
       var deskripsiAmplop = "Biaya Amplop untuk resi " + resiId;
-      var existingAmplop = DatabaseService.findRowByColumn("KEUANGAN_OUTLET", "deskripsi", deskripsiAmplop);
-      if (!existingAmplop) {
+      var rowsKoA = DatabaseService.getSheetData("KEUANGAN_OUTLET");
+      var hasAmplop = false;
+      if (rowsKoA && rowsKoA.length >= 2) {
+        var hKoA = rowsKoA[0];
+        var rIdxA = hKoA.indexOf("resi_id");
+        var dIdxA = hKoA.indexOf("deskripsi");
+        var kIdxA = hKoA.indexOf("kategori_id");
+        for (var a = 1; a < rowsKoA.length; a++) {
+          var aRow = rowsKoA[a];
+          var matchResiA = rIdxA !== -1 && (aRow[rIdxA] || "").toString().trim().toUpperCase() === resiId;
+          var matchDeskA = dIdxA !== -1 && ((aRow[dIdxA] || "").toString().trim() === deskripsiAmplop || (aRow[dIdxA] || "").toString().toUpperCase().indexOf(resiId) !== -1);
+          var katValA = kIdxA !== -1 ? (aRow[kIdxA] || "").toString().trim() : "";
+          if ((matchResiA && (katValA === "KAT-208" || katValA === "KAT-103" || matchDeskA)) || matchDeskA) {
+            hasAmplop = true;
+            break;
+          }
+        }
+      }
+      if (!hasAmplop) {
         var kasEntryAmplop = {
-          id: "KNG-" + (new Date().getTime() + 1),
+          id: "KNG-" + (new Date().getTime() + 1) + "-A",
           tanggal: txDate,
           outlet_id: data.outlet_id_input,
           jenis: "PEMASUKAN",
-          kategori_id: "KAT-103", // ID kategori "Amplop"
+          kategori_id: "KAT-208", // ID kategori "Amplop" (PEMASUKAN)
           nominal: fin.biaya_amplop,
           deskripsi: deskripsiAmplop,
           bukti_url: "",
           dibuat_oleh: data.admin_id_pencatat,
           created_at: timestamp,
-          aktif: "TRUE"
+          aktif: "TRUE",
+          resi_id: resiId
         };
         DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntryAmplop);
+        Logger.log("[saveTransaction] Successfully inserted KEUANGAN_OUTLET Amplop entry for resi: " + resiId + " (Rp " + fin.biaya_amplop + ")");
+      } else {
+        Logger.log("[saveTransaction] Skipped duplicate KEUANGAN_OUTLET Amplop entry for resi: " + resiId);
       }
     }
     
@@ -4519,7 +4566,9 @@ function ensureDefaultKategoriKeuangan_() {
       { id: "KAT-203", jenis: "PEMASUKAN", nama: "Insentif", aktif: "TRUE", urutan: 3, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
       { id: "KAT-204", jenis: "PEMASUKAN", nama: "Cashback", aktif: "TRUE", urutan: 4, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
       { id: "KAT-205", jenis: "PEMASUKAN", nama: "Pendapatan Lain", aktif: "TRUE", urutan: 5, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
-      { id: "KAT-206", jenis: "PEMASUKAN", nama: "Lainnya", aktif: "TRUE", urutan: 6, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" }
+      { id: "KAT-206", jenis: "PEMASUKAN", nama: "Lainnya", aktif: "TRUE", urutan: 6, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-207", jenis: "PEMASUKAN", nama: "Packing", aktif: "TRUE", urutan: 7, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" },
+      { id: "KAT-208", jenis: "PEMASUKAN", nama: "Amplop", aktif: "TRUE", urutan: 8, created_at: new Date().toISOString(), updated_at: new Date().toISOString(), created_by: "SYSTEM" }
     ];
 
     defaultData.forEach(function(item) {
@@ -4530,6 +4579,92 @@ function ensureDefaultKategoriKeuangan_() {
     });
   } catch (e) {
     Logger.log("ensureDefaultKategoriKeuangan_ error: " + e.toString());
+  }
+}
+
+/**
+ * Otomatis melengkapi riwayat transaksi ke KEUANGAN_OUTLET jika ada transaksi yang belum tercatat (idempotent).
+ */
+function apiBackfillKeuanganOutletFromTransactions() {
+  try {
+    ensureDefaultKategoriKeuangan_();
+    var createdCount = 0;
+    var rowsKo = DatabaseService.getSheetData("KEUANGAN_OUTLET");
+    var existingEntries = {};
+    if (rowsKo && rowsKo.length >= 2) {
+      var hKo = rowsKo[0];
+      var rIdx = hKo.indexOf("resi_id");
+      var dIdx = hKo.indexOf("deskripsi");
+      var kIdx = hKo.indexOf("kategori_id");
+      for (var i = 1; i < rowsKo.length; i++) {
+        var rVal = rIdx !== -1 ? (rowsKo[i][rIdx] || "").toString().trim().toUpperCase() : "";
+        var dVal = dIdx !== -1 ? (rowsKo[i][dIdx] || "").toString().trim() : "";
+        var kVal = kIdx !== -1 ? (rowsKo[i][kIdx] || "").toString().trim() : "";
+        if (rVal) existingEntries[rVal + "_" + kVal] = true;
+        if (dVal) existingEntries[dVal] = true;
+      }
+    }
+
+    var txList = getAllTransactionObjects();
+    for (var t = 0; t < txList.length; t++) {
+      var tx = txList[t];
+      var resiId = (tx.resi_id || tx.no_resi || "").toString().trim().toUpperCase();
+      if (!resiId) continue;
+      var txDate = (tx.timestamp || tx.tanggal_transaksi || tx.created_at || new Date().toISOString()).toString().slice(0, 10);
+      var outletId = tx.outlet_id_input || tx.outlet_id || "";
+      var adminId = tx.admin_id_pencatat || tx.admin_id || "SYSTEM";
+      var packing = Number(tx.biaya_packing || tx.packing) || 0;
+      var amplop = Number(tx.biaya_amplop || tx.amplop) || 0;
+
+      if (packing > 0) {
+        var descP = "Biaya Packing untuk resi " + resiId;
+        if (!existingEntries[resiId + "_KAT-207"] && !existingEntries[resiId + "_KAT-102"] && !existingEntries[descP]) {
+          DatabaseService.insertRow("KEUANGAN_OUTLET", {
+            id: "KNG-" + new Date().getTime() + "-" + t + "-P",
+            tanggal: txDate,
+            outlet_id: outletId,
+            jenis: "PEMASUKAN",
+            kategori_id: "KAT-207",
+            nominal: packing,
+            deskripsi: descP,
+            bukti_url: "",
+            dibuat_oleh: adminId,
+            created_at: new Date().toISOString(),
+            aktif: "TRUE",
+            resi_id: resiId
+          });
+          existingEntries[resiId + "_KAT-207"] = true;
+          existingEntries[descP] = true;
+          createdCount++;
+        }
+      }
+
+      if (amplop > 0) {
+        var descA = "Biaya Amplop untuk resi " + resiId;
+        if (!existingEntries[resiId + "_KAT-208"] && !existingEntries[resiId + "_KAT-103"] && !existingEntries[descA]) {
+          DatabaseService.insertRow("KEUANGAN_OUTLET", {
+            id: "KNG-" + (new Date().getTime() + 1) + "-" + t + "-A",
+            tanggal: txDate,
+            outlet_id: outletId,
+            jenis: "PEMASUKAN",
+            kategori_id: "KAT-208",
+            nominal: amplop,
+            deskripsi: descA,
+            bukti_url: "",
+            dibuat_oleh: adminId,
+            created_at: new Date().toISOString(),
+            aktif: "TRUE",
+            resi_id: resiId
+          });
+          existingEntries[resiId + "_KAT-208"] = true;
+          existingEntries[descA] = true;
+          createdCount++;
+        }
+      }
+    }
+    return { status: "success", message: "Backfill selesai. Ditambahkan: " + createdCount + " entry.", created_count: createdCount };
+  } catch (err) {
+    return { status: "error", message: err.message || err.toString() };
   }
 }
 

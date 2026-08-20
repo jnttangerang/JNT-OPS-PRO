@@ -2705,6 +2705,54 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       require("fs").writeFileSync("error.log", upsertErr.toString() + "\n" + (upsertErr as any).stack);
     }
 
+    // Auto-record to KeuanganOutlet for Packing and Amplop
+    if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
+    const txDateStr = (data.tanggal_transaksi || timestamp).slice(0, 10);
+    if (biayaPacking > 0) {
+      const hasPacking = db.KeuanganOutlet.some((k: any) =>
+        ((k.resi_id && k.resi_id.toUpperCase() === rid) || (k.deskripsi && k.deskripsi.includes(rid))) &&
+        (k.kategori_id === "KAT-207" || k.kategori_id === "KAT-102" || k.deskripsi?.includes("Packing"))
+      );
+      if (!hasPacking) {
+        db.KeuanganOutlet.push({
+          id: `KNG-${Date.now()}-P`,
+          tanggal: txDateStr,
+          outlet_id: outletId,
+          jenis: "PEMASUKAN",
+          kategori_id: "KAT-207",
+          nominal: biayaPacking,
+          deskripsi: `Biaya Packing untuk resi ${rid}`,
+          bukti_url: "",
+          dibuat_oleh: adminId,
+          created_at: timestamp,
+          aktif: true,
+          resi_id: rid
+        });
+      }
+    }
+    if (biayaAmplop > 0) {
+      const hasAmplop = db.KeuanganOutlet.some((k: any) =>
+        ((k.resi_id && k.resi_id.toUpperCase() === rid) || (k.deskripsi && k.deskripsi.includes(rid))) &&
+        (k.kategori_id === "KAT-208" || k.kategori_id === "KAT-103" || k.deskripsi?.includes("Amplop"))
+      );
+      if (!hasAmplop) {
+        db.KeuanganOutlet.push({
+          id: `KNG-${Date.now() + 1}-A`,
+          tanggal: txDateStr,
+          outlet_id: outletId,
+          jenis: "PEMASUKAN",
+          kategori_id: "KAT-208",
+          nominal: biayaAmplop,
+          deskripsi: `Biaya Amplop untuk resi ${rid}`,
+          bukti_url: "",
+          dibuat_oleh: adminId,
+          created_at: timestamp,
+          aktif: true,
+          resi_id: rid
+        });
+      }
+    }
+
     writeDb(db);
 
     // Audit Log
@@ -5933,11 +5981,143 @@ const handleDeleteKeuanganOutlet = (req: any, res: any) => {
   return res.json({ status: "success", message: "Catatan keuangan berhasil dinonaktifkan." });
 };
 
+const handleBackfillKeuanganOutlet = (req: any, res: any) => {
+  const db = readDb();
+  if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
+  
+  let createdCount = 0;
+  const existingEntries: Record<string, boolean> = {};
+  
+  db.KeuanganOutlet.forEach((item: any) => {
+    const rVal = (item.resi_id || "").toString().trim().toUpperCase();
+    const dVal = (item.deskripsi || "").toString().trim();
+    const kVal = (item.kategori_id || "").toString().trim();
+    if (rVal) existingEntries[`${rVal}_${kVal}`] = true;
+    if (dVal) existingEntries[dVal] = true;
+  });
+
+  const txList: any[] = [];
+  if (Array.isArray(db.EXP_Resi)) {
+    db.EXP_Resi.forEach((r: any) => {
+      if (r.status_resi !== "BATAL" && r.status !== "BATAL") {
+        txList.push({
+          resi_id: r.resi_id,
+          tanggal: (r.timestamp || "").slice(0, 10),
+          outlet_id: r.outlet_id_input,
+          admin_id: r.admin_id_pencatat,
+          packing: Number(r.biaya_packing) || 0,
+          amplop: Number(r.biaya_amplop) || 0,
+          created_at: r.timestamp
+        });
+      }
+    });
+  }
+  if (Array.isArray(db.CRG_Resi)) {
+    db.CRG_Resi.forEach((r: any) => {
+      if (r.status_resi !== "BATAL" && r.status !== "BATAL") {
+        txList.push({
+          resi_id: r.resi_id,
+          tanggal: (r.timestamp || "").slice(0, 10),
+          outlet_id: r.outlet_id_input,
+          admin_id: r.admin_id_pencatat,
+          packing: Number(r.biaya_packing) || 0,
+          amplop: Number(r.biaya_amplop) || 0,
+          created_at: r.timestamp
+        });
+      }
+    });
+  }
+  if (Array.isArray(db.MASTER_TRANSAKSI)) {
+    db.MASTER_TRANSAKSI.forEach((r: any) => {
+      if (r.status_transaksi !== "CANCELLED" && r.status_transaksi !== "BATAL") {
+        const existingInList = txList.some(t => t.resi_id && r.no_resi && t.resi_id.toUpperCase() === r.no_resi.toUpperCase());
+        if (!existingInList) {
+          txList.push({
+            resi_id: r.no_resi,
+            tanggal: (r.tanggal_transaksi || r.created_at || "").slice(0, 10),
+            outlet_id: r.outlet_id,
+            admin_id: r.admin_id,
+            packing: Number(r.packing || r.biaya_packing) || 0,
+            amplop: Number(r.amplop || r.biaya_amplop) || 0,
+            created_at: r.created_at
+          });
+        }
+      }
+    });
+  }
+
+  txList.forEach((tx, idx) => {
+    const resiId = (tx.resi_id || "").toString().trim().toUpperCase();
+    if (!resiId) return;
+    const txDate = tx.tanggal || new Date().toISOString().slice(0, 10);
+    const outletId = tx.outlet_id || "OUT-001";
+    const adminId = tx.admin_id || "SYSTEM";
+
+    if (tx.packing > 0) {
+      const descP = `Biaya Packing untuk resi ${resiId}`;
+      if (!existingEntries[`${resiId}_KAT-207`] && !existingEntries[`${resiId}_KAT-102`] && !existingEntries[descP]) {
+        db.KeuanganOutlet.push({
+          id: `KNG-${Date.now()}-${idx}-P`,
+          tanggal: txDate,
+          outlet_id: outletId,
+          jenis: "PEMASUKAN",
+          kategori_id: "KAT-207",
+          nominal: tx.packing,
+          deskripsi: descP,
+          bukti_url: "",
+          dibuat_oleh: adminId,
+          created_at: tx.created_at || new Date().toISOString(),
+          aktif: true,
+          resi_id: resiId
+        });
+        existingEntries[`${resiId}_KAT-207`] = true;
+        existingEntries[descP] = true;
+        createdCount++;
+      }
+    }
+
+    if (tx.amplop > 0) {
+      const descA = `Biaya Amplop untuk resi ${resiId}`;
+      if (!existingEntries[`${resiId}_KAT-208`] && !existingEntries[`${resiId}_KAT-103`] && !existingEntries[descA]) {
+        db.KeuanganOutlet.push({
+          id: `KNG-${Date.now() + 1}-${idx}-A`,
+          tanggal: txDate,
+          outlet_id: outletId,
+          jenis: "PEMASUKAN",
+          kategori_id: "KAT-208",
+          nominal: tx.amplop,
+          deskripsi: descA,
+          bukti_url: "",
+          dibuat_oleh: adminId,
+          created_at: tx.created_at || new Date().toISOString(),
+          aktif: true,
+          resi_id: resiId
+        });
+        existingEntries[`${resiId}_KAT-208`] = true;
+        existingEntries[descA] = true;
+        createdCount++;
+      }
+    }
+  });
+
+  if (createdCount > 0) {
+    writeDb(db);
+  }
+
+  return res.json({
+    status: "success",
+    message: `Backfill selesai. Ditambahkan: ${createdCount} entry.`,
+    created_count: createdCount
+  });
+};
+
 app.get("/api/getKeuanganOutlet", handleGetKeuanganOutlet);
 app.post("/api/getKeuanganOutlet", handleGetKeuanganOutlet);
 app.post("/api/saveKeuanganOutlet", handleSaveKeuanganOutlet);
 app.post("/api/updateKeuanganOutlet", handleUpdateKeuanganOutlet);
 app.post("/api/deleteKeuanganOutlet", handleDeleteKeuanganOutlet);
+app.get("/api/backfillKeuanganOutlet", handleBackfillKeuanganOutlet);
+app.post("/api/backfillKeuanganOutlet", handleBackfillKeuanganOutlet);
 
 app.post("/api/apps-script", async (req, res) => {
   try {
