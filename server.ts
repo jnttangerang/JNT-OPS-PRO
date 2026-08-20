@@ -5986,13 +5986,29 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
   if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
   
   let createdCount = 0;
+  let correctedCount = 0;
+
+  // Auto-correct any existing misclassified entries (e.g., JD0583047756 with KAT-103)
+  db.KeuanganOutlet.forEach((item: any) => {
+    const desc = (item.deskripsi || "").toLowerCase();
+    if (desc.includes("amplop") && (item.kategori_id === "KAT-103" || item.jenis === "PENGELUARAN")) {
+      item.kategori_id = "KAT-208";
+      item.jenis = "PEMASUKAN";
+      correctedCount++;
+    } else if (desc.includes("packing") && (item.kategori_id === "KAT-102" || item.jenis === "PENGELUARAN")) {
+      item.kategori_id = "KAT-207";
+      item.jenis = "PEMASUKAN";
+      correctedCount++;
+    }
+  });
+
   const existingEntries: Record<string, boolean> = {};
   
   db.KeuanganOutlet.forEach((item: any) => {
     const rVal = (item.resi_id || "").toString().trim().toUpperCase();
     const dVal = (item.deskripsi || "").toString().trim();
     const kVal = (item.kategori_id || "").toString().trim();
-    if (rVal) existingEntries[`${rVal}_${kVal}`] = true;
+    if (rVal && kVal) existingEntries[`${rVal}_${kVal}`] = true;
     if (dVal) existingEntries[dVal] = true;
   });
 

@@ -147,6 +147,7 @@ function handleRouting(action, params) {
       return apiGetKeuanganOutlet(params);
     case "backfillKeuanganOutlet":
     case "apiBackfillKeuanganOutlet":
+    case "apiBackfillKeuanganOutletFromTransactions":
       return apiBackfillKeuanganOutletFromTransactions();
     case "saveKeuanganOutlet":
       return apiSaveKeuanganOutlet(params);
@@ -4596,16 +4597,84 @@ function apiBackfillKeuanganOutletFromTransactions() {
       var rIdx = hKo.indexOf("resi_id");
       var dIdx = hKo.indexOf("deskripsi");
       var kIdx = hKo.indexOf("kategori_id");
+      var jIdx = hKo.indexOf("jenis");
+      var idIdx = hKo.indexOf("id");
+
       for (var i = 1; i < rowsKo.length; i++) {
         var rVal = rIdx !== -1 ? (rowsKo[i][rIdx] || "").toString().trim().toUpperCase() : "";
         var dVal = dIdx !== -1 ? (rowsKo[i][dIdx] || "").toString().trim() : "";
         var kVal = kIdx !== -1 ? (rowsKo[i][kIdx] || "").toString().trim() : "";
-        if (rVal) existingEntries[rVal + "_" + kVal] = true;
+        var rowId = idIdx !== -1 ? (rowsKo[i][idIdx] || "").toString().trim() : "";
+
+        // Auto-correct existing misclassified rows
+        if (dVal.toLowerCase().indexOf("amplop") !== -1 && (kVal === "KAT-103" || (jIdx !== -1 && rowsKo[i][jIdx] === "PENGELUARAN"))) {
+          if (rowId) {
+            DatabaseService.updateRowByColumn("KEUANGAN_OUTLET", "id", rowId, {
+              kategori_id: "KAT-208",
+              jenis: "PEMASUKAN"
+            });
+            kVal = "KAT-208";
+          }
+        } else if (dVal.toLowerCase().indexOf("packing") !== -1 && (kVal === "KAT-102" || (jIdx !== -1 && rowsKo[i][jIdx] === "PENGELUARAN"))) {
+          if (rowId) {
+            DatabaseService.updateRowByColumn("KEUANGAN_OUTLET", "id", rowId, {
+              kategori_id: "KAT-207",
+              jenis: "PEMASUKAN"
+            });
+            kVal = "KAT-207";
+          }
+        }
+
+        if (rVal && kVal) existingEntries[rVal + "_" + kVal] = true;
         if (dVal) existingEntries[dVal] = true;
       }
     }
 
-    var txList = getAllTransactionObjects();
+    var txList = [];
+    try {
+      var rowsExp = DatabaseService.getSheetData("EXP_Resi");
+      if (rowsExp && rowsExp.length >= 2) {
+        var expObjs = sheetToObjects(rowsExp);
+        for (var e = 0; e < expObjs.length; e++) {
+          var rE = expObjs[e];
+          if (rE.status !== "BATAL" && rE.status_resi !== "BATAL") {
+            txList.push(rE);
+          }
+        }
+      }
+    } catch (errExp) {
+      Logger.log("apiBackfillKeuanganOutlet EXP_Resi read error: " + errExp.toString());
+    }
+
+    try {
+      var rowsCrg = DatabaseService.getSheetData("CRG_Resi");
+      if (rowsCrg && rowsCrg.length >= 2) {
+        var crgObjs = sheetToObjects(rowsCrg);
+        for (var c = 0; c < crgObjs.length; c++) {
+          var rC = crgObjs[c];
+          if (rC.status !== "BATAL" && rC.status_resi !== "BATAL") {
+            txList.push(rC);
+          }
+        }
+      }
+    } catch (errCrg) {
+      Logger.log("apiBackfillKeuanganOutlet CRG_Resi read error: " + errCrg.toString());
+    }
+
+    try {
+      var rowsMtx = DatabaseService.getSheetData("MASTER_TRANSAKSI");
+      if (rowsMtx && rowsMtx.length >= 2) {
+        var mtxObjs = sheetToObjects(rowsMtx);
+        for (var m = 0; m < mtxObjs.length; m++) {
+          var rM = mtxObjs[m];
+          if (rM.status_transaksi !== "CANCELLED" && rM.status_transaksi !== "BATAL") {
+            txList.push(rM);
+          }
+        }
+      }
+    } catch (errMtx) {
+      Logger.log("apiBackfillKeuanganOutlet MASTER_TRANSAKSI read error: " + errMtx.toString());
+    }
     for (var t = 0; t < txList.length; t++) {
       var tx = txList[t];
       var resiId = (tx.resi_id || tx.no_resi || "").toString().trim().toUpperCase();

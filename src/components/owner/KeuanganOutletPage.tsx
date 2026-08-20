@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { 
   Wallet, Plus, Search, Filter, RefreshCw, Calendar, AlertCircle, Edit2, Trash2, 
   ArrowUpRight, ArrowDownRight, DollarSign, FileText, ExternalLink, Image, Building2, Eye, X,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Database
 } from "lucide-react";
 import { useAppsScript } from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
@@ -56,8 +56,29 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
   const [formBuktiUrl, setFormBuktiUrl] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Modal View Bukti State
-  const [previewBuktiUrl, setPreviewBuktiUrl] = useState<string | null>(null);
+  const [backfilling, setBackfilling] = useState(false);
+
+  // Trigger Backfill Historis
+  const handleRunBackfill = async () => {
+    if (!window.confirm("Jalankan sinkronisasi / backfill otomatis data biaya amplop & packing dari seluruh transaksi historis ke Kas Outlet?")) {
+      return;
+    }
+    setBackfilling(true);
+    try {
+      const res = await callBackend("backfillKeuanganOutlet", { action: "apiBackfillKeuanganOutletFromTransactions" });
+      if (res.status === "success") {
+        toast.success(res.message || `Backfill selesai (${res.created_count || 0} entry ditambahkan)`);
+        await fetchLedger();
+      } else {
+        toast.error(res.message || "Gagal menjalankan backfill.");
+      }
+    } catch (err: any) {
+      console.error("Backfill error", err);
+      toast.error(err?.message || "Terjadi kesalahan saat backfill.");
+    } finally {
+      setBackfilling(false);
+    }
+  };
 
   // Fetch Categories & Ledger
   const fetchCategories = async () => {
@@ -329,6 +350,16 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleRunBackfill}
+            disabled={backfilling || loading}
+            className="px-3.5 py-2.5 text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+            title="Sinkronisasi / Backfill otomatis Amplop & Packing dari transaksi"
+          >
+            <Database className={`h-4 w-4 ${backfilling ? "animate-spin text-purple-600" : ""}`} />
+            <span className="hidden sm:inline">{backfilling ? "Sinkronisasi..." : "Backfill Transaksi"}</span>
+          </button>
+
           <button
             onClick={fetchLedger}
             disabled={loading}
