@@ -3540,6 +3540,24 @@ var TransactionService = {
       DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntry);
     }
     
+    // 1b. Kas Outlet — Otomatis Catat Biaya Amplop
+    if (fin.biaya_amplop > 0) {
+      var kasEntryAmplop = {
+        id: "KNG-" + (new Date().getTime() + 1),
+        tanggal: txDate,
+        outlet_id: data.outlet_id_input,
+        jenis: "PEMASUKAN",
+        kategori_id: "KAT-103", // ID kategori "Amplop"
+        nominal: fin.biaya_amplop,
+        deskripsi: "Biaya Amplop untuk resi " + resiId,
+        bukti_url: "",
+        dibuat_oleh: data.admin_id_pencatat,
+        created_at: timestamp,
+        aktif: "TRUE"
+      };
+      DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntryAmplop);
+    }
+    
     var existingPre = data.transaksi_id ? DatabaseService.findRowByColumn("PreInput_Backup", "transaksi_id", data.transaksi_id) : null;
     if (existingPre) {
       DatabaseService.updateRowByColumn("PreInput_Backup", "transaksi_id", data.transaksi_id, { status: "SELESAI" });
@@ -4003,8 +4021,7 @@ function apiValidateClosing(params) {
 
   if (activeTransactions.length > 0) {
     if (setoranDisetujui.length === 0 && setoranMenunggu.length === 0 && setoranDitolak.length === 0) {
-      isSuccess = false;
-      validations.push({ error: "Belum ada setoran yang dibuat untuk hari ini." });
+      validations.push({ warning: "BELUM ADA SETORAN" });
     }
     if (setoranMenunggu.length > 0) {
       isSuccess = false;

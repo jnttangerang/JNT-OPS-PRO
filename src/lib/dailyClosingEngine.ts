@@ -227,9 +227,7 @@ export function validateDailyClosing(
   }
 
   if (setoran_required > 0) {
-    if (setoran_status === "MISSING") {
-      blocking_reasons.push(`Setoran Owner untuk tanggal '${tanggal}' belum diinput di Master_Setoran.`);
-    } else if (setoran_status === "UNAPPROVED") {
+    if (setoran_status === "UNAPPROVED") {
       blocking_reasons.push("Setoran Owner belum disetujui (status masih PENDING).");
     } else if (setoran_status === "MISMATCH") {
       blocking_reasons.push(`Selisih setoran Owner: Wajib Setor Rp ${setoran_required.toLocaleString('id-ID')} vs Disetor Rp ${setoran_actual.toLocaleString('id-ID')}.`);
