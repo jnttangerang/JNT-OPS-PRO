@@ -5868,6 +5868,45 @@ app.post("/api/saveKategoriKeuangan", handleSaveKategoriKeuangan);
 app.post("/api/updateKategoriKeuangan", handleUpdateKategoriKeuangan);
 app.post("/api/setKategoriAktif", handleSetKategoriAktif);
 
+function toIsoDateString(val: any, fallback?: any): string {
+  if (val) {
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+    if (/\b\d{4}\b/.test(str)) {
+      const parsed = new Date(str);
+      if (!isNaN(parsed.getTime())) {
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, "0");
+        const d = String(parsed.getDate()).padStart(2, "0");
+        return `${y}-${m}-${d}`;
+      }
+    }
+  }
+  if (fallback) {
+    const fbStr = String(fallback).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(fbStr)) return fbStr.slice(0, 10);
+    const parsedFb = new Date(fbStr);
+    if (!isNaN(parsedFb.getTime())) {
+      const y = parsedFb.getFullYear();
+      const m = String(parsedFb.getMonth() + 1).padStart(2, "0");
+      const d = String(parsedFb.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+  }
+  if (val) {
+    const currentYear = new Date().getFullYear();
+    const parsedWithYear = new Date(`${val} ${currentYear}`);
+    if (!isNaN(parsedWithYear.getTime())) {
+      const y = parsedWithYear.getFullYear();
+      const m = String(parsedWithYear.getMonth() + 1).padStart(2, "0");
+      const d = String(parsedWithYear.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
 // === KEUANGAN OUTLET (LEDGER) ENDPOINTS ===
 
 const handleGetKeuanganOutlet = async (req: any, res: any) => {
@@ -5876,6 +5915,7 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
   const list = db.KeuanganOutlet || [];
   const catList = db.MasterKategoriKeuangan || [];
   const outletList = db.Outlets || [];
+  console.log("handleGetKeuanganOutlet params:", params, "db list length:", list.length);
 
   const catMap: Record<string, any> = {};
   catList.forEach((c: any) => { catMap[c.id] = c; });
@@ -5887,7 +5927,7 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
     const isAktif = item.aktif === true || item.aktif === "TRUE" || item.aktif === "true" || item.aktif === undefined;
     if (!isAktif && !params.include_inactive) return false;
 
-    const itemTanggal = (item.tanggal || "").toString().slice(0, 10);
+    const itemTanggal = toIsoDateString(item.tanggal, item.created_at);
     if (params.tanggal_awal && itemTanggal < params.tanggal_awal) return false;
     if (params.tanggal_akhir && itemTanggal > params.tanggal_akhir) return false;
 
@@ -5902,7 +5942,7 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
     const catObj = catMap[item.kategori_id] || {};
     return {
       id: String(item.id),
-      tanggal: String(item.tanggal || "").slice(0, 10),
+      tanggal: toIsoDateString(item.tanggal, item.created_at),
       outlet_id: String(item.outlet_id || ""),
       nama_outlet: outletMap[item.outlet_id] || item.outlet_id || "",
       jenis: String(item.jenis || catObj.jenis || "PENGELUARAN").toUpperCase(),
@@ -6065,17 +6105,6 @@ const handleDeleteKeuanganOutlet = (req: any, res: any) => {
   writeDb(db);
   return res.json({ status: "success", message: "Catatan keuangan berhasil dinonaktifkan." });
 };
-
-function toIsoDateString(val: any): string {
-  if (!val) return new Date().toISOString().slice(0, 10);
-  const str = String(val).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
-  const parsed = new Date(val);
-  if (!isNaN(parsed.getTime())) {
-    return parsed.toISOString().slice(0, 10);
-  }
-  return new Date().toISOString().slice(0, 10);
-}
 
 const handleBackfillKeuanganOutlet = (req: any, res: any) => {
   const db = readDb();
@@ -6465,7 +6494,7 @@ async function syncDbWithAppsScript(db: any) {
       db.Master_Setoran = setoranRes.data;
     }
 
-    if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data)) {
+    if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data) && keuanganRes.data.length > 0) {
       db.KeuanganOutlet = keuanganRes.data;
       writeDb(db);
     }

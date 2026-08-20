@@ -4737,6 +4737,25 @@ function apiBackfillKeuanganOutletFromTransactions() {
   }
 }
 
+function formatDateIso_(val) {
+  if (!val) return "";
+  var str = val.toString().trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
+  try {
+    var d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1);
+      if (m.length < 2) m = "0" + m;
+      var day = String(d.getDate());
+      if (day.length < 2) day = "0" + day;
+      return y + "-" + m + "-" + day;
+    }
+  } catch (e) {}
+  return str.slice(0, 10);
+}
+
 // ==========================================
 // KEUANGAN OUTLET (LEDGER)
 // ==========================================
@@ -4783,7 +4802,7 @@ function apiGetKeuanganOutlet(params) {
         continue;
       }
 
-      var itemTanggal = (obj.tanggal || "").toString().slice(0, 10);
+      var itemTanggal = formatDateIso_(obj.tanggal || obj.created_at);
       if (params.tanggal_awal && itemTanggal < params.tanggal_awal) continue;
       if (params.tanggal_akhir && itemTanggal > params.tanggal_akhir) continue;
 
