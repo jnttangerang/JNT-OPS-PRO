@@ -3522,6 +3522,24 @@ var TransactionService = {
     
     DatabaseService.insertRow(targetSheetName, rowObj);
     
+    // 1. Kas Outlet — Otomatis Catat Biaya Packing
+    if (fin.biaya_packing > 0) {
+      var kasEntry = {
+        id: "KNG-" + new Date().getTime(),
+        tanggal: txDate,
+        outlet_id: data.outlet_id_input,
+        jenis: "PEMASUKAN",
+        kategori_id: "KAT-102", // ID kategori "Packing"
+        nominal: fin.biaya_packing,
+        deskripsi: "Biaya Packing untuk resi " + resiId,
+        bukti_url: "",
+        dibuat_oleh: data.admin_id_pencatat,
+        created_at: timestamp,
+        aktif: "TRUE"
+      };
+      DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntry);
+    }
+    
     var existingPre = data.transaksi_id ? DatabaseService.findRowByColumn("PreInput_Backup", "transaksi_id", data.transaksi_id) : null;
     if (existingPre) {
       DatabaseService.updateRowByColumn("PreInput_Backup", "transaksi_id", data.transaksi_id, { status: "SELESAI" });
@@ -3951,13 +3969,17 @@ function apiValidateClosing(params) {
 
   var processTx = function(tx, tipe) {
     var txDate = tx.timestamp ? tx.timestamp.toString().split("T")[0] : "";
-    if (txDate === closingDate && tx.outlet_id_input === outletId && tx.status_resi !== "BATAL") {
+    if (txDate === closingDate && tx.outlet_id_input === outletId && tx.status_resi !== "BATAL" && tx.status_resi !== "CANCELLED") {
       activeTransactions.push(tx);
       
+      var grandTotal = Number(tx.grand_total) || Number(tx.total_dibayar_customer) || 0;
+      var setoranOwner = Number(tx.setoran_ke_owner) || 0;
+      var kasOp = Number(tx.kas_operasional) || ((Number(tx.biaya_packing) || 0) + (Number(tx.biaya_amplop) || 0));
+
       summary.total_transactions++;
-      summary.total_customer_payment += (Number(tx.total_dibayar_customer) || 0);
-      summary.total_setoran_owner += (Number(tx.setoran_ke_owner) || 0);
-      summary.total_kas_operasional += (Number(tx.kas_operasional) || 0);
+      summary.total_customer_payment += grandTotal;
+      summary.total_setoran_owner += setoranOwner;
+      summary.total_kas_operasional += kasOp;
       
       var yoyi = tipe === "EXP" ? (Number(tx.biaya_yoyi) || 0) : (Number(tx.biaya_jtc) || 0);
       summary.total_yoyi += yoyi;
