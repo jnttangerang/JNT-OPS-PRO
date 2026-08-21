@@ -73,7 +73,7 @@ export interface SettlementRecord {
 }
 
 export function generateSettlementId(outletId: string, tanggal: string): string {
-  const cleanOutlet = (outletId || "GLOBAL").trim().toUpperCase();
+  const cleanOutlet = String(outletId || "GLOBAL").trim().toUpperCase();
   const cleanDate = (tanggal || new Date().toISOString().split("T")[0]).trim();
   return `STL-${cleanOutlet}-${cleanDate}`;
 }

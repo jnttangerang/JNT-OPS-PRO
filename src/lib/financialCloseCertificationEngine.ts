@@ -42,7 +42,7 @@ export interface ActorInfo {
 }
 
 export function generateCertificationId(outletId: string, tanggal: string): string {
-  const cleanOutlet = (outletId || "GLOBAL").trim().toUpperCase();
+  const cleanOutlet = String(outletId || "GLOBAL").trim().toUpperCase();
   const cleanDate = (tanggal || new Date().toISOString().split("T")[0]).trim();
   return `FC-${cleanOutlet}-${cleanDate}`;
 }

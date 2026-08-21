@@ -106,14 +106,14 @@ export default function TransaksiPage({
 
     // 5. Extract sender, receiver, and item name with support for all property aliases
     const parsedAny = parsed as any;
-    const rawSender = (parsed.nama_pengirim || parsedAny.pengirim || parsedAny.shipper || parsedAny.sender || "").trim();
-    const rawReceiver = (parsed.nama_penerima || parsedAny.penerima || parsedAny.consignee || parsedAny.receiver || "").trim();
-    const rawItem = (parsed.nama_barang || parsedAny.deskripsi_barang || parsedAny.isi_paket || parsedAny.barang || parsedAny.item_name || parsedAny.komoditi || "").trim();
+    const rawSender = String(parsed.nama_pengirim || parsedAny.pengirim || parsedAny.shipper || parsedAny.sender || "").trim();
+    const rawReceiver = String(parsed.nama_penerima || parsedAny.penerima || parsedAny.consignee || parsedAny.receiver || "").trim();
+    const rawItem = String(parsed.nama_barang || parsedAny.deskripsi_barang || parsedAny.isi_paket || parsedAny.barang || parsedAny.item_name || parsedAny.komoditi || "").trim();
 
-    const senderHp = (parsed.no_hp_pengirim || parsedAny.hp_pengirim || parsedAny.telepon_pengirim || parsedAny.telp_pengirim || "").trim();
-    const senderAddress = (parsed.alamat_pengirim || parsedAny.address_pengirim || "").trim();
-    const receiverHp = (parsed.no_hp_penerima || parsedAny.hp_penerima || parsedAny.telepon_penerima || parsedAny.telp_penerima || "").trim();
-    const receiverAddress = (parsed.alamat_penerima || parsedAny.address_penerima || "").trim();
+    const senderHp = String(parsed.no_hp_pengirim || parsedAny.hp_pengirim || parsedAny.telepon_pengirim || parsedAny.telp_pengirim || "").trim();
+    const senderAddress = String(parsed.alamat_pengirim || parsedAny.address_pengirim || "").trim();
+    const receiverHp = String(parsed.no_hp_penerima || parsedAny.hp_penerima || parsedAny.telepon_penerima || parsedAny.telp_penerima || "").trim();
+    const receiverAddress = String(parsed.alamat_penerima || parsedAny.address_penerima || "").trim();
 
     // Do not fall back to generic placeholders if parsed data exists
     const senderName = rawSender || "Umum";
@@ -305,6 +305,74 @@ export default function TransaksiPage({
   const fileInputPaketRef = useRef<HTMLInputElement>(null);
   const fileInputResiRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+
+
+  
+  const handlePasteBukti = async (e: React.ClipboardEvent, isSurchargeProof: boolean) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const formattedDate = new Date().toISOString().split("T")[0].replace(/-/g, "");
+          const finalResiStr = (resiId || "").trim() || "MOCK_RESI";
+          
+          let generatedFileName = "";
+          if (isSurchargeProof) {
+            generatedFileName = `BB-ADD_${formattedDate}_${finalResiStr}`;
+          } else {
+            generatedFileName = `BB-${jenisLayanan === "Express" ? "YoYi" : "JTC"}_${formattedDate}_${finalResiStr}`;
+          }
+
+          if (isSurchargeProof) {
+            setUploadingBuktiTambahan(true);
+          } else {
+            setUploadingBukti(true);
+          }
+          setFormError(null);
+
+          try {
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+              const base64Str = reader.result as string;
+              try {
+                const response = await callBackend("uploadFile", {
+                  fileBase64: base64Str,
+                  fileName: generatedFileName,
+                  category: isSurchargeProof ? "BUKTI_ADD" : "BUKTI_BAYAR"
+                });
+
+                if (response.status === "success" && response.data) {
+                  if (isSurchargeProof) {
+                    setBuktiTambahanUrl(response.data);
+                  } else {
+                    setBuktiBayarUrl(response.data);
+                  }
+                  toast.success(isSurchargeProof ? "Bukti tambahan berhasil di-paste" : "Bukti transfer berhasil di-paste");
+                } else {
+                  setFormError(response.message || "Gagal mengunggah bukti bayar dari clipboard.");
+                }
+              } catch (err: any) {
+                setFormError(err.message || "Gagal mengunggah bukti bayar dari clipboard.");
+              } finally {
+                if (isSurchargeProof) setUploadingBuktiTambahan(false);
+                else setUploadingBukti(false);
+              }
+            };
+            reader.readAsDataURL(file);
+          } catch (err: any) {
+            if (isSurchargeProof) setUploadingBuktiTambahan(false);
+            else setUploadingBukti(false);
+            setFormError(err.message || "Gagal memproses gambar bukti bayar");
+          }
+        }
+        break;
+      }
+    }
+  };
 
 
   const handlePasteImage = (e: React.ClipboardEvent, type: "paket" | "resi") => {
@@ -959,15 +1027,15 @@ export default function TransaksiPage({
         (y.resi || "").trim().toUpperCase() === currentResiUpper ||
         (y.parsed_data?.nomor_resi || "").trim().toUpperCase() === currentResiUpper
     );
-    const activeSender = (preInputData?.nama_pengirim || matchingYoyi?.parsed_data?.nama_pengirim || "").trim();
-    const activeSenderHp = (preInputData?.hp_pengirim || matchingYoyi?.parsed_data?.no_hp_pengirim || "").trim();
-    const activeSenderAddr = (preInputData?.alamat_pengirim || matchingYoyi?.parsed_data?.alamat_pengirim || "").trim();
+    const activeSender = String(preInputData?.nama_pengirim || matchingYoyi?.parsed_data?.nama_pengirim || "").trim();
+    const activeSenderHp = String(preInputData?.hp_pengirim || matchingYoyi?.parsed_data?.no_hp_pengirim || "").trim();
+    const activeSenderAddr = String(preInputData?.alamat_pengirim || matchingYoyi?.parsed_data?.alamat_pengirim || "").trim();
 
-    const activeReceiver = (preInputData?.nama_penerima || matchingYoyi?.parsed_data?.nama_penerima || "").trim();
-    const activeReceiverHp = (preInputData?.hp_penerima || matchingYoyi?.parsed_data?.no_hp_penerima || "").trim();
-    const activeReceiverAddr = (preInputData?.alamat_penerima || matchingYoyi?.parsed_data?.alamat_penerima || "").trim();
+    const activeReceiver = String(preInputData?.nama_penerima || matchingYoyi?.parsed_data?.nama_penerima || "").trim();
+    const activeReceiverHp = String(preInputData?.hp_penerima || matchingYoyi?.parsed_data?.no_hp_penerima || "").trim();
+    const activeReceiverAddr = String(preInputData?.alamat_penerima || matchingYoyi?.parsed_data?.alamat_penerima || "").trim();
 
-    const activeItem = (preInputData?.nama_barang || matchingYoyi?.parsed_data?.nama_barang || "").trim();
+    const activeItem = String(preInputData?.nama_barang || matchingYoyi?.parsed_data?.nama_barang || "").trim();
 
     const now = new Date();
     const transactionData = {
@@ -2125,10 +2193,15 @@ export default function TransaksiPage({
                   </div>
 
                   {metodeBayar !== "Tunai" && metodeBayar !== "DFOD" && (
-                    <div className="bg-red-50/40 p-3.5 rounded-xl border border-red-100/50 space-y-2.5 animate-fade-in">
+                    <div 
+                      className="bg-red-50/40 p-3.5 rounded-xl border border-red-100/50 space-y-2.5 animate-fade-in focus-within:ring-2 focus-within:ring-[#E4002B]/30 outline-none"
+                      onPaste={(e) => handlePasteBukti(e, false)}
+                      tabIndex={0}
+                    >
                       <div className="flex justify-between items-center">
-                        <span className="text-[11px] font-bold text-red-800">
-                          Wajib Upload Bukti {metodeBayar}
+                        <span className="text-[11px] font-bold text-red-800 flex flex-col sm:flex-row gap-1">
+                          <span>Wajib Upload Bukti {metodeBayar}</span>
+                          <span className="font-normal text-[9px] text-red-600 sm:ml-1">(Klik area ini lalu Ctrl+V untuk Paste)</span>
                         </span>
                         <span className="text-[9px] font-mono font-bold text-gray-400">
                           File: BB-{jenisLayanan === "Express" ? "YoYi" : "JTC"}_[Tgl]_[Resi]
@@ -2242,9 +2315,16 @@ export default function TransaksiPage({
                       </div>
 
                       {metodeBayarTambahan !== "Tunai" && (
-                        <div className="bg-red-50/40 p-3 rounded-xl border border-red-100/50 space-y-2">
+                        <div 
+                          className="bg-red-50/40 p-3 rounded-xl border border-red-100/50 space-y-2 focus-within:ring-2 focus-within:ring-[#E4002B]/30 outline-none"
+                          onPaste={(e) => handlePasteBukti(e, true)}
+                          tabIndex={0}
+                        >
                           <div className="flex justify-between items-center">
-                            <span className="text-[11px] font-bold text-red-800">Bukti Tambahan</span>
+                            <span className="text-[11px] font-bold text-red-800 flex flex-col sm:flex-row gap-1">
+                              <span>Bukti Tambahan</span>
+                              <span className="font-normal text-[9px] text-red-600 sm:ml-1">(Ctrl+V Paste)</span>
+                            </span>
                             <span className="text-[9px] font-mono text-gray-400">File: BB-ADD_...</span>
                           </div>
                           <button

@@ -197,7 +197,7 @@ export function checkDuplicateResi(db: any, noResi: string, excludeTxId?: string
   const txs = db.MASTER_TRANSAKSI || db.EXP_Resi || [];
   
   const found = txs.find((tx: any) => {
-    const r = (tx.no_resi || tx.resi_id || "").trim().toUpperCase();
+    const r = String(tx.no_resi || tx.resi_id || "").trim().toUpperCase();
     if (!r || r !== resiUpper) return false;
     if (excludeTxId) {
       const currentId = (tx.transaksi_id || tx.id || "").toString();
@@ -244,15 +244,15 @@ export function checkDuplicateImport(db: any, importId: string): { duplicate: bo
 
 export function createCustomerSnapshot(nama: string, hp: string, alamat: string) {
   return {
-    nama: (nama || "Umum").trim(),
-    hp: (hp || "-").trim(),
-    alamat: (alamat || "-").trim()
+    nama: String(nama || "Umum").trim(),
+    hp: String(hp || "-").trim(),
+    alamat: String(alamat || "-").trim()
   };
 }
 
 export function createBarangSnapshot(nama: string, berat: number, volume: string, nilai?: number) {
   return {
-    nama_barang: (nama || "Paket").trim(),
+    nama_barang: String(nama || "Paket").trim(),
     berat_barang: Number(berat) || 0,
     volume_barang: volume || "0 x 0 x 0",
     nilai_barang: Number(nilai) || 0
@@ -367,16 +367,16 @@ export function processCustomerRules(db: any, senderInput: any, recipientInput: 
     });
 
     if (match) {
-      match.nama = senderInput.nama.trim();
-      match.alamat = (senderInput.alamat || match.alamat || "-").trim();
+      match.nama = String(senderInput.nama).trim();
+      match.alamat = String(senderInput.alamat || match.alamat || "-").trim();
       match.updated_at = new Date().toISOString();
       pengirim_id = match.id || match.pelanggan_id;
-    } else if (senderInput.nama.trim()) {
+    } else if (String(senderInput.nama).trim()) {
       pengirim_id = "SND-" + String(db.Master_Pelanggan.length + 1).padStart(6, "0");
       const newCust = {
         id: pengirim_id,
         pelanggan_id: pengirim_id,
-        nama: senderInput.nama.trim(),
+        nama: String(senderInput.nama).trim(),
         no_hp: senderInput.hp || senderInput.no_hp || "-",
         alamat: senderInput.alamat || "-",
         tipe: "PENGIRIM",
@@ -397,16 +397,16 @@ export function processCustomerRules(db: any, senderInput: any, recipientInput: 
     });
 
     if (match) {
-      match.nama = recipientInput.nama.trim();
-      match.alamat = (recipientInput.alamat || match.alamat || "-").trim();
+      match.nama = String(recipientInput.nama).trim();
+      match.alamat = String(recipientInput.alamat || match.alamat || "-").trim();
       match.updated_at = new Date().toISOString();
       penerima_id = match.id || match.pelanggan_id;
-    } else if (recipientInput.nama.trim()) {
+    } else if (String(recipientInput.nama).trim()) {
       penerima_id = "RCV-" + String(db.Master_Pelanggan.length + 1).padStart(6, "0");
       const newCust = {
         id: penerima_id,
         pelanggan_id: penerima_id,
-        nama: recipientInput.nama.trim(),
+        nama: String(recipientInput.nama).trim(),
         no_hp: recipientInput.hp || recipientInput.no_hp || "-",
         alamat: recipientInput.alamat || "-",
         tipe: "PENERIMA",

@@ -84,9 +84,9 @@ export function generateExceptionFingerprint(
     (scope || "GLOBAL").toUpperCase(),
     (exceptionType || "UNKNOWN").toUpperCase(),
     (entityType || "UNKNOWN").toUpperCase(),
-    (entityId || "N/A").trim(),
-    (transaksiId || "").trim(),
-    (outletId || "").trim()
+    String(entityId || "N/A").trim(),
+    String(transaksiId || "").trim(),
+    String(outletId || "").trim()
   ];
   return parts.join("::");
 }

@@ -218,8 +218,8 @@ function execAction(action, params) {
  * (termasuk role "PICKUP" yang ada di Users, bukan cuma ADMIN/OWNER).
  */
 function apiLogin(params) {
-  var username = (params.username || "").trim();
-  var password = (params.password || "").trim();
+  var username = String(params.username || "").trim();
+  var password = String(params.password || "").trim();
   var usersData = DatabaseService.getSheetData("Users");
   var headers = usersData[0];
   var inputHash = password ? "hash_" + password : "";
@@ -2716,7 +2716,7 @@ function calculateTargetSummary(combinedTx, filterOutlet, dbOutletsObjList) {
  * Validates a transaction for duplication.
  */
 function validateTransaction(resiId, dbExpRaw, dbCrgRaw) {
-  var upperResi = (resiId || "").trim().toUpperCase();
+  var upperResi = String(resiId || "").trim().toUpperCase();
   for (var i = 1; i < dbExpRaw.length; i++) {
     if (dbExpRaw[i][0].toString().toUpperCase() === upperResi) return false;
   }
@@ -3356,7 +3356,7 @@ var TransactionService = {
   },
 
   validateTransaction: function(resiId) {
-    var upperResi = (resiId || "").trim().toUpperCase();
+    var upperResi = String(resiId || "").trim().toUpperCase();
     var expRaw = DatabaseService.getSheetData("EXP_Resi");
     var crgRaw = DatabaseService.getSheetData("CRG_Resi");
     for (var i = 1; i < expRaw.length; i++) {
@@ -3483,7 +3483,7 @@ var TransactionService = {
     if (!data.outlet_id_input) {
       throw new Error("outlet_id_input wajib diisi");
     }
-    var resiId = (data.resi_id || "").trim().toUpperCase();
+    var resiId = String(data.resi_id || "").trim().toUpperCase();
     if (!this.validateTransaction(resiId)) {
       throw new Error("RESI SUDAH TERDAFTAR — Kemungkinan duplikat/fraud");
     }
@@ -4351,8 +4351,8 @@ function apiGetKategoriKeuangan() {
 function apiSaveKategoriKeuangan(params) {
   try {
     ensureDefaultKategoriKeuangan_();
-    var nama = (params.nama || "").trim();
-    var jenis = (params.jenis || "").trim().toUpperCase();
+    var nama = String(params.nama || "").trim();
+    var jenis = String(params.jenis || "").trim().toUpperCase();
     var urutan = parseInt(params.urutan, 10);
     var createdBy = params.created_by || "OWNER";
 
@@ -4403,8 +4403,8 @@ function apiSaveKategoriKeuangan(params) {
 function apiUpdateKategoriKeuangan(params) {
   try {
     ensureDefaultKategoriKeuangan_();
-    var id = (params.id || "").trim();
-    var nama = (params.nama || "").trim();
+    var id = String(params.id || "").trim();
+    var nama = String(params.nama || "").trim();
     var urutan = parseInt(params.urutan, 10);
     var aktifVal = params.aktif;
 
@@ -4460,7 +4460,7 @@ function apiUpdateKategoriKeuangan(params) {
 function apiSetKategoriAktif(params) {
   try {
     ensureDefaultKategoriKeuangan_();
-    var id = (params.id || "").trim();
+    var id = String(params.id || "").trim();
     if (!id) return { status: "error", message: "ID kategori tidak ditemukan." };
 
     var existingRes = apiGetKategoriKeuangan();
@@ -4868,10 +4868,10 @@ function apiSaveKeuanganOutlet(params) {
       return { status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." };
     }
 
-    var kategoriId = (params.kategori_id || "").trim();
+    var kategoriId = String(params.kategori_id || "").trim();
     var nominal = Number(params.nominal) || 0;
-    var tanggal = (params.tanggal || "").trim().slice(0, 10);
-    var outletId = (params.outlet_id || "").trim();
+    var tanggal = String(params.tanggal || "").trim().slice(0, 10);
+    var outletId = String(params.outlet_id || "").trim();
     var dibuatOleh = params.dibuat_oleh || params.user_id || currentRole || "SYSTEM";
 
     if (!kategoriId) return { status: "error", message: "Kategori wajib dipilih." };
@@ -4907,8 +4907,8 @@ function apiSaveKeuanganOutlet(params) {
       jenis: jenis,
       kategori_id: kategoriId,
       nominal: nominal,
-      deskripsi: (params.deskripsi || "").trim(),
-      bukti_url: (params.bukti_url || "").trim(),
+      deskripsi: String(params.deskripsi || "").trim(),
+      bukti_url: String(params.bukti_url || "").trim(),
       dibuat_oleh: dibuatOleh,
       created_at: nowStr,
       aktif: "TRUE"
@@ -4929,11 +4929,11 @@ function apiUpdateKeuanganOutlet(params) {
       return { status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." };
     }
 
-    var id = (params.id || "").trim();
-    var kategoriId = (params.kategori_id || "").trim();
+    var id = String(params.id || "").trim();
+    var kategoriId = String(params.kategori_id || "").trim();
     var nominal = Number(params.nominal) || 0;
-    var tanggal = (params.tanggal || "").trim().slice(0, 10);
-    var outletId = (params.outlet_id || "").trim();
+    var tanggal = String(params.tanggal || "").trim().slice(0, 10);
+    var outletId = String(params.outlet_id || "").trim();
 
     if (!id) return { status: "error", message: "ID transaksi keuangan tidak ditemukan." };
     if (!kategoriId) return { status: "error", message: "Kategori wajib dipilih." };
@@ -4972,8 +4972,8 @@ function apiUpdateKeuanganOutlet(params) {
       jenis: catObj.jenis.toUpperCase(),
       kategori_id: kategoriId,
       nominal: nominal,
-      deskripsi: (params.deskripsi || "").trim(),
-      bukti_url: (params.bukti_url || "").trim()
+      deskripsi: String(params.deskripsi || "").trim(),
+      bukti_url: String(params.bukti_url || "").trim()
     };
     if (outletId) {
       updateData.outlet_id = outletId;
@@ -4994,7 +4994,7 @@ function apiDeleteKeuanganOutlet(params) {
       return { status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." };
     }
 
-    var id = (params.id || "").trim();
+    var id = String(params.id || "").trim();
     if (!id) return { status: "error", message: "ID transaksi keuangan tidak ditemukan." };
 
     var existingRows = DatabaseService.getSheetData("KEUANGAN_OUTLET");

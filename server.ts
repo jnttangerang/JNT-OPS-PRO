@@ -484,10 +484,10 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
   if (!db.MASTER_PENERIMA) db.MASTER_PENERIMA = [];
 
   // 1. SENDER: MASTER_CUSTOMER & MASTER_PENGIRIM
-  const hpSenderClean = (params.hp_pengirim || "").trim();
+  const hpSenderClean = String(params.hp_pengirim || "").trim();
   const hpSenderNorm = normalizePhone(hpSenderClean);
-  const namaSenderClean = (params.nama_pengirim || "").trim();
-  const alamatSenderClean = (params.alamat_pengirim || "").trim();
+  const namaSenderClean = String(params.nama_pengirim || "").trim();
+  const alamatSenderClean = String(params.alamat_pengirim || "").trim();
 
   let senderCustId = "";
   let pengirim_id = "";
@@ -552,7 +552,7 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
     if (alamatSenderClean) {
       let sndAddress = db.MASTER_PENGIRIM.find((p: any) => 
         (p.customer_id === senderCustId || normalizePhone(p.telepon) === hpSenderNorm) &&
-        (p.alamat || "").trim().toLowerCase() === alamatSenderClean.toLowerCase()
+        String(p.alamat || "").trim().toLowerCase() === alamatSenderClean.toLowerCase()
       );
 
       if (sndAddress) {
@@ -595,10 +595,10 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
   }
 
   // 2. RECIPIENT: MASTER_CUSTOMER & MASTER_PENERIMA
-  const hpRecClean = (params.hp_penerima || "").trim();
+  const hpRecClean = String(params.hp_penerima || "").trim();
   const hpRecNorm = normalizePhone(hpRecClean);
-  const namaRecClean = (params.nama_penerima || "").trim();
-  const alamatRecClean = (params.alamat_penerima || "").trim();
+  const namaRecClean = String(params.nama_penerima || "").trim();
+  const alamatRecClean = String(params.alamat_penerima || "").trim();
 
   let recCustId = "";
   let penerima_id = "";
@@ -645,7 +645,7 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
     if (alamatRecClean) {
       let rcvAddress = db.MASTER_PENERIMA.find((r: any) => 
         (r.customer_id === recCustId || normalizePhone(r.telepon) === hpRecNorm) &&
-        (r.alamat || "").trim().toLowerCase() === alamatRecClean.toLowerCase()
+        String(r.alamat || "").trim().toLowerCase() === alamatRecClean.toLowerCase()
       );
 
       if (rcvAddress) {
@@ -776,7 +776,7 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
   if (!db.MASTER_TRANSAKSI) db.MASTER_TRANSAKSI = [];
   if (!db.MASTER_PENGIRIMAN) db.MASTER_PENGIRIMAN = [];
 
-  const txId = (params.transaksi_id || "").trim();
+  const txId = String(params.transaksi_id || "").trim();
   if (!txId) return { success: false, message: "transaksi_id wajib diisi" };
 
   const nowIso = new Date().toISOString();
@@ -1075,7 +1075,7 @@ function syncExistingDataToThreeLayers(db: any) {
   if (db.MASTER_CUSTOMER.length === 0 && db.Master_Customer && db.Master_Customer.length > 0) {
     db.Master_Customer.forEach((c: any, idx: number) => {
       const custId = "CUS" + String(idx + 1).padStart(6, "0");
-      const phone = (c.no_hp || c.telepon || "").trim();
+      const phone = String(c.no_hp || c.telepon || "").trim();
       if (phone) {
         db.MASTER_CUSTOMER.push({
           customer_id: custId,
@@ -1922,7 +1922,7 @@ app.post("/api/getCustomersMaster", (req, res) => {
   });
 
   const data = customers.map((c: any) => {
-    const hp = (c.telepon || c.no_hp || "").trim();
+    const hp = String(c.telepon || c.no_hp || "").trim();
     const hpNorm = normalizePhone(hp);
     const st = statsMap.get(hpNorm) || {
       total_resi: 0,
@@ -2002,7 +2002,7 @@ app.post("/api/getCustomerDetailFull", (req, res) => {
     return res.status(404).json({ status: "error", message: "Customer tidak ditemukan" });
   }
 
-  const phone = (customer.telepon || customer.no_hp || "").trim();
+  const phone = String(customer.telepon || customer.no_hp || "").trim();
   const phoneNorm = normalizePhone(phone);
   const cId = customer.customer_id;
 
@@ -2038,11 +2038,11 @@ app.post("/api/getCustomerDetailFull", (req, res) => {
     totalBerat += (Number(pi.berat_timbangan) || Number(pi.berat_kg) || 0);
 
     if (pi.nama_barang) {
-      const bg = pi.nama_barang.trim();
+      const bg = String(pi.nama_barang).trim();
       barangFreq[bg] = (barangFreq[bg] || 0) + 1;
     }
     if (pi.alamat_penerima) {
-      const dest = pi.alamat_penerima.split(",").pop()?.trim() || pi.alamat_penerima.trim();
+      const dest = pi.alamat_penerima.split(",").pop()?.trim() || String(pi.alamat_penerima).trim();
       destFreq[dest] = (destFreq[dest] || 0) + 1;
     }
     const dayNames = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -2210,7 +2210,7 @@ app.post("/api/checkDuplicateResi", (req, res) => {
   }
 
   const db = readDb();
-  const rid = resi_id.trim().toUpperCase();
+  const rid = String(resi_id).trim().toUpperCase();
 
   const inExp = db.EXP_Resi.some((r: any) => r.resi_id.toUpperCase() === rid);
   const inCrg = db.CRG_Resi.some((r: any) => r.resi_id.toUpperCase() === rid);
@@ -2567,7 +2567,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
     if (!db.PreInput_Backup) db.PreInput_Backup = [];
 
     // Double check duplicates to avoid bypass
-    const rid = (data.resi_id || data.nomor_resi || "").trim().toUpperCase();
+    const rid = String(data.resi_id || data.nomor_resi || "").trim().toUpperCase();
     if (!rid) {
       return res.status(400).json({ status: "error", message: "Nomor resi wajib diisi" });
     }
@@ -2682,19 +2682,19 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
     let pre = db.PreInput_Backup.find((p: any) => p.transaksi_id === transId || (rid && p.no_resi === rid));
 
     // Resolve robust values giving priority to non-placeholder values from data or pre
-    const isPlaceholderSender = (val?: string) => !val || val.trim() === "" || val.trim() === "Umum" || val.trim() === "YoYi Pengirim";
-    const isPlaceholderReceiver = (val?: string) => !val || val.trim() === "" || val.trim() === "Umum" || val.trim() === "YoYi Penerima";
-    const isPlaceholderItem = (val?: string) => !val || val.trim() === "" || val.trim() === "Paket" || val.trim() === "Paket Standard" || val.trim() === "Paket YoYi";
+    const isPlaceholderSender = (val?: string) => !val || String(val).trim() === "" || String(val).trim() === "Umum" || String(val).trim() === "YoYi Pengirim";
+    const isPlaceholderReceiver = (val?: string) => !val || String(val).trim() === "" || String(val).trim() === "Umum" || String(val).trim() === "YoYi Penerima";
+    const isPlaceholderItem = (val?: string) => !val || String(val).trim() === "" || String(val).trim() === "Paket" || String(val).trim() === "Paket Standard" || String(val).trim() === "Paket YoYi";
 
-    const senderName = (!isPlaceholderSender(data.nama_pengirim) ? data.nama_pengirim : (!isPlaceholderSender(pre?.nama_pengirim) ? pre.nama_pengirim : (data.nama_pengirim || pre?.nama_pengirim || "Umum"))).trim();
-    const senderHp = (data.hp_pengirim || data.no_hp_pengirim || pre?.hp_pengirim || "").trim();
-    const senderAddr = (data.alamat_pengirim || pre?.alamat_pengirim || "").trim();
+    const senderName = (!isPlaceholderSender(data.nama_pengirim) ? data.nama_pengirim : (!isPlaceholderSender(pre?.nama_pengirim) ? pre.nama_pengirim : (data.nama_pengirim || pre?.nama_pengirim || "Umum"))).toString().trim();
+    const senderHp = String(data.hp_pengirim || data.no_hp_pengirim || pre?.hp_pengirim || "").trim();
+    const senderAddr = String(data.alamat_pengirim || pre?.alamat_pengirim || "").trim();
 
-    const recName = (!isPlaceholderReceiver(data.nama_penerima) ? data.nama_penerima : (!isPlaceholderReceiver(pre?.nama_penerima) ? pre.nama_penerima : (data.nama_penerima || pre?.nama_penerima || "Umum"))).trim();
-    const recHp = (data.hp_penerima || data.no_hp_penerima || pre?.hp_penerima || "").trim();
-    const recAddr = (data.alamat_penerima || pre?.alamat_penerima || "").trim();
+    const recName = (!isPlaceholderReceiver(data.nama_penerima) ? data.nama_penerima : (!isPlaceholderReceiver(pre?.nama_penerima) ? pre.nama_penerima : (data.nama_penerima || pre?.nama_penerima || "Umum"))).toString().trim();
+    const recHp = String(data.hp_penerima || data.no_hp_penerima || pre?.hp_penerima || "").trim();
+    const recAddr = String(data.alamat_penerima || pre?.alamat_penerima || "").trim();
 
-    const itemName = (!isPlaceholderItem(data.nama_barang) ? data.nama_barang : (!isPlaceholderItem(pre?.nama_barang) ? pre.nama_barang : (data.nama_barang || pre?.nama_barang || "Paket"))).trim();
+    const itemName = (!isPlaceholderItem(data.nama_barang) ? data.nama_barang : (!isPlaceholderItem(pre?.nama_barang) ? pre.nama_barang : (data.nama_barang || pre?.nama_barang || "Paket"))).toString().trim();
 
     if (pre) {
       pre.status = "SELESAI";
@@ -2911,7 +2911,7 @@ app.post("/api/importYoYi", async (req, res) => {
   }
 
   const db = readDb();
-  const rid = (parsed.nomor_resi || "").trim().toUpperCase();
+  const rid = String(parsed.nomor_resi || "").trim().toUpperCase();
   if (!rid) {
     return res.status(400).json({ status: "error", message: "Nomor resi tidak valid" });
   }
@@ -3257,7 +3257,7 @@ ${text}`;
 
     // Merge AI result with regex data for any missing fields
     const finalData = {
-      nomor_resi: (parsedData.nomor_resi || regexData.nomor_resi || "").trim().toUpperCase(),
+      nomor_resi: String(parsedData.nomor_resi || regexData.nomor_resi || "").trim().toUpperCase(),
       nama_pengirim: parsedData.nama_pengirim || regexData.nama_pengirim || "",
       no_hp_pengirim: parsedData.no_hp_pengirim || regexData.no_hp_pengirim || "",
       alamat_pengirim: parsedData.alamat_pengirim || regexData.alamat_pengirim || "",
@@ -5726,8 +5726,8 @@ const handleGetKategoriKeuangan = (req: any, res: any) => {
 const handleSaveKategoriKeuangan = (req: any, res: any) => {
   const db = readDb();
   const { nama, jenis, urutan, created_by } = req.body || {};
-  const trimmedNama = (nama || "").trim();
-  const upperJenis = (jenis || "").trim().toUpperCase();
+  const trimmedNama = String(nama || "").trim();
+  const upperJenis = String(jenis || "").trim().toUpperCase();
 
   if (!trimmedNama) {
     return res.json({ status: "error", message: "Nama kategori wajib diisi." });
@@ -5776,8 +5776,8 @@ const handleSaveKategoriKeuangan = (req: any, res: any) => {
 const handleUpdateKategoriKeuangan = (req: any, res: any) => {
   const db = readDb();
   const { id, nama, urutan, aktif, jenis } = req.body || {};
-  const trimmedId = (id || "").trim();
-  const trimmedNama = (nama || "").trim();
+  const trimmedId = String(id || "").trim();
+  const trimmedNama = String(nama || "").trim();
 
   if (!trimmedId) {
     return res.json({ status: "error", message: "ID kategori wajib diisi." });
@@ -5834,7 +5834,7 @@ const handleUpdateKategoriKeuangan = (req: any, res: any) => {
 const handleSetKategoriAktif = (req: any, res: any) => {
   const db = readDb();
   const { id, aktif } = req.body || {};
-  const trimmedId = (id || "").trim();
+  const trimmedId = String(id || "").trim();
 
   if (!trimmedId) {
     return res.json({ status: "error", message: "ID kategori wajib diisi." });
@@ -5983,10 +5983,10 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
     return res.json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." });
   }
 
-  const trimmedKategoriId = (kategori_id || "").trim();
+  const trimmedKategoriId = String(kategori_id || "").trim();
   const numNominal = Number(nominal) || 0;
-  const trimmedTanggal = (tanggal || "").trim().slice(0, 10);
-  const trimmedOutletId = (outlet_id || "").trim();
+  const trimmedTanggal = String(tanggal || "").trim().slice(0, 10);
+  const trimmedOutletId = String(outlet_id || "").trim();
 
   if (!trimmedKategoriId) return res.json({ status: "error", message: "Kategori wajib dipilih." });
   if (!trimmedTanggal) return res.json({ status: "error", message: "Tanggal wajib diisi (YYYY-MM-DD)." });
@@ -6015,8 +6015,8 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
     jenis: upperJenis,
     kategori_id: trimmedKategoriId,
     nominal: numNominal,
-    deskripsi: (deskripsi || "").trim(),
-    bukti_url: (bukti_url || "").trim(),
+    deskripsi: String(deskripsi || "").trim(),
+    bukti_url: String(bukti_url || "").trim(),
     dibuat_oleh: dibuat_oleh || user_id || currentRole || "SYSTEM",
     created_at: nowStr,
     aktif: true
@@ -6038,11 +6038,11 @@ const handleUpdateKeuanganOutlet = (req: any, res: any) => {
     return res.json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." });
   }
 
-  const trimmedId = (id || "").trim();
-  const trimmedKategoriId = (kategori_id || "").trim();
+  const trimmedId = String(id || "").trim();
+  const trimmedKategoriId = String(kategori_id || "").trim();
   const numNominal = Number(nominal) || 0;
-  const trimmedTanggal = (tanggal || "").trim().slice(0, 10);
-  const trimmedOutletId = (outlet_id || "").trim();
+  const trimmedTanggal = String(tanggal || "").trim().slice(0, 10);
+  const trimmedOutletId = String(outlet_id || "").trim();
 
   if (!trimmedId) return res.json({ status: "error", message: "ID transaksi keuangan wajib diisi." });
   if (!trimmedKategoriId) return res.json({ status: "error", message: "Kategori wajib dipilih." });
@@ -6069,8 +6069,8 @@ const handleUpdateKeuanganOutlet = (req: any, res: any) => {
   target.jenis = String(catObj.jenis).toUpperCase();
   target.kategori_id = trimmedKategoriId;
   target.nominal = numNominal;
-  target.deskripsi = (deskripsi || "").trim();
-  target.bukti_url = (bukti_url || "").trim();
+  target.deskripsi = String(deskripsi || "").trim();
+  target.bukti_url = String(bukti_url || "").trim();
   if (trimmedOutletId) {
     target.outlet_id = trimmedOutletId;
   }
@@ -6087,7 +6087,7 @@ const handleDeleteKeuanganOutlet = (req: any, res: any) => {
     return res.json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." });
   }
 
-  const trimmedId = (id || "").trim();
+  const trimmedId = String(id || "").trim();
 
   if (!trimmedId) return res.json({ status: "error", message: "ID transaksi keuangan wajib diisi." });
 
