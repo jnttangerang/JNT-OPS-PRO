@@ -129,7 +129,7 @@ export function reconcileTransaction(db: any, transaksiId: string): Reconciliati
       exceptions.push({
         id: "EXC-" + Math.floor(Math.random() * 100000),
         type: "TRANSACTION_WITHOUT_SHIPMENT",
-        severity: "WARNING",
+        severity: "ERROR",
         entity_type: "TRANSACTION",
         entity_id: tx.id,
         transaksi_id: tx.id,

@@ -177,7 +177,7 @@ function runPhase30Tests() {
       exception_id: exc.exception_id,
       resolution: "RESOLVED",
       resolution_reason: "Resi telah diinput manual di sistem ekspedisi.",
-      actor: actorAdmin
+      actor: actorOwner
     });
   }
   // Add missing shipment row so operational data is consistent
@@ -194,7 +194,7 @@ function runPhase30Tests() {
   });
   // Also update setoran if required
   db3.Master_Setoran[0].nominal = 35000; // Match updated total (20000 + 15000)
-  const val4 = validateDailyClosing(db3, { outlet_id: "OUT-A", tanggal: "2026-08-07", actor: actorAdmin });
+  const val4 = validateDailyClosing(db3, { outlet_id: "OUT-A", tanggal: "2026-08-07", actor: actorAdmin }); 
   assert(val4.status === "success" && val4.data?.status === "READY", "TEST 4: Exception sudah RESOLVED -> closing dapat lanjut");
 
   // TEST 5: Financial discrepancy -> BLOCKED

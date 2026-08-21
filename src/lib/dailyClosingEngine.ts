@@ -105,9 +105,11 @@ export function validateDailyClosing(
     outlet_name?: string;
     tanggal: string;
     actor: ActorInfo;
-  }
+  },
+  options?: { isDryRun?: boolean }
 ): { status: "success" | "blocked" | "error"; error_code?: string; message: string; data?: DailyClosingRecord; blocking_reasons?: string[] } {
   const { outlet_id, outlet_name, tanggal, actor } = params;
+  const isDryRun = options?.isDryRun || false;
 
   if (!outlet_id) {
     return { status: "error", error_code: "INVALID_PARAM", message: "outlet_id wajib diisi." };
@@ -134,18 +136,20 @@ export function validateDailyClosing(
   const now = new Date().toISOString();
 
   // Log audit event for closing started
-  logAuditEvent(db, {
-    event_type: "CLOSING_STARTED",
-    action: "START_DAILY_CLOSING_VALIDATION",
-    entity_type: "DAILY_CLOSING",
-    entity_id: closingId,
-    outlet_id,
-    result: "SUCCESS",
-    actor_id: actor.actor_id,
-    actor_name: actor.actor_name,
-    actor_role: actor.actor_role,
-    metadata: { outlet_id, tanggal }
-  });
+  if (!isDryRun) {
+    logAuditEvent(db, {
+      event_type: "CLOSING_STARTED",
+      action: "START_DAILY_CLOSING_VALIDATION",
+      entity_type: "DAILY_CLOSING",
+      entity_id: closingId,
+      outlet_id,
+      result: "SUCCESS",
+      actor_id: actor.actor_id,
+      actor_name: actor.actor_name,
+      actor_role: actor.actor_role,
+      metadata: { outlet_id, tanggal }
+    });
+  }
 
   // 1. Single Source of Truth Financial Calculation for outlet + tanggal
   const allTx = db.MASTER_TRANSAKSI || [];
@@ -172,8 +176,10 @@ export function validateDailyClosing(
 
   // 2. Reconciliation Execution & Exception Review Validation
   const reconRes = reconcileDaily(db, tanggal, outlet_id);
-  logReconciliationExecution(db, reconRes, actor.actor_id || "SYSTEM");
-  syncReconciliationExceptions(db, reconRes);
+  if (!isDryRun) {
+    logReconciliationExecution(db, reconRes, actor.actor_id || "SYSTEM");
+    syncReconciliationExceptions(db, reconRes);
+  }
 
   const reconClosingStatus = getClosingReconciliationStatus(db, outlet_id, tanggal);
 
@@ -227,7 +233,9 @@ export function validateDailyClosing(
   }
 
   if (setoran_required > 0) {
-    if (setoran_status === "UNAPPROVED") {
+    if (setoran_status === "MISSING") {
+      blocking_reasons.push("Setoran Owner belum dibuat (wajib setor > 0).");
+    } else if (setoran_status === "UNAPPROVED") {
       blocking_reasons.push("Setoran Owner belum disetujui (status masih PENDING).");
     } else if (setoran_status === "MISMATCH") {
       blocking_reasons.push(`Selisih setoran Owner: Wajib Setor Rp ${setoran_required.toLocaleString('id-ID')} vs Disetor Rp ${setoran_actual.toLocaleString('id-ID')}.`);
@@ -281,27 +289,33 @@ export function validateDailyClosing(
   let targetRecord: DailyClosingRecord;
   if (!existing) {
     targetRecord = record;
-    list.push(targetRecord);
+    if (!isDryRun) {
+      list.push(targetRecord);
+    }
   } else {
-    Object.assign(existing, record);
-    targetRecord = existing;
+    targetRecord = { ...existing, ...record };
+    if (!isDryRun) {
+      Object.assign(existing, targetRecord);
+    }
   }
 
   // Audit trail event
   if (isBlocked) {
-    logAuditEvent(db, {
-      event_type: "CLOSING_BLOCKED",
-      action: "VALIDATE_DAILY_CLOSING",
-      entity_type: "DAILY_CLOSING",
-      entity_id: closingId,
-      outlet_id,
-      result: "FAILED",
-      reason: blocking_reasons.join(" | "),
-      actor_id: actor.actor_id,
-      actor_name: actor.actor_name,
-      actor_role: actor.actor_role,
-      metadata: { blocking_reasons, record: targetRecord }
-    });
+    if (!isDryRun) {
+      logAuditEvent(db, {
+        event_type: "CLOSING_BLOCKED",
+        action: "VALIDATE_DAILY_CLOSING",
+        entity_type: "DAILY_CLOSING",
+        entity_id: closingId,
+        outlet_id,
+        result: "FAILED",
+        reason: blocking_reasons.join(" | "),
+        actor_id: actor.actor_id,
+        actor_name: actor.actor_name,
+        actor_role: actor.actor_role,
+        metadata: { blocking_reasons, record: targetRecord }
+      });
+    }
     return {
       status: "blocked",
       error_code: reconClosingStatus.open_critical_count > 0 ? "OPEN_CRITICAL_EXCEPTION" : "CLOSING_BLOCKED",
@@ -310,18 +324,20 @@ export function validateDailyClosing(
       blocking_reasons
     };
   } else {
-    logAuditEvent(db, {
-      event_type: "CLOSING_VALIDATED",
-      action: "VALIDATE_DAILY_CLOSING",
-      entity_type: "DAILY_CLOSING",
-      entity_id: closingId,
-      outlet_id,
-      result: "SUCCESS",
-      actor_id: actor.actor_id,
-      actor_name: actor.actor_name,
-      actor_role: actor.actor_role,
-      metadata: { record: targetRecord }
-    });
+    if (!isDryRun) {
+      logAuditEvent(db, {
+        event_type: "CLOSING_VALIDATED",
+        action: "VALIDATE_DAILY_CLOSING",
+        entity_type: "DAILY_CLOSING",
+        entity_id: closingId,
+        outlet_id,
+        result: "SUCCESS",
+        actor_id: actor.actor_id,
+        actor_name: actor.actor_name,
+        actor_role: actor.actor_role,
+        metadata: { record: targetRecord }
+      });
+    }
     return {
       status: "success",
       message: `Tutup buku valid dan SIAP untuk outlet '${resolvedOutletName}' tanggal '${tanggal}'.`,
@@ -498,11 +514,11 @@ export function reopenDailyClosing(
 
 export function getDailyClosingStatus(db: any, outletId: string, tanggal: string) {
   const existing = getDailyClosingRecord(db, outletId, tanggal);
-  if (existing) {
+  if (existing && existing.status === "CLOSED") {
     return { status: "success", data: existing };
   }
-  // Dry run validation
+  // Dry run validation to calculate fresh financial snapshot without mutating DB or logging
   const dummyActor: ActorInfo = { actor_id: "SYSTEM", actor_role: "SYSTEM" };
-  const valRes = validateDailyClosing(db, { outlet_id: outletId, tanggal, actor: dummyActor });
+  const valRes = validateDailyClosing(db, { outlet_id: outletId, tanggal, actor: dummyActor }, { isDryRun: true });
   return { status: "success", data: valRes.data };
 }
