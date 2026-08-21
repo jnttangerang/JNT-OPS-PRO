@@ -7,7 +7,7 @@ import {
 import { useAppsScript } from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
 import { highlightText } from "../../utils/highlight";
-import { SessionData, Outlet, KeuanganOutlet, KategoriKeuangan } from "../../types";
+import { SessionData, Outlet, KeuanganOutlet, KategoriKeuangan, User } from "../../types";
 
 interface KeuanganOutletPageProps {
   session: SessionData;
@@ -21,6 +21,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
   const [loading, setLoading] = useState(false);
   const [ledgerList, setLedgerList] = useState<KeuanganOutlet[]>([]);
   const [categories, setCategories] = useState<KategoriKeuangan[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
 
   // Date defaults (current month or last 30 days)
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -83,7 +84,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
     }
   };
 
-  // Fetch Categories & Ledger
+  // Fetch Categories, Users & Ledger
   const fetchCategories = async () => {
     try {
       const res = await callBackend("getKategoriKeuangan");
@@ -93,6 +94,17 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
       }
     } catch (err) {
       console.error("Fetch categories error", err);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const res = await callBackend("getUsers");
+      if (res && res.status === "success" && Array.isArray(res.data)) {
+        setUsers(res.data);
+      }
+    } catch (err) {
+      console.error("Fetch users error", err);
     }
   };
 
@@ -121,7 +133,24 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
 
   useEffect(() => {
     fetchCategories();
+    fetchUsers();
   }, []);
+
+  // Helper to resolve admin full name
+  const getAdminName = (rawDibuatOleh?: string) => {
+    if (!rawDibuatOleh) return "-";
+    const found = users.find(
+      (u) =>
+        u.user_id === rawDibuatOleh ||
+        u.username?.toLowerCase() === rawDibuatOleh.toLowerCase() ||
+        u.nama_lengkap?.toLowerCase() === rawDibuatOleh.toLowerCase()
+    );
+    if (found?.nama_lengkap) return found.nama_lengkap;
+    if (session?.user_id === rawDibuatOleh || session?.username?.toLowerCase() === rawDibuatOleh.toLowerCase()) {
+      return session.nama_lengkap || session.username;
+    }
+    return rawDibuatOleh;
+  };
 
   useEffect(() => {
     fetchLedger();
@@ -140,9 +169,10 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
       item.kategori_nama?.toLowerCase().includes(q) ||
       item.deskripsi?.toLowerCase().includes(q) ||
       item.nama_outlet?.toLowerCase().includes(q) ||
-      item.dibuat_oleh?.toLowerCase().includes(q)
+      item.dibuat_oleh?.toLowerCase().includes(q) ||
+      getAdminName(item.dibuat_oleh).toLowerCase().includes(q)
     );
-  }, [ledgerList, searchQuery]);
+  }, [ledgerList, searchQuery, users, session]);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -619,9 +649,9 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
                         {item.deskripsi ? highlightText(item.deskripsi, searchQuery) : <span className="text-gray-300 font-normal italic">-</span>}
                       </td>
 
-                      {/* Operator */}
-                      <td className="py-3.5 px-4 text-gray-600 font-medium">
-                        {item.dibuat_oleh ? highlightText(item.dibuat_oleh, searchQuery) : "-"}
+                      {/* Operator (Nama Admin) */}
+                      <td className="py-3.5 px-4 text-gray-700 font-medium">
+                        {highlightText(getAdminName(item.dibuat_oleh), searchQuery)}
                       </td>
 
                       {/* Bukti */}

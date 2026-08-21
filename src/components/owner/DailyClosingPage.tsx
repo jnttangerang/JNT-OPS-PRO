@@ -487,7 +487,7 @@ export default function DailyClosingPage({
               <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
                 <DollarSign className="w-4 h-4" />
               </div>
-              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Ringkasan Finansial Kasir</h3>
+              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Ringkasan Finansial Admin</h3>
             </div>
             <span className="text-[10px] bg-blue-50 text-blue-700 font-extrabold px-2 py-0.5 rounded">Kalkulasi Transaksi</span>
           </div>
@@ -506,8 +506,8 @@ export default function DailyClosingPage({
               <span className="font-extrabold text-red-500">{closingStatusData?.cancelled_transaction_count ?? 0}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Total Pelanggan</span>
-              <span className="font-extrabold text-gray-900">{closingStatusData?.total_customer ?? 0}</span>
+              <span className="text-gray-500 font-medium">Total Pembayaran Customer</span>
+              <span className="font-extrabold text-gray-900">Rp {Number(closingStatusData?.total_customer ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Wajib Setor ke Owner</span>
@@ -531,7 +531,7 @@ export default function DailyClosingPage({
               <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
                 <FileCheck className="w-4 h-4" />
               </div>
-              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Status Setoran Kasir</h3>
+              <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Status Setoran Admin</h3>
             </div>
             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
               closingStatusData?.setoran_status === "MATCHED" 
@@ -810,7 +810,7 @@ export default function DailyClosingPage({
               <textarea
                 value={closeNotes}
                 onChange={(e) => setCloseNotes(e.target.value)}
-                placeholder="Tuliskan catatan operasional kasir/outlet jika ada..."
+                placeholder="Tuliskan catatan operasional admin/outlet jika ada..."
                 className="w-full p-3 border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#E4002B]/20 focus:border-[#E4002B]"
                 rows={3}
               />
@@ -861,7 +861,7 @@ export default function DailyClosingPage({
               <textarea
                 value={reopenReason}
                 onChange={(e) => setReopenReason(e.target.value)}
-                placeholder="Contoh: Koreksi nomor resi/berat paket, penyesuaian bukti transfer kasir..."
+                placeholder="Contoh: Koreksi nomor resi/berat paket, penyesuaian bukti transfer admin..."
                 className="w-full p-3 border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
                 rows={3}
                 required

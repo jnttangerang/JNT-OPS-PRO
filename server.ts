@@ -5923,6 +5923,13 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
   const outletMap: Record<string, string> = {};
   outletList.forEach((o: any) => { outletMap[o.outlet_id] = o.nama_outlet || o.outlet_id; });
 
+  const userMap: Record<string, string> = {};
+  (db.Users || []).forEach((u: any) => {
+    if (u.user_id) userMap[u.user_id] = u.nama_lengkap || u.username;
+    if (u.username) userMap[u.username] = u.nama_lengkap || u.username;
+    if (u.nama_lengkap) userMap[u.nama_lengkap] = u.nama_lengkap;
+  });
+
   let filtered = list.filter((item: any) => {
     const isAktif = item.aktif === true || item.aktif === "TRUE" || item.aktif === "true" || item.aktif === undefined;
     if (!isAktif && !params.include_inactive) return false;
@@ -5940,6 +5947,7 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
 
   const formatted = filtered.map((item: any) => {
     const catObj = catMap[item.kategori_id] || {};
+    const adminName = userMap[item.dibuat_oleh] || item.dibuat_oleh || "-";
     return {
       id: String(item.id),
       tanggal: toIsoDateString(item.tanggal, item.created_at),
@@ -5951,7 +5959,7 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
       nominal: Number(item.nominal) || 0,
       deskripsi: String(item.deskripsi || ""),
       bukti_url: String(item.bukti_url || ""),
-      dibuat_oleh: String(item.dibuat_oleh || ""),
+      dibuat_oleh: String(adminName),
       created_at: String(item.created_at || ""),
       aktif: item.aktif !== false && item.aktif !== "FALSE"
     };
