@@ -3,8 +3,9 @@ import {
   User, Phone, MapPin, Sparkles, Camera, Image as ImageIcon, 
   Save, ArrowLeft, CheckCircle2, Clipboard, ChevronRight, RefreshCw, AlertCircle, BookOpen,
   PlusCircle, Search, Filter, XCircle, Clock, Play, Edit3, Trash2, Zap, Check, AlertTriangle, Layers,
-  CreditCard, Hash, ArrowRight, Activity, Scale, DollarSign, Tag
-, ChevronLeft} from 'lucide-react';
+  CreditCard, Hash, ArrowRight, Activity, Scale, DollarSign, Tag,
+  ChevronLeft, ClipboardList, X
+} from 'lucide-react';
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, MasterCustomer, RiwayatPenerima } from "../types";
 import { toast } from "../utils/toast";
@@ -88,6 +89,7 @@ export default function PreInputPage({
   const [activeBoardTab, setActiveBoardTab] = useState("DRAFT");
   const [boardPage, setBoardPage] = useState(1);
   const [boardLimit, setBoardLimit] = useState(5);
+  const [isBoardOpen, setIsBoardOpen] = useState(false);
   const [users, setUsers] = useState<any[]>([]);
   const [draftToDelete, setDraftToDelete] = useState<string | null>(null);
 
@@ -96,7 +98,11 @@ export default function PreInputPage({
       const res = await callBackend("getUsers");
       if (res && res.status === "success" && Array.isArray(res.data)) setUsers(res.data);
     };
-    fetchUsers();
+    const initPage = async () => {
+      await callBackend("cleanupOldDrafts");
+      fetchUsers();
+    };
+    initPage();
   }, [callBackend]);
 
   const handleSimpanDraftManual = async () => {
@@ -1284,6 +1290,20 @@ Catatan : ${catatanAdmin || "-"}
 
           {/* ACTIONS & OUTLET SELECTOR */}
           <div className="flex flex-wrap items-center gap-3">
+            {/* Toggle Board Button */}
+            <button
+              onClick={() => setIsBoardOpen(!isBoardOpen)}
+              type="button"
+              className={`py-2 px-3.5 rounded-xl text-xs font-bold flex items-center gap-2 transition duration-150 shadow-sm cursor-pointer border ${
+                isBoardOpen
+                  ? "bg-red-50 text-[#E4002B] border-red-200 hover:bg-red-100"
+                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              <ClipboardList size={15} />
+              <span className="hidden sm:inline-block">{isBoardOpen ? "Tutup Board" : "Buka Board"}</span>
+            </button>
+
             {/* Quick Action: Draft Baru Button */}
             <button
               onClick={handleDraftBaru}
@@ -1642,10 +1662,10 @@ Catatan : ${catatanAdmin || "-"}
         </div>
       ) : (
         /* MAIN WORKSPACE 2-AREA LAYOUT */
-        <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-12 gap-6 items-start">
+        <div className="grid grid-cols-1 md:grid-cols-12 lg:grid-cols-12 gap-6 items-start relative">
           
-          {/* AREA KIRI: FORM PRE-INPUT (DIPERBESAR: 58% Desktop / 7 Kolom) */}
-          <div className="md:col-span-7 lg:col-span-7 xl:col-span-7 2xl:col-span-7 space-y-6">
+          {/* AREA KIRI: FORM PRE-INPUT */}
+          <div className={`${isBoardOpen ? 'md:col-span-7 lg:col-span-7 xl:col-span-7 2xl:col-span-7' : 'md:col-span-12 lg:col-span-12 xl:col-span-12 2xl:col-span-12'} space-y-6 transition-all duration-300`}>
 
             {/* DUPLICATE CUSTOMER ALERT BANNER */}
             {duplicateAlert && (
@@ -1751,31 +1771,6 @@ Catatan : ${catatanAdmin || "-"}
                       })}
                     </div>
                   )}
-
-                  {/* RECENT CUSTOMERS (MAX 5 PILLS) */}
-                  {recentCustomers.length > 0 && !namaPengirim && (
-                    <div className="mt-2 space-y-1">
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                        Pelanggan Terakhir:
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {recentCustomers.map((cst) => {
-                          const name = cst.nama || cst.nama_pengirim || "Pelanggan";
-                          const phone = cst.telepon || cst.no_hp || cst.hp_pengirim || "";
-                          return (
-                            <button
-                              key={cst.customer_id}
-                              type="button"
-                              onClick={() => selectCustomer(cst)}
-                              className="px-2.5 py-1 bg-gray-100 hover:bg-red-50 hover:text-[#E4002B] text-gray-700 rounded-lg text-[11px] font-medium transition cursor-pointer"
-                            >
-                              + {name} {phone ? `(${phone})` : ""}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* HP Pengirim */}
@@ -1809,27 +1804,6 @@ Catatan : ${catatanAdmin || "-"}
                     className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B] resize-none"
                     placeholder="Nama jalan, nomor rumah, RT/RW, kelurahan, kecamatan, kab/kota, provinsi."
                   />
-
-                  {/* RECENT ADDRESSES (MAX 5 PILLS) */}
-                  {recentAddresses.length > 0 && !alamatPengirim && (
-                    <div className="mt-2 space-y-1">
-                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                        Alamat Terakhir:
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {recentAddresses.map((addr, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => setAlamatPengirim(addr)}
-                            className="px-2.5 py-1 bg-gray-100 hover:bg-red-50 hover:text-[#E4002B] text-gray-700 rounded-lg text-[10px] font-medium transition max-w-xs truncate cursor-pointer"
-                          >
-                            📍 {addr}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -2133,7 +2107,7 @@ Catatan : ${catatanAdmin || "-"}
                   tabIndex={0}
                 >
                   <div className="flex items-center justify-between text-xs font-bold text-gray-700">
-                    <span className="uppercase tracking-wider">Foto Fisik Paket <span className="font-normal text-[9px] text-gray-500 ml-1">(Klik area ini lalu Ctrl+V untuk Paste)</span></span>
+                    <span className="uppercase tracking-wider">Foto Fisik Paket <span className="font-normal text-[10px] text-gray-500 ml-1">(Opsional)</span></span>
                     {fotoPaketUrl && <span className="text-emerald-600">✓ Tersimpan</span>}
                   </div>
 
@@ -2170,21 +2144,31 @@ Catatan : ${catatanAdmin || "-"}
                           <span className="text-[10px] text-slate-400 truncate">{fotoPaketUrl}</span>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setValidationPopupData({
-                            type: "paket",
-                            previewUrl: getDisplayImageUrl(fotoPaketUrl),
-                            remoteUrl: fotoPaketUrl,
-                            detectedResiId: null
-                          });
-                          setShowValidationPopup(true);
-                        }}
-                        className="px-2.5 py-1 text-[11px] font-semibold text-[#E4002B] hover:bg-red-50 rounded-lg transition shrink-0 cursor-pointer border border-red-100"
-                      >
-                        Lihat / Ubah
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setValidationPopupData({
+                              type: "paket",
+                              previewUrl: getDisplayImageUrl(fotoPaketUrl),
+                              remoteUrl: fotoPaketUrl,
+                              detectedResiId: null
+                            });
+                            setShowValidationPopup(true);
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-semibold text-[#E4002B] hover:bg-red-50 rounded-lg transition shrink-0 cursor-pointer border border-red-100"
+                        >
+                          Lihat / Ubah
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFotoPaketUrl("")}
+                          className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                          title="Hapus Foto"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -2223,8 +2207,9 @@ Catatan : ${catatanAdmin || "-"}
             </div>
           </div>
 
-          {/* AREA KANAN: OPERATIONAL WORKSPACE BOARD (DIPERKECIL: 42% Desktop / 5 Kolom / STICKY BOARD) */}
-          <div className="md:col-span-5 lg:col-span-5 xl:col-span-5 2xl:col-span-5 space-y-4 md:sticky md:top-6 lg:sticky lg:top-6 z-10 self-start">
+          {/* AREA KANAN: OPERATIONAL WORKSPACE BOARD */}
+          {isBoardOpen && (
+            <div className="md:col-span-5 lg:col-span-5 xl:col-span-5 2xl:col-span-5 space-y-4 md:sticky md:top-6 lg:sticky lg:top-6 z-10 self-start animate-fade-in-right">
             
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5 space-y-4">
               
@@ -2619,8 +2604,8 @@ Catatan : ${catatanAdmin || "-"}
               </div>
 
             </div>
-
           </div>
+          )}
 
         </div>
       )}

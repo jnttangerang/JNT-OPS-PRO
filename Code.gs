@@ -654,6 +654,29 @@ function apiImportYoYi(params) {
       status: "SELESAI",
       catatan_admin: "Auto Import YoYi"
     };
+
+    // Cari draft dengan customer yang sama dan ubah statusnya menjadi "SELESAI"
+    var sheet = getSheetByName("PreInput_Backup");
+    var data = sheet.getDataRange().getValues();
+    var headers = data[0];
+    var namaIdx = headers.indexOf("nama_pengirim");
+    var hpIdx = headers.indexOf("hp_pengirim");
+    var statusIdx = headers.indexOf("status");
+    var sName = parsed.nama_pengirim || "";
+    var sPhone = parsed.no_hp_pengirim || "";
+    
+    if (namaIdx !== -1 && hpIdx !== -1 && statusIdx !== -1 && sName && sPhone) {
+      for (var i = 1; i < data.length; i++) {
+        var row = data[i];
+        var draftNama = row[namaIdx] || "";
+        var draftHp = row[hpIdx] || "";
+        if (draftNama === sName && draftHp === sPhone) {
+          // Ubah status menjadi "SELESAI", bukan hapus
+          sheet.getRange(i + 1, statusIdx + 1).setValue("SELESAI");
+        }
+      }
+    }
+
     DatabaseService.insertRow("PreInput_Backup", backupObj);
     
     // 5. Simpan transaksi ke EXP_Resi & MASTER_TRANSAKSI

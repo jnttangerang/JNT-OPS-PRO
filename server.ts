@@ -2393,6 +2393,31 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
   });
 });
 
+app.post("/api/cleanupOldDrafts", (req, res) => {
+  const db = readDb();
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const drafts = db.PreInput_Backup || [];
+  const toDelete = drafts.filter(
+    (d: any) =>
+      d.status === "Draft" &&
+      d.timestamp &&
+      new Date(d.timestamp) < cutoff
+  );
+  if (toDelete.length > 0) {
+    db.PreInput_Backup = drafts.filter(
+      (d: any) =>
+        !(
+          d.status === "Draft" &&
+          d.timestamp &&
+          new Date(d.timestamp) < cutoff
+        )
+    );
+    writeDb(db);
+  }
+  return res.json({ status: "success", deleted: toDelete.length });
+});
+
 // 7.1 GET ALL PREINPUT DRAFTS FOR WORKSPACE
 app.post("/api/getPreInputDrafts", (req, res) => {
   const db = readDb();

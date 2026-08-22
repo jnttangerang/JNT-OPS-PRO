@@ -3,7 +3,7 @@ import {
   Scan, AlertTriangle, ShieldCheck, HelpCircle, FileText, Landmark, Wallet, 
   ToggleLeft, ToggleRight, ArrowRight, CheckCircle, RefreshCw, Upload, Camera,
   Lock, ArrowLeft, ChevronLeft, ChevronRight, Layers, CornerDownLeft, Check,
-  Pencil, Trash2, History, ExternalLink, Clock, Download
+  Pencil, Trash2, History, ExternalLink, Clock, Download, X
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 import { format } from "date-fns";
@@ -962,8 +962,6 @@ export default function TransaksiPage({
     setFormError(null);
 
     // Hard validations
-    if (!stepFotoPaket) return setFormError("Foto Paket wajib ada sebelum menyimpan transaksi!");
-    if (!stepFotoResi) return setFormError("Foto Resi wajib ada sebelum menyimpan transaksi!");
     if (!(resiId || "").trim()) return setFormError("Nomor resi wajib diisi / discan terlebih dahulu!");
     if (resiDuplicateError) return setFormError("Nomor resi sudah terdaftar (EXP_Resi/CRG_Resi). Gunakan resi baru.");
 
@@ -1763,7 +1761,7 @@ export default function TransaksiPage({
                       tabIndex={0}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Fisik Paket <span className="font-normal text-[9px] text-gray-500 ml-1">(Klik area ini lalu Ctrl+V untuk Paste)</span></span>
+                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Fisik Paket <span className="font-normal text-[10px] text-gray-500 ml-1">(Opsional)</span></span>
                         {(fotoPaketPreview || fotoPaketUrl) && (
                           <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded">
                             ✓ Siap Upload
@@ -1798,6 +1796,17 @@ export default function TransaksiPage({
                             >
                               <Upload className="h-3.5 w-3.5 text-gray-500" /> Ganti Berkas
                             </button>
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setFotoPaketUrl("");
+                                setFotoPaketPreview("");
+                                setFotoPaketBlob(null);
+                              }} 
+                              className="text-[11px] text-red-600 bg-white border border-red-200 px-2.5 py-1 rounded-lg shadow-xs hover:bg-red-50 flex items-center gap-1 w-fit cursor-pointer font-medium mt-1"
+                            >
+                              <X className="h-3.5 w-3.5 text-red-600" /> Hapus Foto
+                            </button>
                           </div>
                         </div>
                       ) : (
@@ -1827,7 +1836,7 @@ export default function TransaksiPage({
                       tabIndex={0}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Resi Pada Paket <span className="font-normal text-[9px] text-gray-500 ml-1">(Klik area ini lalu Ctrl+V untuk Paste)</span></span>
+                        <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">Foto Resi Pada Paket <span className="font-normal text-[10px] text-gray-500 ml-1">(Opsional)</span></span>
                         {(fotoResiPreview || fotoResiUrl) && (
                           <span className="text-[10px] text-green-700 font-bold bg-green-100 px-1.5 py-0.5 rounded">
                             ✓ Siap Upload
@@ -1861,6 +1870,17 @@ export default function TransaksiPage({
                               className="text-[11px] text-gray-700 bg-white border border-gray-300 px-2.5 py-1 rounded-lg shadow-xs hover:bg-gray-50 flex items-center gap-1 w-fit cursor-pointer font-medium"
                             >
                               <Upload className="h-3.5 w-3.5 text-gray-500" /> Ganti Berkas
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setFotoResiUrl("");
+                                setFotoResiPreview("");
+                                setFotoResiBlob(null);
+                              }} 
+                              className="text-[11px] text-red-600 bg-white border border-red-200 px-2.5 py-1 rounded-lg shadow-xs hover:bg-red-50 flex items-center gap-1 w-fit cursor-pointer font-medium mt-1"
+                            >
+                              <X className="h-3.5 w-3.5 text-red-600" /> Hapus Foto
                             </button>
                           </div>
                         </div>
