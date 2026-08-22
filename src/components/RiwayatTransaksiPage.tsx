@@ -17,10 +17,12 @@ import {
   DollarSign, 
   CheckCircle2,
   Clock,
-  Building2
+  Building2,
+  Calendar,
+  Filter
 } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
-import { SessionData, Outlet } from "../types";
+import { SessionData, Outlet, User as UserType } from "../types";
 import { toast } from "../utils/toast";
 import { highlightText } from "../utils/highlight";
 
@@ -40,6 +42,7 @@ interface TransaksiItem {
   grand_total: number;
   pengirim: string;
   penerima: string;
+  nama_barang: string;
   status_resi: string;
 }
 
@@ -78,12 +81,19 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
   const { callBackend } = useAppsScript();
   const [data, setData] = useState<TransaksiItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState<UserType[]>([]);
+  
+  const todayStr = new Date().toISOString().slice(0, 10);
+  
+  const [filterTanggalAwal, setFilterTanggalAwal] = useState(todayStr);
+  const [filterTanggalAkhir, setFilterTanggalAkhir] = useState(todayStr);
   const [filterOutlet, setFilterOutlet] = useState<string>(session.role === "OWNER" ? "ALL" : (activeOutletId || session.outlet_id_home));
   const [searchTerm, setSearchTerm] = useState("");
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const [pageSize, setPageSize] = useState(10);
+  const [jumpPage, setJumpPage] = useState("");
 
   // Detail Modal State
   const [selectedDetail, setSelectedDetail] = useState<TransaksiDetail | null>(null);
@@ -104,10 +114,25 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
     }
   }, [activeOutletId, session.role]);
 
+  const fetchUsers = async () => {
+    try {
+      const res = await callBackend("getUsers");
+      if (res && res.status === "success" && Array.isArray(res.data)) {
+        setUsers(res.data);
+      }
+    } catch (err) {
+      console.error("Fetch users error", err);
+    }
+  };
+
   const fetchData = async () => {
     setLoading(true);
     try {
-      const response = await callBackend("getRiwayatTransaksi", { filterOutlet });
+      const response = await callBackend("getRiwayatTransaksi", { 
+        filterOutlet,
+        tanggal_awal: filterTanggalAwal,
+        tanggal_akhir: filterTanggalAkhir
+      });
       if (response.status === "success" && response.data) {
         setData(response.data);
       }
@@ -119,9 +144,25 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
   };
 
   useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterOutlet]);
+  }, [filterOutlet, filterTanggalAwal, filterTanggalAkhir]);
+
+  const getAdminName = (rawAdmin: string) => {
+    if (!rawAdmin) return "-";
+    const found = users.find(
+      (u) =>
+        u.user_id === rawAdmin ||
+        u.username?.toLowerCase() === rawAdmin.toLowerCase() ||
+        u.nama_lengkap?.toLowerCase() === rawAdmin.toLowerCase()
+    );
+    if (found?.nama_lengkap) return found.nama_lengkap;
+    return rawAdmin;
+  };
 
   useEffect(() => {
     setCurrentPage(1);
@@ -330,31 +371,13 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
     <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
       
       {/* HEADER & FILTER */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">Riwayat Transaksi</h1>
-          <p className="text-sm text-gray-500 mt-1">Kelola, pantau, edit, dan batalkan resi yang tercatat di sistem.</p>
-        </div>
-        
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-          {session.role === "OWNER" && (
-            <div className="flex items-center gap-2 w-full sm:w-auto bg-gray-50 px-3 py-2 rounded-xl border border-gray-200">
-              <MapPin className="h-4 w-4 text-gray-400" />
-              <select
-                value={filterOutlet}
-                onChange={(e) => setFilterOutlet(e.target.value)}
-                className="bg-transparent text-sm font-semibold text-gray-700 focus:outline-none w-full cursor-pointer"
-              >
-                <option value="ALL">Semua Outlet (Global)</option>
-                {outlets.map((o) => (
-                  <option key={o.outlet_id} value={o.outlet_id}>
-                    {o.nama_outlet}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
+      <div className="flex flex-col gap-4 bg-white p-5 rounded-2xl shadow-sm border border-gray-100">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h1 className="text-xl font-bold text-gray-800">Riwayat Transaksi</h1>
+            <p className="text-sm text-gray-500 mt-1">Kelola, pantau, edit, dan batalkan resi yang tercatat di sistem.</p>
+          </div>
+          
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
@@ -365,6 +388,54 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
               className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
             />
           </div>
+        </div>
+
+        {/* Filter Bar */}
+        <div className="flex flex-wrap items-center gap-3 pt-3 border-t border-gray-100">
+          <div className="flex items-center gap-2 text-gray-500 text-sm font-semibold">
+            <Filter className="h-4 w-4" />
+            <span>Filter:</span>
+          </div>
+
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-xl text-xs">
+            <Calendar className="h-3.5 w-3.5 text-gray-400" />
+            <span className="text-gray-500 font-bold">Awal:</span>
+            <input
+              type="date"
+              value={filterTanggalAwal}
+              onChange={(e) => setFilterTanggalAwal(e.target.value)}
+              className="bg-transparent font-semibold text-gray-800 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-xl text-xs">
+            <Calendar className="h-3.5 w-3.5 text-gray-400" />
+            <span className="text-gray-500 font-bold">Akhir:</span>
+            <input
+              type="date"
+              value={filterTanggalAkhir}
+              onChange={(e) => setFilterTanggalAkhir(e.target.value)}
+              className="bg-transparent font-semibold text-gray-800 focus:outline-none"
+            />
+          </div>
+
+          {session.role === "OWNER" && (
+            <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs">
+              <MapPin className="h-3.5 w-3.5 text-gray-400" />
+              <select
+                value={filterOutlet}
+                onChange={(e) => setFilterOutlet(e.target.value)}
+                className="bg-transparent font-semibold text-gray-800 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">Semua Outlet</option>
+                {outlets.map((o) => (
+                  <option key={o.outlet_id} value={o.outlet_id}>
+                    {o.nama_outlet}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
@@ -411,10 +482,15 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                         
                         <div className="text-xs text-gray-500 space-y-0.5">
                           <p><span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: {new Date(item.timestamp).toLocaleString("id-ID")}</p>
-                          <p><span className="font-medium text-gray-400 w-16 inline-block">Admin</span>: <span className="font-semibold text-gray-700">{highlightText(item.admin, searchTerm)}</span></p>
+                          <p><span className="font-medium text-gray-400 w-16 inline-block">Admin</span>: <span className="font-semibold text-gray-700">{highlightText(getAdminName(item.admin), searchTerm)}</span></p>
                           <p><span className="font-medium text-gray-400 w-16 inline-block">Outlet</span>: {item.outlet}</p>
                           <p className="mt-1 text-gray-500 font-medium">
                             {highlightText(item.pengirim || "Umum", searchTerm)} ➔ {highlightText(item.penerima || "Umum", searchTerm)}
+                            {item.nama_barang && item.nama_barang !== "-" && (
+                              <span className="text-gray-400 ml-1 italic font-normal">
+                                ({highlightText(item.nama_barang, searchTerm)})
+                              </span>
+                            )}
                           </p>
                         </div>
                       </div>
@@ -468,25 +544,81 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
 
               {/* PAGINATION BAR */}
               {totalPages > 1 && (
-                <div className="p-4 bg-gray-50 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                  <span className="text-gray-500 font-medium">
-                    Menampilkan {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredData.length)} dari {filteredData.length} transaksi
-                  </span>
-                  <div className="flex items-center gap-2">
+                <div className="p-4 bg-gray-50 border-t border-gray-100 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-gray-600">
+                  <div className="flex items-center gap-3">
+                    <span>Total <span className="font-bold text-gray-800">{filteredData.length}</span> data</span>
+                    <div className="h-4 w-px bg-gray-300"></div>
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="bg-white border border-gray-200 rounded px-2 py-1 outline-none focus:border-red-500 cursor-pointer"
+                    >
+                      <option value={10}>10 / halaman</option>
+                      <option value={25}>25 / halaman</option>
+                      <option value={50}>50 / halaman</option>
+                      <option value={100}>100 / halaman</option>
+                    </select>
+                    <div className="flex items-center gap-2">
+                      <span>Lompat ke</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={totalPages}
+                        value={jumpPage}
+                        onChange={(e) => setJumpPage(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            let p = parseInt(jumpPage, 10);
+                            if (!isNaN(p)) {
+                              if (p < 1) p = 1;
+                              if (p > totalPages) p = totalPages;
+                              setCurrentPage(p);
+                              setJumpPage("");
+                            }
+                          }
+                        }}
+                        className="w-12 bg-white border border-gray-200 rounded px-2 py-1 text-center outline-none focus:border-red-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
                     <button
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+                      className="p-1 min-w-[28px] flex justify-center items-center rounded disabled:opacity-40 hover:bg-gray-200 transition-colors"
                     >
                       <ChevronLeft className="h-4 w-4" />
                     </button>
-                    <span className="font-extrabold text-gray-700 px-2">
-                      Halaman {currentPage} dari {totalPages}
-                    </span>
+                    
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
+                      .map((p, i, arr) => (
+                        <React.Fragment key={p}>
+                          {i > 0 && p - arr[i - 1] > 1 && (
+                            <span className="px-1 text-gray-400">...</span>
+                          )}
+                          <button
+                            onClick={() => setCurrentPage(p)}
+                            className={`min-w-[28px] h-[28px] flex items-center justify-center rounded text-[11px] font-medium transition-colors ${
+                              currentPage === p 
+                                ? "bg-white border border-emerald-500 text-emerald-600 shadow-sm" 
+                                : "hover:bg-gray-200 text-gray-600"
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      ))
+                    }
+
                     <button
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
-                      className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+                      className="p-1 min-w-[28px] flex justify-center items-center rounded disabled:opacity-40 hover:bg-gray-200 transition-colors"
                     >
                       <ChevronRight className="h-4 w-4" />
                     </button>

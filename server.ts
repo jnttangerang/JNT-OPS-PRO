@@ -3878,7 +3878,30 @@ app.post("/api/getDashboardData", (req, res) => {
 
 app.post("/api/getRiwayatTransaksi", (req, res) => {
   const db = readDb();
-  const { filterOutlet } = req.body;
+  const { filterOutlet, tanggal_awal, tanggal_akhir } = req.body;
+
+  let startT: number | null = null;
+  let endT: number | null = null;
+  
+  if (tanggal_awal) {
+    const s = new Date(tanggal_awal);
+    s.setHours(0, 0, 0, 0);
+    startT = s.getTime();
+  }
+  
+  if (tanggal_akhir) {
+    const e = new Date(tanggal_akhir);
+    e.setHours(23, 59, 59, 999);
+    endT = e.getTime();
+  }
+
+  const checkDate = (timestampStr: string) => {
+    if (!startT && !endT) return true;
+    const t = new Date(timestampStr).getTime();
+    if (startT && t < startT) return false;
+    if (endT && t > endT) return false;
+    return true;
+  };
 
   const outletMap: Record<string, string> = {};
   (db.Outlets || []).forEach((o: any) => {
@@ -3898,9 +3921,9 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
   });
 
   const filtered = (db.MASTER_TRANSAKSI || []).filter((tx: any) => {
-    if (filterOutlet && filterOutlet !== "ALL") {
-      return tx.outlet_id === filterOutlet;
-    }
+    if (filterOutlet && filterOutlet !== "ALL" && tx.outlet_id !== filterOutlet) return false;
+    const ts = tx.created_at || tx.tanggal_transaksi;
+    if (ts && !checkDate(ts)) return false;
     return true;
   });
 
@@ -3924,6 +3947,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
       grand_total: sum.customer_payment || Number(tx.total_customer) || Number(tx.grand_total) || 0,
       pengirim: tx.snapshot_nama_pengirim || p?.nama_pengirim || "",
       penerima: tx.snapshot_nama_penerima || p?.nama_penerima || "",
+      nama_barang: p?.nama_barang || "-",
       status_resi: tx.status_resi || tx.status_transaksi || tx.status || "AKTIF"
     };
   });
@@ -3934,6 +3958,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     const txKey = (r.transaksi_id || "").toUpperCase();
     if ((resiKey && !seenKeys.has(resiKey)) && (!txKey || !seenKeys.has(txKey))) {
       if (!filterOutlet || filterOutlet === "ALL" || r.outlet_id_input === filterOutlet) {
+        if (!checkDate(r.timestamp)) return;
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[r.transaksi_id];
@@ -3947,6 +3972,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
           grand_total: Number(r.grand_total) || 0,
           pengirim: p?.nama_pengirim || "",
           penerima: p?.nama_penerima || "",
+          nama_barang: p?.nama_barang || "-",
           status_resi: r.status_resi || r.status || "AKTIF"
         });
       }
@@ -3959,6 +3985,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     const txKey = (c.transaksi_id || "").toUpperCase();
     if ((resiKey && !seenKeys.has(resiKey)) && (!txKey || !seenKeys.has(txKey))) {
       if (!filterOutlet || filterOutlet === "ALL" || c.outlet_id_input === filterOutlet) {
+        if (!checkDate(c.timestamp)) return;
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[c.transaksi_id];
@@ -3972,6 +3999,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
           grand_total: Number(c.grand_total) || 0,
           pengirim: p?.nama_pengirim || "",
           penerima: p?.nama_penerima || "",
+          nama_barang: p?.nama_barang || "-",
           status_resi: c.status_resi || c.status || "AKTIF"
         });
       }

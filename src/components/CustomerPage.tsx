@@ -20,7 +20,7 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
   const { callBackend } = useAppsScript();
 
   // Active Main Tab: "SEMUA" | "PENGIRIM" | "PENERIMA"
-  const [activeTab, setActiveTab] = useState<"SEMUA" | "PENGIRIM" | "PENERIMA">("SEMUA");
+  const [activeTab, setActiveTab] = useState<"SEMUA" | "PENGIRIM" | "PENERIMA">("PENGIRIM");
 
   // Data State
   const [customersMaster, setCustomersMaster] = useState<any[]>([]);
@@ -43,7 +43,8 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
 
   // Pagination & Selection State
   const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(50);
+  const [limit, setLimit] = useState(10);
+  const [jumpPage, setJumpPage] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
   // Modals
@@ -213,18 +214,6 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
         {/* Navigation Tabs */}
         <div className="flex border-b border-gray-100 bg-gray-50/50 p-1.5 gap-1 overflow-x-auto">
           <button
-            onClick={() => setActiveTab("SEMUA")}
-            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
-              activeTab === "SEMUA" 
-                ? "bg-white text-[#E4002B] shadow-sm border border-gray-150" 
-                : "text-gray-500 hover:text-gray-800 hover:bg-white/50"
-            }`}
-          >
-            <Users size={15} />
-            <span>Semua Customer ({customersMaster.length})</span>
-          </button>
-
-          <button
             onClick={() => setActiveTab("PENGIRIM")}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
               activeTab === "PENGIRIM" 
@@ -246,6 +235,18 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
           >
             <BookOpen size={15} />
             <span>Buku Penerima ({bukuPenerima.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("SEMUA")}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-xs transition-all ${
+              activeTab === "SEMUA" 
+                ? "bg-white text-[#E4002B] shadow-sm border border-gray-150" 
+                : "text-gray-500 hover:text-gray-800 hover:bg-white/50"
+            }`}
+          >
+            <Users size={15} />
+            <span>Semua Customer ({customersMaster.length})</span>
           </button>
         </div>
 
@@ -602,46 +603,83 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
         )}
 
         {/* Pagination Controls */}
-        <div className="p-4 border-t border-gray-100 flex flex-col md:flex-row items-center justify-between gap-4 bg-white">
-          <div className="flex items-center gap-3 text-xs text-gray-500">
-            <span>Tampilkan:</span>
+        <div className="p-4 border-t border-gray-100 flex flex-col md:flex-row items-center justify-between gap-4 bg-white text-xs text-gray-600">
+          <div className="flex items-center gap-3">
+            <span>Total <span className="font-bold text-gray-800">{currentFiltered.length}</span> data</span>
+            <div className="h-4 w-px bg-gray-300"></div>
             <select
               value={limit}
               onChange={e => {
                 setLimit(Number(e.target.value));
                 setPage(1);
               }}
-              className="border border-gray-200 rounded-lg px-2 py-1 outline-none focus:border-red-500 bg-white"
+              className="border border-gray-200 rounded px-2 py-1 outline-none focus:border-red-500 bg-white cursor-pointer"
             >
-              <option value={10}>10</option>
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
+              <option value={10}>10 / halaman</option>
+              <option value={25}>25 / halaman</option>
+              <option value={50}>50 / halaman</option>
+              <option value={100}>100 / halaman</option>
             </select>
-            <span>data per halaman</span>
+            <div className="flex items-center gap-2">
+              <span>Lompat ke</span>
+              <input
+                type="number"
+                min={1}
+                max={totalPages}
+                value={jumpPage}
+                onChange={(e) => setJumpPage(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    let p = parseInt(jumpPage, 10);
+                    if (!isNaN(p)) {
+                      if (p < 1) p = 1;
+                      if (p > totalPages) p = totalPages;
+                      setPage(p);
+                      setJumpPage("");
+                    }
+                  }
+                }}
+                className="w-12 bg-white border border-gray-200 rounded px-2 py-1 text-center outline-none focus:border-red-500"
+              />
+            </div>
           </div>
 
-          <div className="text-xs text-gray-500">
-            Menampilkan <span className="font-bold text-gray-800">{currentFiltered.length === 0 ? 0 : startIndex + 1}</span> - <span className="font-bold text-gray-800">{Math.min(endIndex, currentFiltered.length)}</span> dari <span className="font-bold text-gray-800">{currentFiltered.length}</span> data
-          </div>
-
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="p-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-transparent"
+              className="p-1 min-w-[28px] flex justify-center items-center rounded disabled:opacity-40 hover:bg-gray-200 transition-colors"
             >
-              <ChevronLeft size={16} />
+              <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="text-xs font-bold text-gray-700 mx-2">
-              Hal {page} / {totalPages}
-            </span>
+            
+            {Array.from({ length: totalPages }, (_, i) => i + 1)
+              .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+              .map((p, i, arr) => (
+                <React.Fragment key={p}>
+                  {i > 0 && p - arr[i - 1] > 1 && (
+                    <span className="px-1 text-gray-400">...</span>
+                  )}
+                  <button
+                    onClick={() => setPage(p)}
+                    className={`min-w-[28px] h-[28px] flex items-center justify-center rounded text-[11px] font-medium transition-colors ${
+                      page === p 
+                        ? "bg-white border border-red-500 text-red-600 shadow-sm" 
+                        : "hover:bg-gray-200 text-gray-600"
+                    }`}
+                  >
+                    {p}
+                  </button>
+                </React.Fragment>
+              ))
+            }
+
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages || totalPages === 0}
-              className="p-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:hover:bg-transparent"
+              className="p-1 min-w-[28px] flex justify-center items-center rounded disabled:opacity-40 hover:bg-gray-200 transition-colors"
             >
-              <ChevronRight size={16} />
+              <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </div>
