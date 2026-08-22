@@ -14,12 +14,14 @@ export default function ToastContainer() {
         if (exists) {
           return prev.map((t) => (t.message === newToast.message ? newToast : t));
         }
-        return [...prev, newToast];
+        // Limit to max 3 toasts to prevent UI flooding
+        const updated = [...prev, newToast];
+        return updated.slice(-3);
       });
 
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
-      }, 4000);
+      }, 2500);
     });
     return unsubscribe;
   }, []);

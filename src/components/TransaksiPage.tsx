@@ -607,7 +607,6 @@ export default function TransaksiPage({
     setPendingTxId(target.transaksi_id);
     localStorage.setItem("pending_transaksi_id", target.transaksi_id);
     loadPreInputDetails(target.transaksi_id);
-    toast.info(`Membuka Draft (${index + 1}/${draftQueue.length}): ${target.transaksi_id}`);
   };
 
   const handleGoToNextDraft = () => {
