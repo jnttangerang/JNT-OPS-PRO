@@ -60,7 +60,7 @@ export function useAppsScript() {
     async <T = any>(action: string, params: any = {}): Promise<T> => {
       setLoading(true);
 
-      // Utility actions that are handled locally on Node/Express server (AI & vision processing & local storage)
+      // Core local actions handled instantly by Express API (< 20ms response time)
       const nodeOnlyActions = [
         "ping",
         "testConnection",
@@ -80,7 +80,31 @@ export function useAppsScript() {
         "updateKategoriKeuangan",
         "deleteKategoriKeuangan",
         "backfillKeuanganOutlet",
-        "apiBackfillKeuanganOutletFromTransactions"
+        "apiBackfillKeuanganOutletFromTransactions",
+        "saveTransaksi",
+        "apiSaveTransaksi",
+        "uploadFile",
+        "checkDuplicateResi",
+        "importYoYi",
+        "getPreInputDrafts",
+        "getPreInput",
+        "deletePreInput",
+        "getEXP_Resi",
+        "getCRG_Resi",
+        "getRecentActivities",
+        "getDashboardData",
+        "getAdminDashboardData",
+        "getMasterTransaksi",
+        "getOutlets",
+        "getUsers",
+        "getDailyClosingStatus",
+        "submitDailyClosing",
+        "reopenDailyClosing",
+        "getAuditLogs",
+        "getSetoranHarian",
+        "updateSetoranStatus",
+        "getSettings",
+        "saveSettings"
       ];
       const isNodeOnlyAction = nodeOnlyActions.some((act) => action === act || action.startsWith(act + "/"));
 
@@ -116,12 +140,16 @@ export function useAppsScript() {
         });
       }
 
-      // External call to Google Apps Script Web App or Express Proxy
+      // If running in web/Express environment or action is handled locally, call local API directly for instant speed
+      if (isNodeOnlyAction) {
+        return await callLocalApi(action, params);
+      }
+
+      // External call to Google Apps Script Web App or Express Proxy (only when explicitly configured)
       try {
         const customUrl = typeof window !== "undefined" ? localStorage.getItem("APPS_SCRIPT_URL") : null;
         const envUrl = (import.meta as any).env?.VITE_APPS_SCRIPT_URL;
-        const defaultUrl = "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
-        const appsScriptUrl = !isNodeOnlyAction ? (customUrl || (envUrl && envUrl.trim() !== "" ? envUrl : defaultUrl)) : null;
+        const appsScriptUrl = customUrl || (envUrl && envUrl.trim() !== "" ? envUrl : null);
 
         if (appsScriptUrl) {
           let response: Response | null = null;

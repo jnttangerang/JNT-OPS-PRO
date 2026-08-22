@@ -12,6 +12,7 @@ import { SessionData, Outlet, PreInputBackup } from "../types";
 import { toast } from "../utils/toast";
 import { calculateWeight } from "../utils/weightCalculator";
 import { getDisplayImageUrl } from "../utils/image";
+import { compressImage } from "../utils/imageCompressor";
 import AddressBookDrawer from "./AddressBookDrawer";
 import ImportYoYiModal, { YoYiImportQueueItem, YoYiParsedData } from "./ImportYoYiModal";
 
@@ -375,7 +376,7 @@ export default function TransaksiPage({
   };
 
 
-  const handlePasteImage = (e: React.ClipboardEvent, type: "paket" | "resi") => {
+  const handlePasteImage = async (e: React.ClipboardEvent, type: "paket" | "resi") => {
     const items = e.clipboardData?.items;
     if (!items) return;
 
@@ -384,19 +385,31 @@ export default function TransaksiPage({
         e.preventDefault();
         const file = item.getAsFile();
         if (file) {
-          const previewUrl = URL.createObjectURL(file);
-          if (type === "paket") {
-            if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
-            setFotoPaketBlob(file);
-            setFotoPaketPreview(previewUrl);
-            setFotoPaketUrl("");
-            toast.success("Gambar paket dipaste dari clipboard");
-          } else {
-            if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
-            setFotoResiBlob(file);
-            setFotoResiPreview(previewUrl);
-            setFotoResiUrl("");
-            toast.success("Gambar resi dipaste dari clipboard");
+          try {
+            const compressed = await compressImage(file, 1280, 0.82);
+            const previewUrl = URL.createObjectURL(compressed);
+            if (type === "paket") {
+              if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
+              setFotoPaketBlob(compressed);
+              setFotoPaketPreview(previewUrl);
+              setFotoPaketUrl("");
+              toast.success("Gambar paket dipaste dari clipboard");
+            } else {
+              if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
+              setFotoResiBlob(compressed);
+              setFotoResiPreview(previewUrl);
+              setFotoResiUrl("");
+              toast.success("Gambar resi dipaste dari clipboard");
+            }
+          } catch (err) {
+            const previewUrl = URL.createObjectURL(file);
+            if (type === "paket") {
+              setFotoPaketBlob(file);
+              setFotoPaketPreview(previewUrl);
+            } else {
+              setFotoResiBlob(file);
+              setFotoResiPreview(previewUrl);
+            }
           }
         }
         break;
@@ -404,23 +417,35 @@ export default function TransaksiPage({
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: "paket" | "resi") => {
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>, type: "paket" | "resi") => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const previewUrl = URL.createObjectURL(file);
-    if (type === "paket") {
-      if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
-      setFotoPaketBlob(file);
-      setFotoPaketPreview(previewUrl);
-      setFotoPaketUrl("");
-      toast.success("Foto fisik paket berhasil dipilih");
-    } else {
-      if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
-      setFotoResiBlob(file);
-      setFotoResiPreview(previewUrl);
-      setFotoResiUrl("");
-      toast.success("Foto resi paket berhasil dipilih");
+    try {
+      const compressed = await compressImage(file, 1280, 0.82);
+      const previewUrl = URL.createObjectURL(compressed);
+      if (type === "paket") {
+        if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
+        setFotoPaketBlob(compressed);
+        setFotoPaketPreview(previewUrl);
+        setFotoPaketUrl("");
+        toast.success("Foto fisik paket berhasil dipilih");
+      } else {
+        if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
+        setFotoResiBlob(compressed);
+        setFotoResiPreview(previewUrl);
+        setFotoResiUrl("");
+        toast.success("Foto resi paket berhasil dipilih");
+      }
+    } catch (err) {
+      const previewUrl = URL.createObjectURL(file);
+      if (type === "paket") {
+        setFotoPaketBlob(file);
+        setFotoPaketPreview(previewUrl);
+      } else {
+        setFotoResiBlob(file);
+        setFotoResiPreview(previewUrl);
+      }
     }
     e.target.value = "";
   };
@@ -630,25 +655,37 @@ export default function TransaksiPage({
     if (!ctx) return;
     
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    canvas.toBlob((blob) => {
+    canvas.toBlob(async (blob) => {
       if (!blob) return;
 
-      const previewUrl = URL.createObjectURL(blob);
+      try {
+        const compressed = await compressImage(blob, 1280, 0.82);
+        const previewUrl = URL.createObjectURL(compressed);
 
-      if (type === "paket") {
-        if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
-        setFotoPaketBlob(blob);
-        setFotoPaketPreview(previewUrl); 
-        setFotoPaketUrl(""); 
-      } else {
-        if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
-        setFotoResiBlob(blob);
-        setFotoResiPreview(previewUrl); 
-        setFotoResiUrl(""); 
+        if (type === "paket") {
+          if (fotoPaketPreview) URL.revokeObjectURL(fotoPaketPreview);
+          setFotoPaketBlob(compressed);
+          setFotoPaketPreview(previewUrl); 
+          setFotoPaketUrl(""); 
+        } else {
+          if (fotoResiPreview) URL.revokeObjectURL(fotoResiPreview);
+          setFotoResiBlob(compressed);
+          setFotoResiPreview(previewUrl); 
+          setFotoResiUrl(""); 
+        }
+      } catch (err) {
+        const previewUrl = URL.createObjectURL(blob);
+        if (type === "paket") {
+          setFotoPaketBlob(blob);
+          setFotoPaketPreview(previewUrl);
+        } else {
+          setFotoResiBlob(blob);
+          setFotoResiPreview(previewUrl);
+        }
       }
       
       toast.success(`Foto ${type} berhasil ditangkap`);
-    }, "image/jpeg", 0.8);
+    }, "image/jpeg", 0.82);
   };
 
   const stopCameraTracks = () => {
@@ -971,7 +1008,7 @@ export default function TransaksiPage({
       finalKelengkapan = items.join(", ");
     }
 
-    // Upload Blob photos if they exist in memory
+    // Upload Blob photos in parallel if they exist in memory
     let finalFotoPaketUrl = fotoPaketUrl;
     let finalFotoResiUrl = fotoResiUrl;
 
@@ -980,35 +1017,51 @@ export default function TransaksiPage({
       const resiPrefix = (resiId || "").trim() || `TMP_${Date.now()}`;
 
       try {
+        const uploadTasks: Promise<void>[] = [];
+
         if (fotoPaketBlob) {
-          setUploadingFotoPaket(true);
-          const b64 = await toBase64(fotoPaketBlob);
-          const response = await callBackend("uploadFile", {
-            fileBase64: b64,
-            fileName: `FOTO_PAKET_${formattedDate}_${resiPrefix}`,
-            category: "FOTO_PAKET"
-          });
-          if (response.status === "success" && response.data) {
-            finalFotoPaketUrl = response.data;
-            setFotoPaketUrl(response.data); // cache the remote URL
-            setFotoPaketBlob(null); // free up the blob so we don't upload again
-          }
+          uploadTasks.push(
+            (async () => {
+              setUploadingFotoPaket(true);
+              const compressed = await compressImage(fotoPaketBlob, 1280, 0.82);
+              const b64 = await toBase64(compressed);
+              const response = await callBackend("uploadFile", {
+                fileBase64: b64,
+                fileName: `FOTO_PAKET_${formattedDate}_${resiPrefix}`,
+                category: "FOTO_PAKET"
+              });
+              if (response.status === "success" && response.data) {
+                finalFotoPaketUrl = response.data;
+                setFotoPaketUrl(response.data);
+                setFotoPaketBlob(null);
+              }
+              setUploadingFotoPaket(false);
+            })()
+          );
         }
 
         if (fotoResiBlob) {
-          setUploadingFotoResi(true);
-          const b64 = await toBase64(fotoResiBlob);
-          const response = await callBackend("uploadFile", {
-            fileBase64: b64,
-            fileName: `FOTO_RESI_${formattedDate}_${resiPrefix}`,
-            category: "FOTO_RESI"
-          });
-          if (response.status === "success" && response.data) {
-            finalFotoResiUrl = response.data;
-            setFotoResiUrl(response.data);
-            setFotoResiBlob(null);
-          }
+          uploadTasks.push(
+            (async () => {
+              setUploadingFotoResi(true);
+              const compressed = await compressImage(fotoResiBlob, 1280, 0.82);
+              const b64 = await toBase64(compressed);
+              const response = await callBackend("uploadFile", {
+                fileBase64: b64,
+                fileName: `FOTO_RESI_${formattedDate}_${resiPrefix}`,
+                category: "FOTO_RESI"
+              });
+              if (response.status === "success" && response.data) {
+                finalFotoResiUrl = response.data;
+                setFotoResiUrl(response.data);
+                setFotoResiBlob(null);
+              }
+              setUploadingFotoResi(false);
+            })()
+          );
         }
+
+        await Promise.all(uploadTasks);
       } catch (err: any) {
         setFormError("Gagal mengunggah foto saat menyimpan transaksi.");
         toast.error("Gagal mengunggah foto.");

@@ -1,28 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { Download, AlertTriangle, FileText, CheckCircle, RefreshCw, Layers, ArrowRight, X } from "lucide-react";
+import { Download, AlertTriangle, FileText, CheckCircle, RefreshCw, Layers, ArrowRight, X, Zap } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { toast } from "../utils/toast";
+import { parseYoYiText, YoYiParsedData } from "../utils/yoyiParser";
 
-export interface YoYiParsedData {
-  nomor_resi: string;
-  nama_pengirim: string;
-  no_hp_pengirim?: string;
-  alamat_pengirim?: string;
-  kode_pos_pengirim?: string;
-  nama_penerima: string;
-  no_hp_penerima?: string;
-  alamat_penerima?: string;
-  kode_pos_penerima?: string;
-  tipe_produk?: string;
-  ongkir_dasar: number;
-  asuransi: number;
-  biaya_lain: number;
-  total_yoyi: number;
-  metode_perhitungan: string;
-  source_order?: string;
-  nama_barang: string;
-  berat_kg: number;
-}
+export type { YoYiParsedData };
 
 export interface YoYiImportQueueItem {
   queue_id: string;
@@ -51,6 +33,7 @@ export default function ImportYoYiModal({
   const { callBackend, loading } = useAppsScript();
   const [textInput, setTextInput] = useState("");
   const [parsedData, setParsedData] = useState<YoYiParsedData | null>(null);
+  const [parsingLocal, setParsingLocal] = useState(false);
   
   // Validation / errors
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -69,6 +52,21 @@ export default function ImportYoYiModal({
       return;
     }
     setErrorMsg(null);
+    setParsingLocal(true);
+
+    // 1. Fast instant local regex parse (0ms)
+    try {
+      const localResult = parseYoYiText(textInput);
+      if (localResult.nomor_resi || localResult.total_yoyi > 0 || localResult.ongkir_dasar > 0 || localResult.nama_pengirim || localResult.nama_penerima) {
+        setParsedData(localResult);
+        setParsingLocal(false);
+        return;
+      }
+    } catch (err) {
+      console.warn("Local parse note:", err);
+    }
+
+    // 2. Fallback to server parse if local regex found no structured data
     try {
       const res = await callBackend("parseYoYiOrder", { text: textInput });
       if (res.status === "success" && res.data) {
@@ -78,6 +76,8 @@ export default function ImportYoYiModal({
       }
     } catch (e: any) {
       setErrorMsg(e.message || "Gagal membaca data. Pastikan teks berisi detail pesanan YoYi yang lengkap.");
+    } finally {
+      setParsingLocal(false);
     }
   };
 
@@ -142,8 +142,8 @@ export default function ImportYoYiModal({
                 disabled={loading || !textInput.trim()}
                 className="w-full py-3 bg-[#E4002B] hover:bg-[#c20023] text-white rounded-xl text-sm font-bold shadow-sm flex justify-center items-center gap-2 disabled:opacity-50 transition-colors cursor-pointer"
               >
-                {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                <span>{loading ? "Memproses dengan AI..." : "Ekstrak Data YoYi"}</span>
+                {loading || parsingLocal ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                <span>{loading || parsingLocal ? "Mengekstrak Data..." : "Ekstrak Data YoYi"}</span>
               </button>
             </div>
           ) : (

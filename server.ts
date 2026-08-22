@@ -2521,37 +2521,6 @@ app.post(["/api/getPreInput", "/api/getPreInputDetails"], (req, res) => {
 // 9. SAVE TRANSAKSI (EXP_Resi or CRG_Resi) - apiSaveTransaksi handler
 const handleSaveTransaksiRequest = async (req: any, res: any) => {
   try {
-    const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
-    if (appsScriptUrl && appsScriptUrl.trim() && req.headers["x-test-mode"] !== "true") {
-      try {
-        const response = await fetch(appsScriptUrl.trim(), {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({ action: "saveTransaksi", data: req.body || {} })
-        });
-        const text = await response.text();
-        let json: any;
-        try {
-          json = JSON.parse(text);
-        } catch {
-          console.warn("Apps Script returned non-JSON for saveTransaksi, falling back to local handler:", text.slice(0, 200));
-          json = null;
-        }
-        if (json) {
-          if (json.status === "error") {
-            const errMsg = json.message || "";
-            if (!errMsg.includes("Aksi tidak dikenali") && !errMsg.includes("unrecognized")) {
-              return res.status(400).json(json);
-            }
-          } else {
-            return res.json(json);
-          }
-        }
-      } catch (err: any) {
-        console.error("Error proxying saveTransaksi to Apps Script:", err.message);
-      }
-    }
-
     const body = req.body || {};
     const jenis_layanan = body.jenis_layanan || body.layanan || body.data?.jenis_layanan || "Express";
     const data = body.data || body;
@@ -2576,6 +2545,16 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
     const inCrg = db.CRG_Resi.some((r: any) => (r.resi_id || "").toUpperCase() === rid);
     if (inExp || inCrg) {
       return res.status(400).json({ status: "error", message: "RESI SUDAH TERDAFTAR — Kemungkinan duplikat/fraud" });
+    }
+
+    // Optional asynchronous background sync to Apps Script if configured (non-blocking)
+    const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
+    if (appsScriptUrl && appsScriptUrl.trim() && req.headers["x-test-mode"] !== "true") {
+      fetch(appsScriptUrl.trim(), {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ action: "saveTransaksi", data: req.body || {} })
+      }).catch((err) => console.warn("Background Apps Script sync note:", err.message));
     }
 
     const timestamp = new Date().toISOString();
@@ -3097,45 +3076,134 @@ function extractYoYiDataWithRegex(text: string): any {
     biaya_lain: 0,
     total_yoyi: 0,
     metode_perhitungan: "Normal",
-    nama_barang: "",
+    nama_barang: "Paket",
     berat_kg: 1
   };
 
-  if (!text) return result;
+  if (!text || !text.trim()) return result;
 
-  // 1. Nomor Resi (JD..., JP..., JT..., JTC..., etc.)
-  const resiMatch = text.match(/(?:No\.?\s*(?:Resi|Waybill|Tracking|Connote|Awb|Pesanan)|Resi|Waybill)[:\s]*([A-Z0-9]{8,22})/i)
-    || text.match(/\b(JD[0-9]{10,14}|JP[0-9]{10,14}|JT[0-9]{10,14}|JTC[0-9]{10,14})\b/i);
-  if (resiMatch) result.nomor_resi = resiMatch[1].toUpperCase();
+  const parseCurrency = (str: string): number => {
+    if (!str) return 0;
+    const cleaned = str.replace(/[^\d.,]/g, "").trim();
+    if (!cleaned) return 0;
+    const normalized = cleaned.replace(/[.,]/g, "");
+    const num = parseInt(normalized, 10);
+    return isNaN(num) ? 0 : num;
+  };
 
-  // 2. Nama Barang / Jenis Barang / Isi Paket
-  const barangMatch = text.match(/(?:Nama\s*Barang|Deskripsi\s*Barang|Jenis\s*Barang|Isi\s*Paket|Nama\s*Paket|Barang|Item|Kategori|Isi)[:\s]*([^\n\r]+)/i);
-  if (barangMatch) {
-    const raw = barangMatch[1].trim().replace(/^[:\s-]+/, "");
-    if (raw && !raw.toLowerCase().includes("berat") && !raw.toLowerCase().includes("kg") && !raw.toLowerCase().includes("biaya")) {
-      result.nama_barang = raw;
+  const rawLines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  // 1. Resi extraction
+  const resiExplicit = text.match(/(?:No\.?\s*(?:Resi|Waybill|Tracking|Connote|Awb|Pesanan)|Resi|Waybill|Nomor\s*Resi)[:\s]*([A-Z0-9]{8,24})/i);
+  if (resiExplicit) {
+    result.nomor_resi = resiExplicit[1].trim().toUpperCase();
+  } else {
+    const resiPattern = text.match(/\b(JD[0-9A-Z]{8,16}|JP[0-9A-Z]{8,16}|JT[0-9A-Z]{8,16}|JTC[0-9A-Z]{8,16})\b/i);
+    if (resiPattern) {
+      result.nomor_resi = resiPattern[1].trim().toUpperCase();
     }
   }
 
-  // 3. Pengirim (Nama, HP, Alamat)
-  const pengirimMatch = text.match(/(?:Pengirim|Nama\s*Pengirim|Shipper|Dari)[:\s]*([^\n\r(]+)(?:\(([^)]+)\))?/i);
-  if (pengirimMatch) {
-    result.nama_pengirim = pengirimMatch[1].trim().replace(/^[:\s-]+/, "");
-    if (pengirimMatch[2]) {
-      result.no_hp_pengirim = pengirimMatch[2].trim();
+  // 2. Multi-line & vertical list scanning
+  for (let i = 0; i < rawLines.length; i++) {
+    const line = rawLines[i];
+    const lower = line.toLowerCase();
+
+    // Asuransi
+    if (lower.includes("biaya asuransi") || lower.includes("asuransi (idr)") || lower.startsWith("asuransi")) {
+      const inlineMatch = line.match(/[:\s]+(?:IDR|Rp\.?)?\s*([\d.,]+)/i);
+      if (inlineMatch) {
+        result.asuransi = parseCurrency(inlineMatch[1]);
+      } else if (i + 1 < rawLines.length && /^[\d.,]+$/.test(rawLines[i + 1])) {
+        result.asuransi = parseCurrency(rawLines[i + 1]);
+      }
+      if (i > 0 && result.ongkir_dasar === 0 && /^[\d.,]+$/.test(rawLines[i - 1])) {
+        result.ongkir_dasar = parseCurrency(rawLines[i - 1]);
+      }
+    }
+
+    // Biaya Lain-lain
+    if (lower.includes("biaya lain") || lower.includes("biaya lain-lain") || lower.includes("lain-lain (idr)")) {
+      const inlineMatch = line.match(/[:\s]+(?:IDR|Rp\.?)?\s*([\d.,]+)/i);
+      if (inlineMatch) {
+        result.biaya_lain = parseCurrency(inlineMatch[1]);
+      } else if (i + 1 < rawLines.length && /^[\d.,]+$/.test(rawLines[i + 1])) {
+        result.biaya_lain = parseCurrency(rawLines[i + 1]);
+      }
+    }
+
+    // Ongkir Dasar
+    if (lower.includes("ongkir dasar") || lower.includes("biaya kirim") || lower.includes("ongkos kirim") || lower.includes("tarif dasar")) {
+      const inlineMatch = line.match(/[:\s]+(?:IDR|Rp\.?)?\s*([\d.,]+)/i);
+      if (inlineMatch) {
+        result.ongkir_dasar = parseCurrency(inlineMatch[1]);
+      } else if (i + 1 < rawLines.length && /^[\d.,]+$/.test(rawLines[i + 1])) {
+        result.ongkir_dasar = parseCurrency(rawLines[i + 1]);
+      }
+    }
+
+    // Total YoYi / Perhitungan Biaya Pengiriman
+    if (lower.includes("perhitungan biaya pengiriman") || lower.includes("total biaya") || lower.includes("total ongkir") || lower.includes("total (idr)")) {
+      const inlineMatch = line.match(/[:\s]+(?:IDR|Rp\.?)?\s*([\d.,]+)/i);
+      if (inlineMatch) {
+        result.total_yoyi = parseCurrency(inlineMatch[1]);
+      } else if (i + 1 < rawLines.length && /^[\d.,]+$/.test(rawLines[i + 1])) {
+        result.total_yoyi = parseCurrency(rawLines[i + 1]);
+      }
+    }
+
+    // Tipe Layanan / Produk
+    if (lower.includes("layanan") || lower.includes("produk") || lower.includes("service")) {
+      const prodMatch = line.match(/(?:Layanan|Produk|Service)[:\s]*([A-Z0-9_]+)/i);
+      if (prodMatch) {
+        result.tipe_produk = prodMatch[1].toUpperCase();
+      }
+    }
+
+    // Berat
+    if (lower.includes("berat") || lower.includes("weight")) {
+      const bMatch = line.match(/(?:Berat(?:\s*Barang)?|Weight)[:\s]*([\d.,]+)\s*(?:kg|gram)?/i);
+      if (bMatch) {
+        const val = parseFloat(bMatch[1].replace(",", "."));
+        if (!isNaN(val) && val > 0) result.berat_kg = val;
+      } else if (i + 1 < rawLines.length) {
+        const nextVal = parseFloat(rawLines[i + 1].replace(/[^\d.,]/g, "").replace(",", "."));
+        if (!isNaN(nextVal) && nextVal > 0) result.berat_kg = nextVal;
+      }
+    }
+
+    // Nama Barang
+    if (lower.includes("nama barang") || lower.includes("deskripsi barang") || lower.includes("isi paket") || lower.includes("nama paket")) {
+      const itemMatch = line.match(/(?:Nama\s*Barang|Deskripsi\s*Barang|Jenis\s*Barang|Isi\s*Paket|Nama\s*Paket)[:\s]*([^\n\r]+)/i);
+      if (itemMatch && itemMatch[1].trim()) {
+        result.nama_barang = itemMatch[1].trim().replace(/^[:\s-]+/, "");
+      } else if (i + 1 < rawLines.length && rawLines[i + 1].length > 1) {
+        result.nama_barang = rawLines[i + 1].replace(/^[:\s-]+/, "");
+      }
+    }
+
+    // Pengirim
+    if (lower.startsWith("pengirim") || lower.startsWith("nama pengirim") || lower.startsWith("shipper") || lower.startsWith("dari:")) {
+      const cleanLine = line.replace(/^(?:pengirim|nama\s*pengirim|shipper|dari)[:\s]*/i, "").trim();
+      if (cleanLine) {
+        result.nama_pengirim = cleanLine.replace(/\([^\)]*\)/g, "").trim();
+      } else if (i + 1 < rawLines.length) {
+        result.nama_pengirim = rawLines[i + 1];
+      }
+    }
+
+    // Penerima
+    if (lower.startsWith("penerima") || lower.startsWith("nama penerima") || lower.startsWith("receiver") || lower.startsWith("consignee") || lower.startsWith("kepada:")) {
+      const cleanLine = line.replace(/^(?:penerima|nama\s*penerima|receiver|consignee|kepada)[:\s]*/i, "").trim();
+      if (cleanLine) {
+        result.nama_penerima = cleanLine.replace(/\([^\)]*\)/g, "").trim();
+      } else if (i + 1 < rawLines.length) {
+        result.nama_penerima = rawLines[i + 1];
+      }
     }
   }
 
-  // 4. Penerima (Nama, HP, Alamat)
-  const penerimaMatch = text.match(/(?:Penerima|Nama\s*Penerima|Receiver|Consignee|Kepada|Untuk)[:\s]*([^\n\r(]+)(?:\(([^)]+)\))?/i);
-  if (penerimaMatch) {
-    result.nama_penerima = penerimaMatch[1].trim().replace(/^[:\s-]+/, "");
-    if (penerimaMatch[2]) {
-      result.no_hp_penerima = penerimaMatch[2].trim();
-    }
-  }
-
-  // Phone numbers if not extracted yet
+  // 3. Fallbacks and Phone numbers
   if (!result.no_hp_pengirim) {
     const hpPengirim = text.match(/(?:(?:Telp|HP|No\.?\s*HP|Telepon)\s*(?:Pengirim)?|Pengirim[^\n\r]*?)[:\s]*(\+?62[\d\s-]{8,15}|08[\d\s-]{8,13})/i);
     if (hpPengirim) result.no_hp_pengirim = hpPengirim[1].replace(/[\s-]/g, "");
@@ -3145,73 +3213,34 @@ function extractYoYiDataWithRegex(text: string): any {
     if (hpPenerima) result.no_hp_penerima = hpPenerima[1].replace(/[\s-]/g, "");
   }
 
-  // Alamat Pengirim & Penerima
-  const alamatPengirimMatch = text.match(/(?:Alamat\s*Pengirim|Alamat\s*Asal)[:\s]*([^\n\r]+)/i);
-  if (alamatPengirimMatch) result.alamat_pengirim = alamatPengirimMatch[1].trim();
-
-  const alamatPenerimaMatch = text.match(/(?:Alamat\s*Penerima|Alamat\s*Tujuan|Alamat)[:\s]*([^\n\r]+)/i);
-  if (alamatPenerimaMatch) result.alamat_penerima = alamatPenerimaMatch[1].trim();
-
-  // Tipe Produk
-  const produkMatch = text.match(/(?:Layanan|Tipe\s*Produk|Service)[:\s]*([A-Z0-9_]+)/i);
-  if (produkMatch) result.tipe_produk = produkMatch[1].toUpperCase();
-
-  // Berat
-  const beratMatch = text.match(/(?:Berat(?:\s*Barang)?|Weight)[:\s]*([\d.,]+)\s*(?:kg|gram)?/i);
-  if (beratMatch) {
-    const bVal = parseFloat(beratMatch[1].replace(",", "."));
-    if (!isNaN(bVal)) result.berat_kg = bVal;
-  }
-
-  // Ongkir dasar
-  const ongkirMatch = text.match(/(?:Ongkir\s*Dasar|Biaya\s*Kirim|Ongkos\s*Kirim|Tarif|Ongkir)[:\s]*(?:Rp\.?\s*)?([\d.,]+)/i);
-  if (ongkirMatch) {
-    const val = parseInt(ongkirMatch[1].replace(/[.,]/g, ""), 10);
-    if (!isNaN(val)) result.ongkir_dasar = val;
-  }
-
-  // Asuransi
-  const asuransiMatch = text.match(/(?:Biaya\s*Asuransi|Asuransi|Insurance)[:\s]*(?:Rp\.?\s*)?([\d.,]+)/i);
-  if (asuransiMatch) {
-    const val = parseInt(asuransiMatch[1].replace(/[.,]/g, ""), 10);
-    if (!isNaN(val)) result.asuransi = val;
-  }
-
-  // Biaya Lain
-  const biayaLainMatch = text.match(/(?:Biaya\s*lain-lain|Biaya\s*Lain|Biaya\s*Lainnya|Other)[:\s]*(?:Rp\.?\s*)?([\d.,]+)/i);
-  if (biayaLainMatch) {
-    const val = parseInt(biayaLainMatch[1].replace(/[.,]/g, ""), 10);
-    if (!isNaN(val)) result.biaya_lain = val;
-  }
-
-  // Total
-  const totalMatch = text.match(/(?:Total\s*(?:Biaya|Ongkir|YoYi)|Perhitungan\s*Biaya(?:\s*pengiriman)?|Jumlah\s*Biaya)[:\s]*(?:Rp\.?\s*)?([\d.,]+)/i);
-  if (totalMatch) {
-    const val = parseInt(totalMatch[1].replace(/[.,]/g, ""), 10);
-    if (!isNaN(val)) result.total_yoyi = val;
-  } else if (result.ongkir_dasar > 0) {
-    result.total_yoyi = result.ongkir_dasar + result.asuransi + result.biaya_lain;
+  // 4. Calculate total if needed
+  if (result.total_yoyi <= 0) {
+    if (result.ongkir_dasar > 0) {
+      result.total_yoyi = result.ongkir_dasar + result.asuransi + result.biaya_lain;
+    }
+  } else if (result.ongkir_dasar <= 0 && result.total_yoyi > 0) {
+    result.ongkir_dasar = Math.max(0, result.total_yoyi - result.asuransi - result.biaya_lain);
   }
 
   return result;
 }
 
-// YoYi Parsing AI + Regex Fallback
+// YoYi Parsing AI + Regex Instant Fallback
 app.post("/api/parseYoYiOrder", async (req, res) => {
   const { text } = req.body;
   if (!text || text.trim().length === 0) {
     return res.status(400).json({ status: "error", message: "Teks pesanan tidak boleh kosong!" });
   }
 
-  // First run regex extraction as solid baseline
+  // 1. High-speed Instant Regex Extraction (< 2ms)
   const regexData = extractYoYiDataWithRegex(text);
+  if (regexData.nomor_resi || regexData.ongkir_dasar > 0 || regexData.total_yoyi > 0 || regexData.nama_pengirim || regexData.nama_penerima) {
+    return res.json({ status: "success", data: regexData });
+  }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    if (regexData.nomor_resi) {
-      return res.json({ status: "success", data: regexData });
-    }
-    return res.status(500).json({ status: "error", message: "GEMINI_API_KEY belum dikonfigurasi dan teks tidak dapat diparse secara otomatis." });
+    return res.json({ status: "success", data: regexData });
   }
 
   try {
@@ -3219,26 +3248,25 @@ app.post("/api/parseYoYiOrder", async (req, res) => {
     const ai = new GoogleGenAI({ apiKey });
 
     const prompt = `Ekstrak informasi berikut dari teks Rincian Pesanan YoYi menjadi format JSON yang valid.
-Pastikan nama_pengirim, nama_penerima, nama_barang, dan nomor_resi diekstrak dengan tepat dan lengkap.
 Output hanya JSON murni tanpa markdown/backticks.
 
 Schema JSON:
 {
-  "nomor_resi": "string (Nomor resi / waybill seperti JD..., JP..., JT..., JTC...)",
-  "nama_pengirim": "string (Nama pengirim / shipper)",
-  "no_hp_pengirim": "string (opsional)",
-  "alamat_pengirim": "string (opsional)",
-  "nama_penerima": "string (Nama penerima / consignee)",
-  "no_hp_penerima": "string (opsional)",
-  "alamat_penerima": "string (opsional)",
-  "tipe_produk": "string (opsional, contoh EZ, DFOD, DOC, FastTrack)",
-  "ongkir_dasar": number (dari Ongkir Dasar),
-  "asuransi": number (dari Biaya Asuransi),
-  "biaya_lain": number (dari Biaya lain-lain),
-  "total_yoyi": number (dari Perhitungan Biaya pengiriman / Total),
-  "metode_perhitungan": "string (DFOD atau Biaya oleh pengirim)",
-  "nama_barang": "string (Nama barang / deskripsi barang / isi paket, contoh: OBAT, BAJU, SEPATU)",
-  "berat_kg": number (dari Berat/Berat Barang dalam Kg)
+  "nomor_resi": "string",
+  "nama_pengirim": "string",
+  "no_hp_pengirim": "string",
+  "alamat_pengirim": "string",
+  "nama_penerima": "string",
+  "no_hp_penerima": "string",
+  "alamat_penerima": "string",
+  "tipe_produk": "string",
+  "ongkir_dasar": number,
+  "asuransi": number,
+  "biaya_lain": number,
+  "total_yoyi": number,
+  "metode_perhitungan": "string",
+  "nama_barang": "string",
+  "berat_kg": number
 }
 
 Teks YoYi:
@@ -3255,7 +3283,6 @@ ${text}`;
     const resultText = response.text || "";
     const parsedData = JSON.parse(resultText);
 
-    // Merge AI result with regex data for any missing fields
     const finalData = {
       nomor_resi: String(parsedData.nomor_resi || regexData.nomor_resi || "").trim().toUpperCase(),
       nama_pengirim: parsedData.nama_pengirim || regexData.nama_pengirim || "",
@@ -3276,11 +3303,7 @@ ${text}`;
 
     res.json({ status: "success", data: finalData });
   } catch (error: any) {
-    console.error("parseYoYiOrder Gemini fallback to regex:", error?.message);
-    if (regexData.nomor_resi || regexData.nama_barang || regexData.nama_pengirim) {
-      return res.json({ status: "success", data: regexData });
-    }
-    res.status(500).json({ status: "error", message: formatGeminiErrorMessage(error) });
+    return res.json({ status: "success", data: regexData });
   }
 });
 
