@@ -54,12 +54,20 @@ function AppContent() {
       try {
         const parsed = JSON.parse(savedSession) as SessionData;
         setSession(parsed);
-        setActiveOutletId(parsed.outlet_id_home);
+        
+        const persistedActiveOutlet = localStorage.getItem("jnt_active_outlet_id");
+        if (persistedActiveOutlet) {
+          setActiveOutletId(persistedActiveOutlet);
+        } else {
+          setActiveOutletId(parsed.outlet_id_home);
+        }
+        
         if (location.pathname === '/' || location.pathname === '/login') {
           navigate(parsed.role.toUpperCase() === "OWNER" ? "/dashboard" : parsed.role.toUpperCase() === "ADMIN" ? "/admin-dashboard" : "/pre-input");
         }
       } catch (e) {
         localStorage.removeItem("jnt_session");
+        localStorage.removeItem("jnt_active_outlet_id");
         navigate("/login");
       }
     } else if (location.pathname !== '/login') {
@@ -95,7 +103,12 @@ function AppContent() {
           setOutlets(response.data);
           // If session exists, pre-set task location
           if (session) {
-            setActiveOutletId(session.outlet_id_home);
+            const persistedActiveOutlet = localStorage.getItem("jnt_active_outlet_id");
+            if (persistedActiveOutlet) {
+              setActiveOutletId(persistedActiveOutlet);
+            } else {
+              setActiveOutletId(session.outlet_id_home);
+            }
           } else if (response.data.length > 0) {
             setActiveOutletId(response.data[0].outlet_id);
           }
@@ -110,10 +123,12 @@ function AppContent() {
     fetchOutlets();
   }, [session]);
 
-  const handleLoginSuccess = (userSession: SessionData) => {
+  const handleLoginSuccess = (userSession: SessionData, taskOutletId?: string) => {
     setSession(userSession);
-    setActiveOutletId(userSession.outlet_id_home);
+    const initialOutlet = taskOutletId || userSession.outlet_id_home;
+    setActiveOutletId(initialOutlet);
     localStorage.setItem("jnt_session", JSON.stringify(userSession));
+    localStorage.setItem("jnt_active_outlet_id", initialOutlet);
     navigate(userSession.role.toUpperCase() === "OWNER" ? "/dashboard" : userSession.role.toUpperCase() === "ADMIN" ? "/admin-dashboard" : "/pre-input");
   };
 
@@ -121,6 +136,7 @@ function AppContent() {
     setSession(null);
     localStorage.removeItem("jnt_session");
     localStorage.removeItem("pending_transaksi_id");
+    localStorage.removeItem("jnt_active_outlet_id");
     navigate("/login");
     toast.info("Anda telah berhasil keluar dari akun.");
   };
@@ -128,6 +144,7 @@ function AppContent() {
   const handleActiveOutletChange = (newId: string) => {
     if (!session) return;
     setActiveOutletId(newId);
+    localStorage.setItem("jnt_active_outlet_id", newId);
   };
 
   const handleClearCache = () => {
@@ -453,7 +470,7 @@ function AppContent() {
       <main className={`flex-1 pb-24 ${session ? "md:pl-64 pt-16 md:pt-0" : ""}`}>
         <Routes>
           <Route path="/login" element={
-            !session ? <LoginPage onLoginSuccess={handleLoginSuccess} /> : <Navigate to="/" replace />
+            !session ? <LoginPage onLoginSuccess={handleLoginSuccess} outlets={outlets} /> : <Navigate to="/" replace />
           } />
           
           {session && (

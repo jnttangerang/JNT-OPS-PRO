@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { LogIn, ShieldAlert, Truck, Lock, User, Briefcase, TrendingUp, UserCheck, Eye, EyeOff, ChevronDown, RefreshCw } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
-import { SessionData } from "../types";
+import { SessionData, Outlet } from "../types";
 import { toast } from "../utils/toast";
 
 interface LoginPageProps {
-  onLoginSuccess: (session: SessionData) => void;
+  onLoginSuccess: (session: SessionData, taskOutletId?: string) => void;
+  outlets: Outlet[];
 }
 
 interface AdminUser {
@@ -17,11 +18,12 @@ interface AdminUser {
   outlet_id_home?: string;
 }
 
-export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
+export default function LoginPage({ onLoginSuccess, outlets }: LoginPageProps) {
   const { callBackend, loading } = useAppsScript();
   const [selectedRole, setSelectedRole] = useState<"ADMIN" | "OWNER">("ADMIN");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [outletTugas, setOutletTugas] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [adminList, setAdminList] = useState<AdminUser[]>([]);
@@ -60,12 +62,17 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       return;
     }
 
+    if (selectedRole === "ADMIN" && !outletTugas) {
+      setError("Silakan pilih Outlet Tugas terlebih dahulu.");
+      return;
+    }
+
     try {
       // callBackend handles local / api fallback transparently
       const response = await callBackend("login", { username, password });
       if (response.status === "success" && response.data) {
         toast.success(`Selamat datang, ${response.data.nama_lengkap || response.data.username}!`);
-        onLoginSuccess(response.data);
+        onLoginSuccess(response.data, outletTugas || undefined);
       } else {
         const msg = response.message || "Gagal masuk. Username atau password salah.";
         setError(msg);
@@ -277,6 +284,43 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 </button>
               </div>
             </div>
+
+            {selectedRole === "ADMIN" && (
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+                  Outlet Tugas
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                    <Truck className="h-5 w-5" />
+                  </div>
+                  <select
+                    value={outletTugas}
+                    onChange={(e) => setOutletTugas(e.target.value)}
+                    className="w-full pl-10 pr-10 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E4002B] focus:border-transparent text-sm text-gray-800 transition-all duration-200 cursor-pointer appearance-none disabled:opacity-60"
+                    disabled={loading || outlets.length === 0}
+                  >
+                    {outlets.length === 0 ? (
+                      <option value="">Memuat daftar outlet...</option>
+                    ) : (
+                      <>
+                        <option value="" disabled hidden>
+                          - Pilih outlet tugas -
+                        </option>
+                        {outlets.map((o) => (
+                          <option key={o.outlet_id} value={o.outlet_id}>
+                            {o.nama_outlet || o.outlet_id}
+                          </option>
+                        ))}
+                      </>
+                    )}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-gray-400">
+                    <ChevronDown className="h-4 w-4" />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <button
               type="submit"
