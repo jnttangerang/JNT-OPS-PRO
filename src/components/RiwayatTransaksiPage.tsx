@@ -25,6 +25,7 @@ import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, User as UserType } from "../types";
 import { toast } from "../utils/toast";
 import { highlightText } from "../utils/highlight";
+import BulkImportYoYiModal from "./BulkImportYoYiModal";
 
 interface RiwayatTransaksiPageProps {
   session: SessionData;
@@ -97,6 +98,9 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
 
   // Detail Modal State
   const [selectedDetail, setSelectedDetail] = useState<TransaksiDetail | null>(null);
+  
+  // Bulk Import State
+  const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   // Edit Modal State (Owner Only)
@@ -378,15 +382,24 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
             <p className="text-sm text-gray-500 mt-1">Kelola, pantau, edit, dan batalkan resi yang tercatat di sistem.</p>
           </div>
           
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Cari No. Resi / Nama..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
-            />
+          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+            <button
+              onClick={() => setIsBulkImportModalOpen(true)}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-sm font-bold shadow-md hover:bg-gray-800 transition-colors"
+            >
+              <Package className="w-4 h-4" />
+              Import Bulk YoYi
+            </button>
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Cari No. Resi / Nama..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-[#E4002B] focus:border-[#E4002B]"
+              />
+            </div>
           </div>
         </div>
 
@@ -1052,6 +1065,17 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
         </div>
       )}
 
+      <BulkImportYoYiModal
+        isOpen={isBulkImportModalOpen}
+        onClose={() => setIsBulkImportModalOpen(false)}
+        activeOutletId={activeOutletId || session.outlet_id_home}
+        adminId={session.user_id}
+        outlets={outlets}
+        onImportComplete={() => {
+          setIsBulkImportModalOpen(false);
+          fetchData();
+        }}
+      />
     </div>
   );
 }
