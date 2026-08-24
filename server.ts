@@ -1569,8 +1569,8 @@ app.post("/api/saveAllSettings", (req, res) => {
     });
   }
 
-  // Update System Settings (Owner only)
-  if (isOwner && systemSettings) {
+  // Update System Settings (Owner & Admin)
+  if (systemSettings) {
     db.SystemSettings = { ...db.SystemSettings, ...systemSettings };
   }
 

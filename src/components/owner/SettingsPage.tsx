@@ -544,11 +544,20 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
   // ==== RENDER ADMIN ====
   if (session.role === "ADMIN") {
     return (
-      <div className="p-4 md:p-6 lg:p-8 max-w-3xl mx-auto space-y-6 animate-fade-in pb-24">
-        <h1 className="text-2xl font-black text-gray-800 flex items-center gap-2 mb-6">
-          <Settings className="text-[#E4002B]" />
-          Pengaturan Akun
-        </h1>
+      <div className="p-4 md:p-6 lg:p-8 max-w-4xl mx-auto space-y-6 animate-fade-in pb-24">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-gray-800 flex items-center gap-2">
+              <Settings className="text-[#E4002B]" />
+              Pengaturan & Konfigurasi (Admin)
+            </h1>
+            <p className="text-gray-500 text-sm mt-1">
+              Kelola keamanan akun, otentikasi biometrik, dan kustomisasi tampilan favicon sistem.
+            </p>
+          </div>
+        </div>
+
+        {/* 1. Ubah Kata Sandi */}
         <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
           <div className="flex items-center gap-3 mb-6 border-b border-gray-100 pb-4">
             <div className="bg-gray-100 p-3 rounded-xl text-gray-700">
@@ -556,7 +565,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
             </div>
             <div>
               <h2 className="font-bold text-gray-800">Ubah Kata Sandi</h2>
-              <p className="text-xs text-gray-500">Pastikan Anda menggunakan kata sandi yang kuat.</p>
+              <p className="text-xs text-gray-500">Pastikan Anda menggunakan kata sandi yang kuat untuk keamanan operasional.</p>
             </div>
           </div>
           <div className="space-y-4">
@@ -573,7 +582,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
                 <button
                   type="button"
                   onClick={() => setShowOldPassword(!showOldPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                   title={showOldPassword ? "Sembunyikan password" : "Lihat password"}
                 >
                   {showOldPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -593,7 +602,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
                 <button
                   type="button"
                   onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                   title={showNewPassword ? "Sembunyikan password" : "Lihat password"}
                 >
                   {showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -613,7 +622,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
                 <button
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
                   title={showConfirmPassword ? "Sembunyikan password" : "Lihat password"}
                 >
                   {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -624,7 +633,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
               <button
                 onClick={handleAdminChangePassword}
                 disabled={adminSaving}
-                className="bg-[#E4002B] hover:bg-red-700 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all w-full md:w-auto disabled:opacity-50 min-w-[150px]"
+                className="bg-[#E4002B] hover:bg-red-700 text-white px-6 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all w-full md:w-auto disabled:opacity-50 min-w-[150px] cursor-pointer"
               >
                 {savedStatus["admin_password"] ? (
                   <><Check size={18} /> Tersimpan</>
@@ -636,31 +645,98 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
           </div>
         </div>
 
-        {/* Quick Login Biometrik Section for Admin */}
-        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-6 border-b border-gray-100 pb-4">
-            <div className="bg-red-50 p-3 rounded-xl text-[#E4002B]">
-              <Fingerprint size={24} />
+        {/* 2. Quick Login Biometrik & PIN (On/Off Switch + Device Registration) */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-6">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-red-50 text-[#E4002B] rounded-xl">
+                <Fingerprint size={24} className="stroke-[2.2]" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">Aktivasi Fitur Login Biometric</h3>
+                <p className="text-xs text-gray-500">Saklar On/Off pengaktifan fitur Quick Login (Sensor Sidik Jari, Wajah / PIN) sistem</p>
+              </div>
             </div>
-            <div>
-              <h2 className="font-bold text-gray-800">Quick Login (Biometrik / PIN)</h2>
-              <p className="text-xs text-gray-500">Gunakan sensor sidik jari, wajah (Face ID / Windows Hello), atau PIN perangkat untuk login instan.</p>
+
+            {savedStatus["biometric_setting"] && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 animate-fade-in">
+                <CheckCircle2 size={14} /> Tersimpan
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-slate-50 border border-slate-200 rounded-xl gap-4">
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-gray-800 uppercase tracking-wider">Status Fitur Login Biometric</span>
+              <p className="text-xs text-gray-600">
+                {biometricEnabled
+                  ? "Fitur Quick Login Biometrik AKTIF. Tombol verifikasi biometrik muncul di layar login."
+                  : "Fitur Quick Login Biometrik NON-AKTIF. Tombol biometrik di layar login dinonaktifkan."}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={biometricEnabled}
+                onClick={() => handleToggleBiometric(!biometricEnabled)}
+                disabled={savingBiometric}
+                className={`relative inline-flex h-8 w-16 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  biometricEnabled ? "bg-[#E4002B]" : "bg-gray-300"
+                }`}
+              >
+                <span
+                  aria-hidden="true"
+                  className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                    biometricEnabled ? "translate-x-8" : "translate-x-0"
+                  }`}
+                />
+              </button>
+              <span className={`text-xs font-bold uppercase tracking-wider ${biometricEnabled ? "text-[#E4002B]" : "text-gray-400"}`}>
+                {biometricEnabled ? "AKTIF" : "NON-AKTIF"}
+              </span>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200 gap-3">
-              <div>
-                <p className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  Status di Perangkat Ini
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {getStoredQuickLogins().some(item => item.username.toLowerCase() === session.username.toLowerCase())
-                    ? `Perangkat ini aktif untuk akun ${session.username}. Anda dapat login tanpa mengetik password.`
-                    : `Akun ${session.username} belum terdaftar untuk Quick Login di perangkat ini.`}
+          {/* Status Notice Banner */}
+          {biometricEnabled ? (
+            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-3 text-emerald-900">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-bold text-emerald-800">Status Fitur: AKTIF (Enabled)</p>
+                <p className="text-emerald-700">
+                  Opsi <strong>Quick Login Biometrik & PIN</strong> aktif dan dapat digunakan pada halaman login oleh seluruh Admin dan Owner yang telah mendaftarkan perangkat mereka.
                 </p>
               </div>
+            </div>
+          ) : (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-amber-900">
+              <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="text-xs space-y-1">
+                <p className="font-bold text-amber-800">Status Fitur: NON-AKTIF (Disabled)</p>
+                <p className="text-amber-700">
+                  Fitur Quick Login biometrik dinonaktifkan secara menyeluruh. Opsi biometrik pada halaman login disembunyikan dan seluruh pengguna diwajibkan masuk menggunakan username & password manual.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Device Biometric Setup for Admin */}
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h4 className="text-xs font-bold text-gray-800 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Laptop className="w-4 h-4 text-gray-600" />
+                  Pendaftaran Biometrik di Perangkat Ini (Akun: {session.username})
+                </h4>
+                <p className="text-xs text-gray-500 mt-1">
+                  {getStoredQuickLogins().some(item => item.username.toLowerCase() === session.username.toLowerCase())
+                    ? `Perangkat ini telah terdaftar untuk akun ${session.username}. Anda dapat langsung login tanpa mengetik password saat fitur aktif.`
+                    : `Perangkat ini belum terdaftar untuk akun ${session.username}. Anda dapat mendaftarkan sensor sidik jari / Face ID / PIN perangkat sekarang.`}
+                </p>
+              </div>
+
               <div className="flex items-center gap-2 shrink-0">
                 {getStoredQuickLogins().some(item => item.username.toLowerCase() === session.username.toLowerCase()) ? (
                   <>
@@ -668,22 +744,25 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
                       type="button"
                       onClick={async () => {
                         const res = await authenticateWithBiometrics(session.username);
-                        if (res.success) toast.success("Verifikasi biometrik berhasil!");
-                        else toast.error(res.message);
+                        if (res.success) {
+                          toast.success("✅ Verifikasi Biometrik Berhasil!");
+                        } else {
+                          toast.error("Verifikasi gagal: " + res.message);
+                        }
                       }}
-                      className="px-3.5 py-2 text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:bg-gray-100 rounded-lg flex items-center gap-1.5 transition-all"
+                      className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:bg-gray-100 rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                     >
-                      <Fingerprint className="w-3.5 h-3.5 text-[#E4002B]" />
-                      <span>Tes Biometrik</span>
+                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Tes Sensor</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => {
                         removeQuickLoginCredential(session.username);
-                        toast.info("Quick Login telah dihapus dari perangkat ini.");
+                        toast.info("Quick Login untuk akun Admin telah dihapus dari perangkat ini.");
                         fetchSettings();
                       }}
-                      className="px-3.5 py-2 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center gap-1.5 transition-all"
+                      className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Hapus</span>
@@ -701,14 +780,201 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
                         toast.error(res.message);
                       }
                     }}
-                    className="px-4 py-2 text-xs font-bold text-white bg-[#E4002B] hover:bg-red-700 rounded-lg flex items-center gap-1.5 transition-all shadow-sm"
+                    className="px-4 py-2 text-xs font-bold text-white bg-[#E4002B] hover:bg-red-700 rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                   >
                     <Fingerprint className="w-3.5 h-3.5" />
-                    <span>Daftarkan Biometrik</span>
+                    <span>Daftarkan Biometrik Admin</span>
                   </button>
                 )}
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* 3. Pengaturan Favicon Aplikasi */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-6">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+                <Globe size={24} className="stroke-[2.2]" />
+              </div>
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">Pengaturan Favicon (Ikon Tab Browser)</h3>
+                <p className="text-xs text-gray-500">Kustomisasi ikon tab browser, bookmark, dan shortcut sistem J&T OPS PRO</p>
+              </div>
+            </div>
+
+            {savedStatus["favicon_setting"] && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 animate-fade-in">
+                <CheckCircle2 size={14} /> Tersimpan
+              </span>
+            )}
+          </div>
+
+          {/* Live Browser Tab Mockup */}
+          <div className="bg-slate-900 p-4 rounded-xl space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+              <span>LIVE SIMULASI TAB BROWSER</span>
+              <span className="text-emerald-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Aktif Sekarang
+              </span>
+            </div>
+
+            {/* Browser Chrome Header Mockup */}
+            <div className="bg-slate-800 rounded-lg p-2 flex items-center gap-2">
+              {/* Window Controls */}
+              <div className="flex items-center gap-1.5 px-1">
+                <div className="w-2.5 h-2.5 rounded-full bg-red-500/80"></div>
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80"></div>
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></div>
+              </div>
+
+              {/* Simulated Active Tab */}
+              <div className="bg-slate-950 text-white text-xs px-3 py-1.5 rounded-md flex items-center gap-2 max-w-xs border border-slate-700 shadow-inner">
+                <div className="w-4 h-4 shrink-0 rounded overflow-hidden flex items-center justify-center bg-white/10 p-0.5">
+                  <img 
+                    src={currentFavicon} 
+                    alt="Favicon Preview" 
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      (e.target as HTMLElement).style.display = "none";
+                    }}
+                  />
+                </div>
+                <span className="font-semibold truncate text-[11px]">J&T OPS PRO — Sistem Operasional</span>
+                <span className="text-slate-500 hover:text-white text-[10px] cursor-pointer ml-auto">✕</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Metode 1: Preset Favicon Resmi J&T */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                Pilihan 1: Preset Favicon Resmi Siap Pakai
+              </h4>
+              <span className="text-[11px] text-gray-400">Pilih salah satu untuk langsung menerapkan</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {FAVICON_PRESETS.map((preset) => {
+                const isSelected = currentFavicon === preset.url || selectedPresetId === preset.id;
+                return (
+                  <div
+                    key={preset.id}
+                    onClick={() => handleApplyFaviconPreset(preset)}
+                    className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-3.5 ${
+                      isSelected
+                        ? "border-[#E4002B] bg-red-50/50 shadow-sm ring-2 ring-red-500/10"
+                        : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-white border border-gray-200 p-1.5 flex items-center justify-center shadow-sm shrink-0">
+                      <img src={preset.url} alt={preset.name} className="w-full h-full object-contain" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1">
+                        <p className="text-xs font-bold text-gray-900 truncate">{preset.name}</p>
+                        {isSelected && (
+                          <CheckCircle2 className="w-4 h-4 text-[#E4002B] shrink-0" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-500 truncate mt-0.5">{preset.description}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Metode 2: Unggah File Ikon dari Komputer */}
+          <div className="space-y-3 pt-2 border-t border-gray-100">
+            <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+              <Upload className="w-3.5 h-3.5 text-blue-500" />
+              Pilihan 2: Unggah File Ikon (PNG / ICO / SVG / JPG / WebP)
+            </h4>
+            
+            <div className="flex flex-col sm:flex-row items-center gap-4 p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-gray-300 transition-colors bg-gray-50/50">
+              <div className="w-12 h-12 rounded-xl bg-white border border-gray-200 flex items-center justify-center shrink-0 shadow-sm">
+                <Image className="w-6 h-6 text-gray-400" />
+              </div>
+              <div className="flex-1 text-center sm:text-left">
+                <p className="text-xs font-bold text-gray-800">Pilih file logo dari perangkat</p>
+                <p className="text-[11px] text-gray-500 mt-0.5">Format didukung: .png, .ico, .svg, .jpg, .webp (Maksimal 2 MB). Disarankan rasio 1:1 persegi.</p>
+              </div>
+              <label className="px-4 py-2 bg-white border border-gray-200 hover:border-[#E4002B] hover:text-[#E4002B] text-gray-700 text-xs font-bold rounded-lg cursor-pointer transition-all shadow-sm shrink-0 flex items-center gap-1.5">
+                <Upload size={14} />
+                <span>{uploadingFavicon ? "Mengunggah..." : "Pilih File"}</span>
+                <input
+                  type="file"
+                  accept="image/png, image/x-icon, image/svg+xml, image/jpeg, image/webp"
+                  onChange={handleFaviconFileUpload}
+                  disabled={uploadingFavicon}
+                  className="hidden"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Metode 3: Masukkan URL Gambar Favicon */}
+          <div className="space-y-3 pt-2 border-t border-gray-100">
+            <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+              <ExternalLink className="w-3.5 h-3.5 text-purple-500" />
+              Pilihan 3: Gunakan URL Gambar Favicon Eksternal
+            </h4>
+            
+            <form onSubmit={handleCustomFaviconSubmit} className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="url"
+                value={customFaviconUrl}
+                onChange={(e) => setCustomFaviconUrl(e.target.value)}
+                placeholder="https://example.com/logo-favicon.png"
+                className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#E4002B] outline-none font-mono bg-white"
+              />
+              <button
+                type="submit"
+                disabled={savingFavicon || !customFaviconUrl.trim()}
+                className="px-4 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50 shrink-0 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <Check size={14} />
+                <span>Terapkan URL</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Action Buttons: Reset */}
+          <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={handleResetFavicon}
+              className="text-xs font-bold text-gray-500 hover:text-gray-800 flex items-center gap-1.5 transition-colors cursor-pointer py-1.5"
+            >
+              <RefreshCw size={14} />
+              <span>Kembalikan ke Default J&T Express</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleSaveFavicon(currentFavicon, "Pilihan Aktif")}
+              disabled={savingFavicon}
+              className="px-5 py-2 bg-[#E4002B] hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm disabled:opacity-50 flex items-center gap-2 cursor-pointer"
+            >
+              {savingFavicon ? (
+                <span>Menyimpan...</span>
+              ) : savedStatus["favicon_setting"] ? (
+                <>
+                  <Check size={14} />
+                  <span>Tersimpan</span>
+                </>
+              ) : (
+                <>
+                  <Save size={14} />
+                  <span>Simpan Favicon</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>
