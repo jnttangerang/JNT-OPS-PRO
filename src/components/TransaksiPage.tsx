@@ -882,7 +882,8 @@ export default function TransaksiPage({
     (metodeBayar === "Tunai" || metodeBayar === "DFOD" || Boolean(buktiBayarUrl || fotoResiUrl || fotoResiPreview))
   );
 
-  const isAllStepsValid = stepFotoPaket && stepFotoResi && stepBarcode && stepProdukYoYi && stepPembayaran;
+  // Foto bersifat opsional, syarat utama penyelesaian transaksi: Barcode valid, Layanan terpilih & Pembayaran lunas
+  const isAllStepsValid = stepBarcode && stepProdukYoYi && stepPembayaran;
 
   // Auto file-name generation and upload helper
   const handleUploadProof = async (e: React.ChangeEvent<HTMLInputElement>, isSurchargeProof: boolean) => {
@@ -1376,13 +1377,12 @@ export default function TransaksiPage({
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
           <div className="flex items-center justify-between gap-1 sm:gap-2 text-center overflow-x-auto pb-2">
             {[
-              { label: "Draft", done: true, active: false },
-              { label: "Foto Paket", done: stepFotoPaket, active: !stepFotoPaket },
-              { label: "Foto Resi", done: stepFotoResi, active: stepFotoPaket && !stepFotoResi },
-              { label: "Barcode", done: stepBarcode, active: stepFotoPaket && stepFotoResi && !stepBarcode },
-              { label: "YoYi / JTC", done: stepProdukYoYi, active: stepFotoPaket && stepFotoResi && stepBarcode && !stepProdukYoYi },
-              { label: "Pembayaran", done: stepPembayaran, active: stepFotoPaket && stepFotoResi && stepBarcode && stepProdukYoYi && !stepPembayaran },
-              { label: "Selesai", done: isAllStepsValid, active: isAllStepsValid }
+              { label: "Draft", done: true, active: false, optional: false },
+              { label: "Barcode", done: stepBarcode, active: !stepBarcode, optional: false },
+              { label: "YoYi / JTC", done: stepProdukYoYi, active: stepBarcode && !stepProdukYoYi, optional: false },
+              { label: "Pembayaran", done: stepPembayaran, active: stepBarcode && stepProdukYoYi && !stepPembayaran, optional: false },
+              { label: "Foto (Opsional)", done: Boolean(stepFotoPaket || stepFotoResi), active: false, optional: true },
+              { label: "Selesai", done: isAllStepsValid, active: isAllStepsValid, optional: false }
             ].map((item, idx, arr) => (
               <React.Fragment key={item.label}>
                 <div className="flex flex-col items-center min-w-[70px]">
@@ -1391,12 +1391,14 @@ export default function TransaksiPage({
                       ? "bg-green-600 text-white shadow-sm"
                       : item.active
                       ? "bg-[#E4002B] text-white animate-pulse"
+                      : item.optional
+                      ? "bg-slate-100 text-slate-500 border border-dashed border-slate-300"
                       : "bg-gray-100 text-gray-400"
                   }`}>
-                    {item.done ? "✓" : idx + 1}
+                    {item.done ? "✓" : item.optional ? "📷" : idx + 1}
                   </div>
                   <span className={`text-[10px] font-bold mt-1.5 whitespace-nowrap ${
-                    item.done ? "text-green-700" : item.active ? "text-[#E4002B]" : "text-gray-400"
+                    item.done ? "text-green-700" : item.active ? "text-[#E4002B]" : item.optional ? "text-slate-500" : "text-gray-400"
                   }`}>
                     {item.label}
                   </span>
@@ -2489,12 +2491,6 @@ export default function TransaksiPage({
                       <span>Langkah Finalisasi Belum Selesai (Simpan Aktif Jika Semua ✓):</span>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${stepFotoPaket ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
-                        {stepFotoPaket ? "✓" : "⏳"} Foto Paket
-                      </span>
-                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${stepFotoResi ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
-                        {stepFotoResi ? "✓" : "⏳"} Foto Resi
-                      </span>
                       <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${stepBarcode ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
                         {stepBarcode ? "✓" : "⏳"} Scan Barcode
                       </span>
@@ -2504,6 +2500,11 @@ export default function TransaksiPage({
                       <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${stepPembayaran ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800 border border-amber-300"}`}>
                         {stepPembayaran ? "✓" : "⏳"} Pembayaran
                       </span>
+                      {(stepFotoPaket || stepFotoResi) && (
+                        <span className="px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 bg-green-100 text-green-800">
+                          ✓ Foto Terlampir
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
