@@ -9,6 +9,7 @@ import {
   registerBiometricCredential, 
   removeQuickLoginCredential, 
   isWebAuthnSupported, 
+  isBiometricFeatureEnabled,
   StoredQuickLogin 
 } from "../utils/webAuthn";
 
@@ -45,6 +46,12 @@ export default function LoginPage({ onLoginSuccess, outlets }: LoginPageProps) {
   const [authenticatingBiometric, setAuthenticatingBiometric] = useState(false);
 
   const refreshQuickLogins = () => {
+    if (!isBiometricFeatureEnabled()) {
+      setQuickLogins([]);
+      setActiveQuickLogin(null);
+      setShowQuickLoginView(false);
+      return;
+    }
     const list = getStoredQuickLogins();
     setQuickLogins(list);
     if (list.length > 0) {
@@ -135,8 +142,8 @@ export default function LoginPage({ onLoginSuccess, outlets }: LoginPageProps) {
       // callBackend handles local / api fallback transparently
       const response = await callBackend("login", { username, password });
       if (response.status === "success" && response.data) {
-        // If enabled, register Quick Login
-        if (enableQuickLogin) {
+        // If enabled and feature is ON globally, register Quick Login
+        if (enableQuickLogin && isBiometricFeatureEnabled()) {
           try {
             await registerBiometricCredential(response.data, outletTugas || undefined);
           } catch (regErr) {
@@ -308,8 +315,8 @@ export default function LoginPage({ onLoginSuccess, outlets }: LoginPageProps) {
             </div>
           ) : (
             <>
-              {/* If quick logins exist, show shortcut button at top */}
-              {quickLogins.length > 0 && (
+              {/* If quick logins exist and feature is enabled, show shortcut button at top */}
+              {isBiometricFeatureEnabled() && quickLogins.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setShowQuickLoginView(true)}
@@ -511,21 +518,23 @@ export default function LoginPage({ onLoginSuccess, outlets }: LoginPageProps) {
                   </div>
                 )}
 
-                {/* Biometric / Quick Login Opt-in Checkbox */}
-                <div className="pt-1">
-                  <label className="flex items-center gap-2.5 text-xs text-gray-600 cursor-pointer select-none group">
-                    <input
-                      type="checkbox"
-                      checked={enableQuickLogin}
-                      onChange={(e) => setEnableQuickLogin(e.target.checked)}
-                      className="rounded border-gray-300 text-[#E4002B] focus:ring-0 w-4 h-4 cursor-pointer"
-                    />
-                    <span className="flex items-center gap-1.5 font-medium group-hover:text-gray-900 transition-colors">
-                      <Fingerprint className="w-3.5 h-3.5 text-[#E4002B]" />
-                      <span>Aktifkan Quick Login (Biometrik / PIN) di perangkat ini</span>
-                    </span>
-                  </label>
-                </div>
+                {/* Biometric / Quick Login Opt-in Checkbox (Only if enabled by Owner) */}
+                {isBiometricFeatureEnabled() && (
+                  <div className="pt-1">
+                    <label className="flex items-center gap-2.5 text-xs text-gray-600 cursor-pointer select-none group">
+                      <input
+                        type="checkbox"
+                        checked={enableQuickLogin}
+                        onChange={(e) => setEnableQuickLogin(e.target.checked)}
+                        className="rounded border-gray-300 text-[#E4002B] focus:ring-0 w-4 h-4 cursor-pointer"
+                      />
+                      <span className="flex items-center gap-1.5 font-medium group-hover:text-gray-900 transition-colors">
+                        <Fingerprint className="w-3.5 h-3.5 text-[#E4002B]" />
+                        <span>Aktifkan Quick Login (Biometrik / PIN) di perangkat ini</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
 
                 <button
                   type="submit"

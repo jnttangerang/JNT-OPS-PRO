@@ -28,6 +28,7 @@ import ToastContainer from "./components/ToastContainer";
 import QuickAction from "./components/QuickAction";
 import { SessionData, Outlet } from "./types";
 import { toast } from "./utils/toast";
+import { initFavicon } from "./utils/favicon";
 
 function AppContent() {
   const { callBackend } = useAppsScript();
@@ -47,8 +48,9 @@ function AppContent() {
   // Loading indicator for initial settings
   const [loadingConfig, setLoadingConfig] = useState(false);
 
-  // Load active session from localStorage on start
+  // Load active session and favicon from localStorage on start
   useEffect(() => {
+    initFavicon();
     const savedSession = localStorage.getItem("jnt_session");
     if (savedSession) {
       try {

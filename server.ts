@@ -367,7 +367,9 @@ const initialDb = {
     folder_bukti_kas_masuk: "",
     folder_bukti_kas_keluar: "",
     folder_bukti_transfer_admin_owner: "",
-    folder_bukti_transfer_owner_dp: ""
+    folder_bukti_transfer_owner_dp: "",
+    enable_biometric_login: true,
+    app_favicon_url: ""
   },
   Master_Customer: [],
   Riwayat_Penerima: [],
@@ -4629,13 +4631,15 @@ app.post("/api/getSetoranDetail", (req, res) => {
   
   const hTanggal = header.tanggal;
   const hOutletId = header.outlet_id;
+  const hAdmin = header.admin_pembuat;
   
   let txList: any[] = [];
   
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
     let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
-    if (txDate === hTanggal && tx.outlet_id === hOutletId) {
+    const txAdmin = tx.admin_id || "SYSTEM";
+    if (txDate === hTanggal && tx.outlet_id === hOutletId && (!hAdmin || txAdmin === hAdmin)) {
       const sum = calculateFinancialSummary(tx);
       txList.push({ 
         ...tx, 

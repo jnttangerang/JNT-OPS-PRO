@@ -13,6 +13,29 @@ export interface StoredQuickLogin {
 }
 
 const STORAGE_KEY = "jnt_quick_login_credentials";
+const FEATURE_TOGGLE_KEY = "jnt_enable_biometric_login";
+
+// Helper: check if Owner has enabled biometric login feature globally
+export function isBiometricFeatureEnabled(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const val = localStorage.getItem(FEATURE_TOGGLE_KEY);
+    if (val === null) return true; // Default ON
+    return val === "true" || val === "ON" || val === "1";
+  } catch {
+    return true;
+  }
+}
+
+// Helper: toggle biometric login feature
+export function setBiometricFeatureEnabled(enabled: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(FEATURE_TOGGLE_KEY, enabled ? "true" : "false");
+  } catch (e) {
+    console.error("Error setting biometric feature toggle:", e);
+  }
+}
 
 // Helper: check if WebAuthn is supported by browser environment
 export function isWebAuthnSupported(): boolean {

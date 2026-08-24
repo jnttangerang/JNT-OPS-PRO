@@ -40,6 +40,8 @@ export interface SystemSettings {
   folder_bukti_kas_keluar?: string;
   folder_bukti_transfer_admin_owner?: string;
   folder_bukti_transfer_owner_dp?: string;
+  enable_biometric_login?: boolean | "ON" | "OFF" | string;
+  app_favicon_url?: string;
 }
 
 

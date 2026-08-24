@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Settings, Save, AlertCircle, Building2, User as UserIcon, Users, HardDrive, FileText, CheckCircle, XCircle, Search, Plus, Key, Lock, Check, Tags, BookOpen, Eye, EyeOff, Fingerprint, Trash2, Sparkles, ShieldCheck } from "lucide-react";
+import { 
+  Settings, Save, AlertCircle, Building2, User as UserIcon, Users, HardDrive, 
+  FileText, CheckCircle, XCircle, Search, Plus, Key, Lock, Check, Tags, 
+  BookOpen, Eye, EyeOff, Fingerprint, Trash2, Sparkles, ShieldCheck,
+  SlidersHorizontal, Image, Globe, Upload, RefreshCw, CheckCircle2,
+  ToggleLeft, ToggleRight, Laptop, ExternalLink, ShieldAlert
+} from "lucide-react";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
 import { SessionData, Outlet, User, SystemSettings } from "../../types";
@@ -10,8 +16,17 @@ import {
   registerBiometricCredential, 
   removeQuickLoginCredential, 
   authenticateWithBiometrics, 
-  isWebAuthnSupported 
+  isWebAuthnSupported,
+  isBiometricFeatureEnabled,
+  setBiometricFeatureEnabled
 } from "../../utils/webAuthn";
+import {
+  FAVICON_PRESETS,
+  DEFAULT_FAVICON_SVG,
+  getAppFavicon,
+  setAppFavicon,
+  resetAppFavicon
+} from "../../utils/favicon";
 
 interface SettingsPageProps {
   session: SessionData;
@@ -38,12 +53,12 @@ const Modal = ({ title, onClose, onSubmit, children, ctaText = "Simpan", loading
   </div>
 );
 
-type TabKey = "outlet" | "user" | "kategori" | "drive" | "standards" | "guide";
+type TabKey = "system" | "outlet" | "user" | "kategori" | "ekspedisi" | "drive" | "standards" | "guide";
 
 const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
   const { callBackend } = useAppsScript();
   const [fetching, setFetching] = useState(true);
-  const [activeTab, setActiveTab] = useState<TabKey>(session.role === "OWNER" ? "outlet" : "user");
+  const [activeTab, setActiveTab] = useState<TabKey>(session.role === "OWNER" ? "system" : "user");
   
   const [outletList, setOutletList] = useState<Outlet[]>([]);
   const [userList, setUserList] = useState<User[]>([]);
@@ -51,6 +66,17 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
   const [driveValidation, setDriveValidation] = useState<Record<string, "none" | "loading" | "success" | "error">>({});
   
   const [savedStatus, setSavedStatus] = useState<Record<string, boolean>>({});
+
+  // Biometric toggle state
+  const [biometricEnabled, setBiometricEnabled] = useState<boolean>(() => isBiometricFeatureEnabled());
+  const [savingBiometric, setSavingBiometric] = useState<boolean>(false);
+
+  // Favicon state
+  const [currentFavicon, setCurrentFavicon] = useState<string>(() => getAppFavicon());
+  const [customFaviconUrl, setCustomFaviconUrl] = useState<string>("");
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>("jnt-red");
+  const [savingFavicon, setSavingFavicon] = useState<boolean>(false);
+  const [uploadingFavicon, setUploadingFavicon] = useState<boolean>(false);
 
   const [oldPassword, setOldPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -91,6 +117,29 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
           sys.apps_script_url = localStorage.getItem("APPS_SCRIPT_URL") || (import.meta as any).env?.VITE_APPS_SCRIPT_URL || "";
         }
         setSystemSettings(sys);
+
+        // Sync Biometric setting
+        if (sys.enable_biometric_login !== undefined) {
+          const isBio = sys.enable_biometric_login !== false && sys.enable_biometric_login !== "OFF" && sys.enable_biometric_login !== "false";
+          setBiometricEnabled(isBio);
+          setBiometricFeatureEnabled(isBio);
+        } else {
+          setBiometricEnabled(isBiometricFeatureEnabled());
+        }
+
+        // Sync Favicon setting
+        if (sys.app_favicon_url) {
+          setCurrentFavicon(sys.app_favicon_url);
+          setAppFavicon(sys.app_favicon_url);
+          const matchedPreset = FAVICON_PRESETS.find(p => p.url === sys.app_favicon_url);
+          if (matchedPreset) {
+            setSelectedPresetId(matchedPreset.id);
+            setCustomFaviconUrl("");
+          } else {
+            setSelectedPresetId(null);
+            setCustomFaviconUrl(sys.app_favicon_url.startsWith("data:") ? "" : sys.app_favicon_url);
+          }
+        }
       }
     } catch (e) {
       console.error(e);
@@ -353,6 +402,141 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
     }
   };
 
+  const handleToggleBiometric = async (nextState: boolean) => {
+    setSavingBiometric(true);
+    setBiometricEnabled(nextState);
+    setBiometricFeatureEnabled(nextState);
+    
+    if (systemSettings) {
+      setSystemSettings({ ...systemSettings, enable_biometric_login: nextState });
+    }
+
+    try {
+      const response = await callBackend("saveAllSettings", {
+        user_id: session.user_id,
+        systemSettings: {
+          ...(systemSettings || {}),
+          enable_biometric_login: nextState,
+        },
+      });
+
+      if (response && response.status === "success") {
+        markSaved("biometric_setting");
+        toast.success(`Fitur Login Biometrik berhasil ${nextState ? "DIAKTIFKAN" : "DINONAKTIFKAN"}.`);
+      } else {
+        toast.error("Gagal menyimpan preferensi biometrik ke database.");
+      }
+    } catch (err: any) {
+      toast.error("Kesalahan jaringan saat menyimpan pengaturan biometrik.");
+    } finally {
+      setSavingBiometric(false);
+    }
+  };
+
+  const handleApplyFaviconPreset = async (preset: typeof FAVICON_PRESETS[0]) => {
+    setSelectedPresetId(preset.id);
+    setCustomFaviconUrl("");
+    await handleSaveFavicon(preset.url, preset.name);
+  };
+
+  const handleSaveFavicon = async (urlToSave: string, label?: string) => {
+    if (!urlToSave) {
+      toast.error("Pilih atau masukkan URL favicon terlebih dahulu.");
+      return;
+    }
+
+    setSavingFavicon(true);
+    setCurrentFavicon(urlToSave);
+    setAppFavicon(urlToSave);
+
+    if (systemSettings) {
+      setSystemSettings({ ...systemSettings, app_favicon_url: urlToSave });
+    }
+
+    try {
+      const response = await callBackend("saveAllSettings", {
+        user_id: session.user_id,
+        systemSettings: {
+          ...(systemSettings || {}),
+          app_favicon_url: urlToSave,
+        },
+      });
+
+      if (response && response.status === "success") {
+        markSaved("favicon_setting");
+        toast.success(`Favicon ${label ? `"${label}" ` : ""}berhasil disimpan dan diterapkan!`);
+      } else {
+        toast.error("Gagal menyimpan favicon ke server.");
+      }
+    } catch (err: any) {
+      toast.error("Kesalahan jaringan saat menyimpan favicon.");
+    } finally {
+      setSavingFavicon(false);
+    }
+  };
+
+  const handleCustomFaviconSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customFaviconUrl.trim()) {
+      toast.error("Masukkan URL gambar / ikon favicon terlebih dahulu.");
+      return;
+    }
+    setSelectedPresetId(null);
+    handleSaveFavicon(customFaviconUrl.trim(), "Kustom URL");
+  };
+
+  const handleFaviconFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Ukuran file gambar favicon maksimal 2 MB.");
+      return;
+    }
+
+    setUploadingFavicon(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      if (dataUrl) {
+        setSelectedPresetId(null);
+        setCustomFaviconUrl("");
+        handleSaveFavicon(dataUrl, file.name);
+      }
+      setUploadingFavicon(false);
+    };
+    reader.onerror = () => {
+      toast.error("Gagal membaca file gambar yang diunggah.");
+      setUploadingFavicon(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleResetFavicon = async () => {
+    resetAppFavicon();
+    setCurrentFavicon(DEFAULT_FAVICON_SVG);
+    setCustomFaviconUrl("");
+    setSelectedPresetId("jnt-red");
+
+    if (systemSettings) {
+      setSystemSettings({ ...systemSettings, app_favicon_url: DEFAULT_FAVICON_SVG });
+    }
+
+    try {
+      await callBackend("saveAllSettings", {
+        user_id: session.user_id,
+        systemSettings: {
+          ...(systemSettings || {}),
+          app_favicon_url: DEFAULT_FAVICON_SVG,
+        },
+      });
+      markSaved("favicon_setting");
+      toast.info("Favicon berhasil dikembalikan ke standar resmi J&T Express.");
+    } catch (err: any) {
+      toast.error("Gagal menyimpan ke server.");
+    }
+  };
+
   if (fetching) {
     return <div className="p-8 text-center text-gray-500">Memuat konfigurasi...</div>;
   }
@@ -548,6 +732,17 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
 
       <div className="flex flex-col lg:flex-row gap-6 items-start">
         <div className="w-full lg:w-64 shrink-0 flex flex-col gap-6">
+          {/* PENGATURAN SISTEM */}
+          <div className="space-y-2">
+            <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2">Pengaturan Sistem</h3>
+            <button
+              onClick={() => setActiveTab("system")}
+              className={`w-full text-left px-4 py-3 rounded-xl font-bold flex items-center gap-3 transition-colors ${activeTab === "system" ? "bg-[#E4002B] text-white shadow-md border-l-4 border-red-700" : "bg-white text-gray-600 hover:bg-gray-50 border border-gray-100"}`}
+            >
+              <SlidersHorizontal size={18} /> Sistem & Fitur
+            </button>
+          </div>
+
           {/* MASTER DATA */}
           <div className="space-y-2">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider px-2">Master Data</h3>
@@ -607,6 +802,342 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
         </div>
 
         <div className="flex-1 w-full min-w-0">
+          
+          {/* TAB: SISTEM & FITUR (LEVEL OWNER) */}
+          {activeTab === "system" && (
+            <div className="space-y-8">
+              
+              {/* Header Info */}
+              <div className="bg-gradient-to-r from-red-50 via-white to-gray-50 border border-red-100 rounded-2xl p-5 shadow-sm">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 bg-[#E4002B] text-white rounded-xl shadow-md shrink-0">
+                    <SlidersHorizontal size={22} />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900">Pengaturan Sistem & Fitur Utama (Owner Level)</h2>
+                    <p className="text-xs text-gray-600 mt-1 leading-relaxed">
+                      Kelola kebijakan autentikasi pengguna, aktivasi login biometrik, serta kustomisasi visual favicon dan logo aplikasi untuk seluruh operasional.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* FITUR 1: PENGATURAN ON/OFF LOGIN BIOMETRIC */}
+              <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-red-50 text-[#E4002B] rounded-xl">
+                      <Fingerprint size={24} className="stroke-[2.2]" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-gray-900 text-base">Pengaturan Fitur "Login Biometric"</h3>
+                      <p className="text-xs text-gray-500">Saklar on/off fitur autentikasi sidik jari / Face ID / PIN perangkat</p>
+                    </div>
+                  </div>
+
+                  {/* Toggle Switch */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleBiometric(!biometricEnabled)}
+                      disabled={savingBiometric}
+                      className={`relative inline-flex h-8 w-16 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                        biometricEnabled ? "bg-[#E4002B]" : "bg-gray-300"
+                      }`}
+                      title={biometricEnabled ? "Klik untuk Men-nonaktifkan" : "Klik untuk Mengaktifkan"}
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-7 w-7 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                          biometricEnabled ? "translate-x-8" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                    <span className={`text-xs font-bold uppercase tracking-wider ${biometricEnabled ? "text-[#E4002B]" : "text-gray-400"}`}>
+                      {biometricEnabled ? "AKTIF" : "NON-AKTIF"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Status Notice Banner */}
+                {biometricEnabled ? (
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-3 text-emerald-900">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-1">
+                      <p className="font-bold text-emerald-800">Status Fitur: AKTIF (Enabled)</p>
+                      <p className="text-emerald-700">
+                        Opsi <strong>Quick Login Biometrik & PIN</strong> aktif dan dapat digunakan pada halaman login oleh seluruh Admin dan Owner yang telah mendaftarkan perangkat mereka.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3 text-amber-900">
+                    <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-xs space-y-1">
+                      <p className="font-bold text-amber-800">Status Fitur: NON-AKTIF (Disabled)</p>
+                      <p className="text-amber-700">
+                        Fitur Quick Login biometrik dinonaktifkan secara menyeluruh. Opsi biometrik pada halaman login disembunyikan dan seluruh pengguna diwajibkan masuk menggunakan username & password manual.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Device Biometric Setup for Owner */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-xs font-bold text-gray-800 flex items-center gap-1.5 uppercase tracking-wider">
+                        <Laptop className="w-4 h-4 text-gray-600" />
+                        Pendaftaran Biometrik di Perangkat Ini (Akun Owner: {session.username})
+                      </h4>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {getStoredQuickLogins().some(item => item.username.toLowerCase() === session.username.toLowerCase())
+                          ? `Perangkat ini telah terdaftar untuk akun ${session.username}. Anda dapat langsung login tanpa mengetik password saat fitur aktif.`
+                          : `Perangkat ini belum terdaftar untuk akun ${session.username}. Anda dapat mendaftarkan sensor sidik jari / Face ID / PIN perangkat sekarang.`}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {getStoredQuickLogins().some(item => item.username.toLowerCase() === session.username.toLowerCase()) ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const res = await authenticateWithBiometrics(session.username);
+                              if (res.success) {
+                                toast.success("✅ Verifikasi Biometrik Berhasil!");
+                              } else {
+                                toast.error("Verifikasi gagal: " + res.message);
+                              }
+                            }}
+                            className="px-3 py-1.5 text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:bg-gray-100 rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Tes Sensor</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              removeQuickLoginCredential(session.username);
+                              toast.info("Quick Login untuk akun Owner telah dihapus dari perangkat ini.");
+                              fetchSettings();
+                            }}
+                            className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Hapus</span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await registerBiometricCredential(session);
+                            if (res.success) {
+                              toast.success(res.message);
+                              fetchSettings();
+                            } else {
+                              toast.error(res.message);
+                            }
+                          }}
+                          className="px-4 py-2 text-xs font-bold text-white bg-[#E4002B] hover:bg-red-700 rounded-lg flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                        >
+                          <Fingerprint className="w-3.5 h-3.5" />
+                          <span>Daftarkan Biometrik Owner</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* FITUR 2: PENGATURAN FAVICON APLIKASI */}
+              <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-6">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
+                      <Globe size={24} className="stroke-[2.2]" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-gray-900 text-base">Pengaturan Favicon (Ikon Tab Browser)</h3>
+                      <p className="text-xs text-gray-500">Kustomisasi ikon tab browser, bookmark, dan shortcut sistem J&T OPS PRO</p>
+                    </div>
+                  </div>
+
+                  {savedStatus["favicon_setting"] && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 animate-fade-in">
+                      <CheckCircle2 size={14} /> Tersimpan
+                    </span>
+                  )}
+                </div>
+
+                {/* Live Browser Tab Mockup */}
+                <div className="bg-slate-900 p-4 rounded-xl space-y-2">
+                  <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                    <span>LIVE SIMULASI TAB BROWSER</span>
+                    <span className="text-emerald-400 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Aktif Sekarang
+                    </span>
+                  </div>
+
+                  {/* Browser Chrome Header Mockup */}
+                  <div className="bg-slate-800 rounded-lg p-2 flex items-center gap-2">
+                    {/* Window Controls */}
+                    <div className="flex items-center gap-1.5 px-1">
+                      <div className="w-2.5 h-2.5 rounded-full bg-red-500/80"></div>
+                      <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80"></div>
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80"></div>
+                    </div>
+
+                    {/* Simulated Active Tab */}
+                    <div className="bg-slate-950 text-white text-xs px-3 py-1.5 rounded-md flex items-center gap-2 max-w-xs border border-slate-700 shadow-inner">
+                      <div className="w-4 h-4 shrink-0 rounded overflow-hidden flex items-center justify-center bg-white/10 p-0.5">
+                        <img 
+                          src={currentFavicon} 
+                          alt="Favicon Preview" 
+                          className="w-full h-full object-contain"
+                          onError={(e) => {
+                            (e.target as HTMLElement).style.display = "none";
+                          }}
+                        />
+                      </div>
+                      <span className="font-semibold truncate text-[11px]">J&T OPS PRO — Sistem Operasional</span>
+                      <span className="text-slate-500 hover:text-white text-[10px] cursor-pointer ml-auto">✕</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Metode 1: Preset Favicon Resmi J&T */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                      Pilihan 1: Preset Favicon Resmi Siap Pakai
+                    </h4>
+                    <span className="text-[11px] text-gray-400">Pilih salah satu untuk langsung menerapkan</span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {FAVICON_PRESETS.map((preset) => {
+                      const isSelected = currentFavicon === preset.url || selectedPresetId === preset.id;
+                      return (
+                        <div
+                          key={preset.id}
+                          onClick={() => handleApplyFaviconPreset(preset)}
+                          className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-3.5 ${
+                            isSelected
+                              ? "border-[#E4002B] bg-red-50/50 shadow-sm ring-2 ring-red-500/10"
+                              : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"
+                          }`}
+                        >
+                          <div className="w-10 h-10 rounded-xl bg-white border border-gray-200 p-1.5 flex items-center justify-center shadow-sm shrink-0">
+                            <img src={preset.url} alt={preset.name} className="w-full h-full object-contain" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="text-xs font-bold text-gray-900 truncate">{preset.name}</p>
+                              {isSelected && (
+                                <CheckCircle2 className="w-4 h-4 text-[#E4002B] shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-[11px] text-gray-500 truncate mt-0.5">{preset.description}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Metode 2: Unggah File Ikon dari Komputer */}
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Upload className="w-3.5 h-3.5 text-blue-500" />
+                    Pilihan 2: Unggah File Ikon (PNG / ICO / SVG / JPG / WebP)
+                  </h4>
+                  
+                  <div className="flex flex-col sm:flex-row items-center gap-4 p-4 border-2 border-dashed border-gray-200 rounded-xl hover:border-gray-300 transition-colors bg-gray-50/50">
+                    <div className="w-12 h-12 rounded-xl bg-white border border-gray-200 flex items-center justify-center shrink-0 shadow-sm">
+                      <Image className="w-6 h-6 text-gray-400" />
+                    </div>
+                    <div className="flex-1 text-center sm:text-left">
+                      <p className="text-xs font-bold text-gray-800">Pilih file logo dari perangkat</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">Format didukung: .png, .ico, .svg, .jpg, .webp (Maksimal 2 MB). Disarankan rasio 1:1 persegi.</p>
+                    </div>
+                    <label className="px-4 py-2 bg-white border border-gray-200 hover:border-[#E4002B] hover:text-[#E4002B] text-gray-700 text-xs font-bold rounded-lg cursor-pointer transition-all shadow-sm shrink-0 flex items-center gap-1.5">
+                      <Upload size={14} />
+                      <span>{uploadingFavicon ? "Mengunggah..." : "Pilih File"}</span>
+                      <input
+                        type="file"
+                        accept="image/png, image/x-icon, image/svg+xml, image/jpeg, image/webp"
+                        onChange={handleFaviconFileUpload}
+                        disabled={uploadingFavicon}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Metode 3: Masukkan URL Gambar Favicon */}
+                <div className="space-y-3 pt-2 border-t border-gray-100">
+                  <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <ExternalLink className="w-3.5 h-3.5 text-purple-500" />
+                    Pilihan 3: Gunakan URL Gambar Favicon Eksternal
+                  </h4>
+                  
+                  <form onSubmit={handleCustomFaviconSubmit} className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="url"
+                      value={customFaviconUrl}
+                      onChange={(e) => setCustomFaviconUrl(e.target.value)}
+                      placeholder="https://example.com/logo-favicon.png"
+                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:border-[#E4002B] outline-none font-mono bg-white"
+                    />
+                    <button
+                      type="submit"
+                      disabled={savingFavicon || !customFaviconUrl.trim()}
+                      className="px-4 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50 shrink-0 cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Check size={14} />
+                      <span>Terapkan URL</span>
+                    </button>
+                  </form>
+                </div>
+
+                {/* Action Buttons: Reset */}
+                <div className="pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={handleResetFavicon}
+                    className="text-xs font-bold text-gray-500 hover:text-gray-800 flex items-center gap-1.5 transition-colors cursor-pointer py-1.5"
+                  >
+                    <RefreshCw size={14} />
+                    <span>Kembalikan ke Default J&T Express</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSaveFavicon(currentFavicon, "Pilihan Aktif")}
+                    disabled={savingFavicon}
+                    className="px-5 py-2.5 bg-[#E4002B] hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                  >
+                    {savingFavicon ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        <span>Menyimpan Favicon...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save size={14} />
+                        <span>Simpan Perubahan Favicon</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+              </div>
+
+            </div>
+          )}
           
           {/* TAB: OUTLET */}
           {activeTab === "outlet" && (
