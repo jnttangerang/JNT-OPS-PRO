@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from "react";
-import { Settings, Save, AlertCircle, Building2, User as UserIcon, Users, HardDrive, FileText, CheckCircle, XCircle, Search, Plus, Key, Lock, Check, Tags, BookOpen, Eye, EyeOff } from "lucide-react";
+import { Settings, Save, AlertCircle, Building2, User as UserIcon, Users, HardDrive, FileText, CheckCircle, XCircle, Search, Plus, Key, Lock, Check, Tags, BookOpen, Eye, EyeOff, Fingerprint, Trash2, Sparkles, ShieldCheck } from "lucide-react";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
 import { SessionData, Outlet, User, SystemSettings } from "../../types";
 import MasterKategoriKeuanganPage from "./MasterKategoriKeuanganPage";
 import DeploymentGuide from "./DeploymentGuide";
+import { 
+  getStoredQuickLogins, 
+  registerBiometricCredential, 
+  removeQuickLoginCredential, 
+  authenticateWithBiometrics, 
+  isWebAuthnSupported 
+} from "../../utils/webAuthn";
 
 interface SettingsPageProps {
   session: SessionData;
@@ -441,6 +448,82 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ session, outlets }) => {
                   <><Save size={18} /> Simpan Perubahan</>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Quick Login Biometrik Section for Admin */}
+        <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-6 border-b border-gray-100 pb-4">
+            <div className="bg-red-50 p-3 rounded-xl text-[#E4002B]">
+              <Fingerprint size={24} />
+            </div>
+            <div>
+              <h2 className="font-bold text-gray-800">Quick Login (Biometrik / PIN)</h2>
+              <p className="text-xs text-gray-500">Gunakan sensor sidik jari, wajah (Face ID / Windows Hello), atau PIN perangkat untuk login instan.</p>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200 gap-3">
+              <div>
+                <p className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  Status di Perangkat Ini
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {getStoredQuickLogins().some(item => item.username.toLowerCase() === session.username.toLowerCase())
+                    ? `Perangkat ini aktif untuk akun ${session.username}. Anda dapat login tanpa mengetik password.`
+                    : `Akun ${session.username} belum terdaftar untuk Quick Login di perangkat ini.`}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {getStoredQuickLogins().some(item => item.username.toLowerCase() === session.username.toLowerCase()) ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await authenticateWithBiometrics(session.username);
+                        if (res.success) toast.success("Verifikasi biometrik berhasil!");
+                        else toast.error(res.message);
+                      }}
+                      className="px-3.5 py-2 text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:bg-gray-100 rounded-lg flex items-center gap-1.5 transition-all"
+                    >
+                      <Fingerprint className="w-3.5 h-3.5 text-[#E4002B]" />
+                      <span>Tes Biometrik</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        removeQuickLoginCredential(session.username);
+                        toast.info("Quick Login telah dihapus dari perangkat ini.");
+                        fetchSettings();
+                      }}
+                      className="px-3.5 py-2 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg flex items-center gap-1.5 transition-all"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Hapus</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await registerBiometricCredential(session);
+                      if (res.success) {
+                        toast.success(res.message);
+                        fetchSettings();
+                      } else {
+                        toast.error(res.message);
+                      }
+                    }}
+                    className="px-4 py-2 text-xs font-bold text-white bg-[#E4002B] hover:bg-red-700 rounded-lg flex items-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <Fingerprint className="w-3.5 h-3.5" />
+                    <span>Daftarkan Biometrik</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

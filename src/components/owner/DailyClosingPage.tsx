@@ -506,16 +506,16 @@ export default function DailyClosingPage({
               <span className="font-extrabold text-red-500">{closingStatusData?.cancelled_transaction_count ?? 0}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Total Pembayaran Customer</span>
+              <span className="text-black font-bold">Total Pembayaran Customer</span>
               <span className="font-extrabold text-gray-900">Rp {Number(closingStatusData?.total_customer ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-900 font-bold">Total Pendapatan / Omzet Gross</span>
+              <span className="text-black font-bold">Total Pendapatan / Omzet Gross</span>
               <span className="font-bold text-gray-700">Rp {Number(closingStatusData?.total_owner_deposit ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50 text-black">
               <span className="text-black font-bold">Wajib Setor Tunai Fisik (Cash)</span>
-              <span className="font-black text-black">Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0).toLocaleString("id-ID")}</span>
+              <span className="font-bold text-black">Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Digital Payment (QRIS/Transfer)</span>

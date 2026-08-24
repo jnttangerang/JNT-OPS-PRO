@@ -39,7 +39,31 @@ function classifyPayment(owner_deposit: number, rawMethodInput?: string) {
   };
 }
 
-export function calculateFinancialSummary(tx: any) {
+export interface SingleFinancialSummary {
+  customer_payment: number;
+  owner_deposit: number;
+  outlet_cash: number;
+  rounding: number;
+  cash_payment: number;
+  digital_payment: number;
+  dfod_outstanding: number;
+}
+
+export interface DailyFinancialSummary {
+  total_customer: number;
+  total_owner: number;
+  total_outlet: number;
+  total_cash_payment: number;
+  total_digital_payment: number;
+  total_dfod_outstanding: number;
+  jumlah_transaksi: number;
+  jumlah_express: number;
+  jumlah_cargo: number;
+}
+
+export function calculateFinancialSummary(tx: any[]): DailyFinancialSummary;
+export function calculateFinancialSummary(tx: any): SingleFinancialSummary;
+export function calculateFinancialSummary(tx: any): any {
   if (!tx) {
     return {
       customer_payment: 0,
