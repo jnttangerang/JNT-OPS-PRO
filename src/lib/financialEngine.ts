@@ -13,15 +13,62 @@ export function isTransactionValidForFinance(tx: any): boolean {
   return true;
 }
 
+function classifyPayment(owner_deposit: number, rawMethodInput?: string) {
+  const rawMethod = String(rawMethodInput || "").trim().toUpperCase();
+  const isDigital = rawMethod === "QRIS" || rawMethod === "TRANSFER" || rawMethod === "ORDER BY APP" || rawMethod === "ORDER_BY_APP" || rawMethod === "APP";
+  const isDfod = rawMethod === "DFOD" || rawMethod.includes("DFOD");
+
+  if (isDfod) {
+    return {
+      cash_payment: 0,
+      digital_payment: 0,
+      dfod_outstanding: owner_deposit
+    };
+  }
+  if (isDigital) {
+    return {
+      cash_payment: 0,
+      digital_payment: owner_deposit,
+      dfod_outstanding: 0
+    };
+  }
+  return {
+    cash_payment: owner_deposit,
+    digital_payment: 0,
+    dfod_outstanding: 0
+  };
+}
+
 export function calculateFinancialSummary(tx: any) {
+  if (!tx) {
+    return {
+      customer_payment: 0,
+      owner_deposit: 0,
+      outlet_cash: 0,
+      rounding: 0,
+      cash_payment: 0,
+      digital_payment: 0,
+      dfod_outstanding: 0
+    };
+  }
+
+  if (Array.isArray(tx)) {
+    return calculateDailyFinancial(tx);
+  }
+
   if (!isTransactionValidForFinance(tx)) {
     return {
       customer_payment: 0,
       owner_deposit: 0,
       outlet_cash: 0,
-      rounding: 0
+      rounding: 0,
+      cash_payment: 0,
+      digital_payment: 0,
+      dfod_outstanding: 0
     };
   }
+
+  const paymentMethod = tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "";
 
   // If transaction already has computed SSOT fields, trust them directly
   const hasSSOT = tx.wajib_setor_owner !== undefined || tx.kas_outlet !== undefined || tx.kas_operasional !== undefined;
@@ -38,12 +85,16 @@ export function calculateFinancialSummary(tx: any) {
     
     const customer_payment = safeNum(tx.jumlah_dibayar_customer ?? tx.grand_total ?? tx.total_customer ?? tx.total_dibayar_customer ?? (owner_deposit + outlet_cash));
     const rounding = safeNum(tx.pembulatan ?? 0);
+    const classification = classifyPayment(owner_deposit, paymentMethod);
     
     return {
       customer_payment,
       owner_deposit,
       outlet_cash,
-      rounding
+      rounding,
+      cash_payment: classification.cash_payment,
+      digital_payment: classification.digital_payment,
+      dfod_outstanding: classification.dfod_outstanding
     };
   }
 
@@ -82,12 +133,16 @@ export function calculateFinancialSummary(tx: any) {
   
   // Customer Payment Total
   const customer_payment = total_customer > 0 ? total_customer : (owner_deposit + biayaTambahan);
+  const classification = classifyPayment(owner_deposit, paymentMethod);
   
   return {
     customer_payment: customer_payment,
     owner_deposit: owner_deposit,
     outlet_cash: biayaTambahan,
-    rounding: rounding
+    rounding: rounding,
+    cash_payment: classification.cash_payment,
+    digital_payment: classification.digital_payment,
+    dfod_outstanding: classification.dfod_outstanding
   };
 }
 
@@ -95,17 +150,23 @@ export function calculateDailyFinancial(transactions: any[]) {
   let total_customer = 0;
   let total_owner = 0;
   let total_outlet = 0;
+  let total_cash_payment = 0;
+  let total_digital_payment = 0;
+  let total_dfod_outstanding = 0;
   let jumlah_transaksi = 0;
   let jumlah_express = 0;
   let jumlah_cargo = 0;
 
-  for (const tx of transactions) {
+  for (const tx of (transactions || [])) {
     if (!isTransactionValidForFinance(tx)) continue;
     
     const summary = calculateFinancialSummary(tx);
     total_customer += summary.customer_payment;
     total_owner += summary.owner_deposit;
     total_outlet += summary.outlet_cash;
+    total_cash_payment += summary.cash_payment;
+    total_digital_payment += summary.digital_payment;
+    total_dfod_outstanding += summary.dfod_outstanding;
     jumlah_transaksi++;
 
     const eks = (tx.ekspedisi || "").toUpperCase();
@@ -117,6 +178,9 @@ export function calculateDailyFinancial(transactions: any[]) {
     total_customer,
     total_owner,
     total_outlet,
+    total_cash_payment,
+    total_digital_payment,
+    total_dfod_outstanding,
     jumlah_transaksi,
     jumlah_express,
     jumlah_cargo
@@ -125,7 +189,7 @@ export function calculateDailyFinancial(transactions: any[]) {
 
 export function calculateAdminFinancial(transactions: any[]) {
   const result: Record<string, any> = {};
-  for (const tx of transactions) {
+  for (const tx of (transactions || [])) {
     if (!isTransactionValidForFinance(tx)) continue;
     const admin = tx.admin_id || "UNKNOWN";
     if (!result[admin]) {
@@ -134,6 +198,9 @@ export function calculateAdminFinancial(transactions: any[]) {
         customer_payment: 0,
         owner_deposit: 0,
         outlet_cash: 0,
+        cash_payment: 0,
+        digital_payment: 0,
+        dfod_outstanding: 0,
         jumlah_resi: 0
       };
     }
@@ -141,6 +208,9 @@ export function calculateAdminFinancial(transactions: any[]) {
     result[admin].customer_payment += summary.customer_payment;
     result[admin].owner_deposit += summary.owner_deposit;
     result[admin].outlet_cash += summary.outlet_cash;
+    result[admin].cash_payment += summary.cash_payment;
+    result[admin].digital_payment += summary.digital_payment;
+    result[admin].dfod_outstanding += summary.dfod_outstanding;
     result[admin].jumlah_resi++;
   }
   return Object.values(result);
@@ -148,7 +218,7 @@ export function calculateAdminFinancial(transactions: any[]) {
 
 export function calculateOutletFinancial(transactions: any[]) {
   const result: Record<string, any> = {};
-  for (const tx of transactions) {
+  for (const tx of (transactions || [])) {
     if (!isTransactionValidForFinance(tx)) continue;
     const outlet = tx.outlet_id || "UNKNOWN";
     if (!result[outlet]) {
@@ -157,6 +227,9 @@ export function calculateOutletFinancial(transactions: any[]) {
         customer_payment: 0,
         owner_deposit: 0,
         outlet_cash: 0,
+        cash_payment: 0,
+        digital_payment: 0,
+        dfod_outstanding: 0,
         jumlah_resi: 0,
         jumlah_express: 0,
         jumlah_cargo: 0
@@ -166,6 +239,9 @@ export function calculateOutletFinancial(transactions: any[]) {
     result[outlet].customer_payment += summary.customer_payment;
     result[outlet].owner_deposit += summary.owner_deposit;
     result[outlet].outlet_cash += summary.outlet_cash;
+    result[outlet].cash_payment += summary.cash_payment;
+    result[outlet].digital_payment += summary.digital_payment;
+    result[outlet].dfod_outstanding += summary.dfod_outstanding;
     result[outlet].jumlah_resi++;
 
     const eks = (tx.ekspedisi || "").toUpperCase();
@@ -174,3 +250,4 @@ export function calculateOutletFinancial(transactions: any[]) {
   }
   return Object.values(result);
 }
+

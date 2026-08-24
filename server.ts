@@ -4660,9 +4660,14 @@ app.post("/api/createSetoran", (req, res) => {
     return res.json({ status: "error", message: "Parameter outlet_id dan tanggal diperlukan." });
   }
   
-  let existing = (db.Master_Setoran || db.SetoranData || []).find((s: any) => s.tanggal === tanggal && s.outlet_id === outlet_id && s.status !== "DITOLAK");
+  // Duplicate check for responsibility unit: admin_id + outlet_id + tanggal (excluding DITOLAK)
+  let existing = (db.Master_Setoran || db.SetoranData || []).find((s: any) => {
+    const sDate = s.tanggal || s.date || "";
+    const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "";
+    return sDate === tanggal && s.outlet_id === outlet_id && sAdmin === adminPembuat && s.status !== "DITOLAK";
+  });
   if (existing) {
-    return res.json({ status: "error", message: "Setoran untuk tanggal ini sudah ada dan tidak dalam status DITOLAK." });
+    return res.json({ status: "error", message: `Setoran untuk admin ${adminPembuat} pada outlet dan tanggal ini sudah ada dan tidak dalam status DITOLAK.` });
   }
   
   let outletName = outlet_id;
@@ -4670,22 +4675,23 @@ app.post("/api/createSetoran", (req, res) => {
   if (outData) outletName = outData.nama_outlet;
   
   let txList: any[] = [];
-  let totalSetoranOwner = 0;
+  let totalPhysicalCash = 0; // expected_cash from cash_payment
   let totalKasOutlet = 0;
   
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
     let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
-    if (txDate === tanggal && tx.outlet_id === outlet_id) {
+    const txAdmin = tx.admin_id || "SYSTEM";
+    if (txDate === tanggal && tx.outlet_id === outlet_id && txAdmin === adminPembuat) {
       txList.push(tx);
       const sum = calculateFinancialSummary(tx);
-      totalSetoranOwner += sum.owner_deposit;
+      totalPhysicalCash += sum.cash_payment;
       totalKasOutlet += sum.outlet_cash;
     }
   });
   
   if (txList.length === 0) {
-    return res.json({ status: "error", message: "Tidak ada transaksi valid untuk disetor pada tanggal ini." });
+    return res.json({ status: "error", message: `Tidak ada transaksi valid untuk disetor oleh admin ${adminPembuat} pada tanggal ini.` });
   }
   
   const setoranObj = {
@@ -4695,7 +4701,7 @@ app.post("/api/createSetoran", (req, res) => {
     outlet_name: outletName,
     admin_pembuat: adminPembuat,
     jumlah_resi: txList.length,
-    total_setoran_owner: totalSetoranOwner,
+    total_setoran_owner: totalPhysicalCash, // Physical Cash Responsibility
     total_kas_outlet: totalKasOutlet,
     status: "MENUNGGU_APPROVAL",
     created_at: new Date().toISOString(),

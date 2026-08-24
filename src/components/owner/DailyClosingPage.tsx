@@ -340,7 +340,7 @@ export default function DailyClosingPage({
           </div>
           <div>
             <h1 className="text-xl font-black text-gray-900 tracking-tight">Tutup Buku Harian</h1>
-            <p className="text-xs text-gray-500 font-medium">Validasi & Penutupan Operasional Outlet / Drop Point J&T</p>
+            <p className="text-xs text-gray-500 font-medium">Validasi & Penutupan Operasional Outlet J&T</p>
           </div>
         </div>
 
@@ -510,9 +510,23 @@ export default function DailyClosingPage({
               <span className="font-extrabold text-gray-900">Rp {Number(closingStatusData?.total_customer ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Wajib Setor ke Owner</span>
-              <span className="font-black text-blue-600">Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_owner_deposit ?? 0).toLocaleString("id-ID")}</span>
+              <span className="text-gray-500 font-medium">Total Pendapatan / Omzet Gross</span>
+              <span className="font-bold text-gray-700">Rp {Number(closingStatusData?.total_owner_deposit ?? 0).toLocaleString("id-ID")}</span>
             </div>
+            <div className="flex justify-between items-center py-1 border-b border-gray-50">
+              <span className="text-gray-500 font-medium">Wajib Setor Tunai Fisik (Cash)</span>
+              <span className="font-black text-blue-600">Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0).toLocaleString("id-ID")}</span>
+            </div>
+            <div className="flex justify-between items-center py-1 border-b border-gray-50">
+              <span className="text-gray-500 font-medium">Digital Payment (QRIS/Transfer)</span>
+              <span className="font-bold text-indigo-600">Rp {Number(closingStatusData?.total_digital_payment ?? 0).toLocaleString("id-ID")}</span>
+            </div>
+            {Number(closingStatusData?.total_dfod_outstanding ?? 0) > 0 && (
+              <div className="flex justify-between items-center py-1 border-b border-gray-50">
+                <span className="text-gray-500 font-medium">DFOD Outstanding (Piutang)</span>
+                <span className="font-bold text-amber-600">Rp {Number(closingStatusData?.total_dfod_outstanding ?? 0).toLocaleString("id-ID")}</span>
+              </div>
+            )}
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Kas Outlet / Operasional</span>
               <span className="font-black text-purple-600">Rp {Number(closingStatusData?.total_outlet_cash ?? 0).toLocaleString("id-ID")}</span>
@@ -625,6 +639,64 @@ export default function DailyClosingPage({
         </div>
 
       </div>
+
+      {/* ADMIN CASH RESPONSIBILITY BREAKDOWN (If Available) */}
+      {closingStatusData?.admin_breakdown && closingStatusData.admin_breakdown.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-150 p-6 space-y-4">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5 text-blue-600" />
+              <h2 className="text-sm font-extrabold text-gray-900 uppercase tracking-wide">Tanggung Jawab Kas Fisik per Admin</h2>
+            </div>
+            <span className="text-xs font-bold text-gray-400">{closingStatusData.admin_breakdown.length} Admin</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-[10px] tracking-wider border-b border-gray-100">
+                <tr>
+                  <th className="py-3 px-3">Admin ID</th>
+                  <th className="py-3 px-3 text-center">Resi</th>
+                  <th className="py-3 px-3 text-right">Customer Pay</th>
+                  <th className="py-3 px-3 text-right text-indigo-600">Digital Pay</th>
+                  <th className="py-3 px-3 text-right text-blue-600">Wajib Setor Tunai</th>
+                  <th className="py-3 px-3 text-right text-emerald-600">Disetor (Aktual)</th>
+                  <th className="py-3 px-3 text-right">Selisih</th>
+                  <th className="py-3 px-3 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 font-medium text-gray-800">
+                {closingStatusData.admin_breakdown.map((adm: any) => (
+                  <tr key={adm.admin_id} className="hover:bg-gray-50/80 transition-colors">
+                    <td className="py-3 px-3 font-bold font-mono text-gray-900">{adm.admin_id}</td>
+                    <td className="py-3 px-3 text-center font-bold">{adm.jumlah_resi}</td>
+                    <td className="py-3 px-3 text-right">Rp {Number(adm.customer_payment || 0).toLocaleString("id-ID")}</td>
+                    <td className="py-3 px-3 text-right font-semibold text-indigo-600">Rp {Number(adm.digital_payment || 0).toLocaleString("id-ID")}</td>
+                    <td className="py-3 px-3 text-right font-black text-blue-600">Rp {Number(adm.expected_cash || 0).toLocaleString("id-ID")}</td>
+                    <td className="py-3 px-3 text-right font-black text-emerald-600">Rp {Number(adm.setoran_actual || 0).toLocaleString("id-ID")}</td>
+                    <td className={`py-3 px-3 text-right font-black ${
+                      (adm.setoran_variance || 0) === 0 ? "text-emerald-600" : (adm.setoran_variance || 0) < 0 ? "text-red-600" : "text-blue-600"
+                    }`}>
+                      Rp {Number(adm.setoran_variance || 0).toLocaleString("id-ID")}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                        adm.setoran_status === "MATCHED" || adm.setoran_status === "OK"
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                          : adm.setoran_status === "UNAPPROVED"
+                          ? "bg-amber-100 text-amber-800 border border-amber-200"
+                          : "bg-red-100 text-red-800 border border-red-200"
+                      }`}>
+                        {adm.setoran_status === "MATCHED" || adm.setoran_status === "OK" ? "SESUAI" : adm.setoran_status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* BLOCKING EXCEPTIONS SECTION */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-150 p-6 space-y-4">

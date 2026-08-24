@@ -23,6 +23,23 @@ export interface ActorInfo {
   actor_role?: string;
 }
 
+export interface AdminClosingBreakdown {
+  admin_id: string;
+  outlet_id: string;
+  tanggal: string;
+  customer_payment: number;
+  owner_deposit: number;
+  outlet_cash: number;
+  cash_payment: number;
+  digital_payment: number;
+  dfod_outstanding: number;
+  expected_cash: number;
+  setoran_actual: number;
+  setoran_variance: number;
+  setoran_status: "MATCHED" | "MISMATCH" | "UNAPPROVED" | "MISSING" | "OK";
+  jumlah_resi: number;
+}
+
 export interface DailyClosingRecord {
   closing_id: string;
   outlet_id: string;
@@ -34,15 +51,21 @@ export interface DailyClosingRecord {
   total_owner_deposit: number;
   total_outlet_cash: number;
   total_rounding: number;
+  total_cash_payment?: number;
+  total_digital_payment?: number;
+  total_dfod_outstanding?: number;
   transaction_count: number;
   valid_financial_transaction_count: number;
   cancelled_transaction_count: number;
 
-  // Setoran Validation Summary
+  // Setoran Validation Summary (Based on Physical Cash Responsibility)
   setoran_required: number;
   setoran_actual: number;
   setoran_variance: number;
   setoran_status: "MATCHED" | "MISMATCH" | "UNAPPROVED" | "MISSING" | "OK";
+
+  // Admin Breakdown (Admin + Outlet + Tanggal Responsibility)
+  admin_breakdown?: AdminClosingBreakdown[];
 
   // Reconciliation Summary
   reconciliation_status: "MATCHED" | "WARNING" | "MISMATCH" | "CRITICAL";
@@ -183,20 +206,115 @@ export function validateDailyClosing(
 
   const reconClosingStatus = getClosingReconciliationStatus(db, outlet_id, tanggal);
 
-  // 3. Setoran Owner Validation
+  // 3. Setoran Admin Physical Cash Validation (Admin + Outlet + Tanggal SSOT)
   const allSetoran = db.Master_Setoran || db.SetoranData || db.Setoran || [];
   const activeSetoran = allSetoran.filter((s: any) => {
     const sDate = s.tanggal || s.date || "";
     return s.outlet_id === outlet_id && sDate === tanggal && s.status !== "DITOLAK";
   });
 
-  const setoran_required = dailyFin.total_owner;
+  // Calculate Admin Cash Responsibility Breakdown (grouped by admin_id + outlet_id + tanggal)
+  const adminMap: Record<string, AdminClosingBreakdown> = {};
+  for (const tx of outletDateTx) {
+    if (!isTransactionValidForFinance(tx)) continue;
+    const admin = tx.admin_id || "UNKNOWN";
+    if (!adminMap[admin]) {
+      adminMap[admin] = {
+        admin_id: admin,
+        outlet_id,
+        tanggal,
+        customer_payment: 0,
+        owner_deposit: 0,
+        outlet_cash: 0,
+        cash_payment: 0,
+        digital_payment: 0,
+        dfod_outstanding: 0,
+        expected_cash: 0,
+        setoran_actual: 0,
+        setoran_variance: 0,
+        setoran_status: "OK",
+        jumlah_resi: 0
+      };
+    }
+    const summary = calculateFinancialSummary(tx);
+    adminMap[admin].customer_payment += summary.customer_payment;
+    adminMap[admin].owner_deposit += summary.owner_deposit;
+    adminMap[admin].outlet_cash += summary.outlet_cash;
+    adminMap[admin].cash_payment += summary.cash_payment;
+    adminMap[admin].digital_payment += summary.digital_payment;
+    adminMap[admin].dfod_outstanding += summary.dfod_outstanding;
+    adminMap[admin].expected_cash += summary.cash_payment;
+    adminMap[admin].jumlah_resi++;
+  }
+
+  // Aggregate setoran actual per admin
+  for (const s of activeSetoran) {
+    const sAdmin = s.admin_id || s.user_id || s.created_by || "UNKNOWN";
+    const nominal = Number(s.nominal || s.jumlah_setor || s.total_setor || 0);
+    if (!adminMap[sAdmin]) {
+      adminMap[sAdmin] = {
+        admin_id: sAdmin,
+        outlet_id,
+        tanggal,
+        customer_payment: 0,
+        owner_deposit: 0,
+        outlet_cash: 0,
+        cash_payment: 0,
+        digital_payment: 0,
+        dfod_outstanding: 0,
+        expected_cash: 0,
+        setoran_actual: 0,
+        setoran_variance: 0,
+        setoran_status: "OK",
+        jumlah_resi: 0
+      };
+    }
+    adminMap[sAdmin].setoran_actual += nominal;
+  }
+
+  // Compute per-admin variance and status
+  const adminBreakdown: AdminClosingBreakdown[] = Object.values(adminMap).map((adm) => {
+    const variance = adm.setoran_actual - adm.expected_cash;
+    const adminSetorans = activeSetoran.filter((s: any) => {
+      const sAdmin = s.admin_id || s.user_id || s.created_by || "UNKNOWN";
+      return sAdmin === adm.admin_id;
+    });
+
+    let status: "MATCHED" | "MISMATCH" | "UNAPPROVED" | "MISSING" | "OK" = "OK";
+    if (adm.expected_cash === 0) {
+      status = "OK";
+    } else if (adminSetorans.length === 0) {
+      status = "MISSING";
+    } else {
+      const hasUnapproved = adminSetorans.some((s: any) =>
+        s.status === "PENDING" ||
+        (s.status !== "DISETUJUI" && s.status !== "APPROVED" && s.approval_status !== "APPROVED")
+      );
+      if (hasUnapproved) {
+        status = "UNAPPROVED";
+      } else if (Math.abs(variance) > 0.01) {
+        status = "MISMATCH";
+      } else {
+        status = "MATCHED";
+      }
+    }
+
+    return {
+      ...adm,
+      setoran_variance: variance,
+      setoran_status: status
+    };
+  });
+
+  // Physical Cash Responsibility is SUM(cash_payment)
+  const setoran_required = dailyFin.total_cash_payment;
   let setoran_actual = 0;
   for (const s of activeSetoran) {
     setoran_actual += Number(s.nominal || s.jumlah_setor || s.total_setor || 0);
   }
 
-  const setoran_variance = Math.abs(setoran_required - setoran_actual);
+  // Contract: variance = actual_cash - expected_cash
+  const setoran_variance = setoran_actual - setoran_required;
 
   let setoran_status: "MATCHED" | "MISMATCH" | "UNAPPROVED" | "MISSING" | "OK" = "OK";
   if (setoran_required === 0) {
@@ -210,7 +328,7 @@ export function validateDailyClosing(
     );
     if (hasUnapproved) {
       setoran_status = "UNAPPROVED";
-    } else if (setoran_variance > 0.01) {
+    } else if (Math.abs(setoran_variance) > 0.01) {
       setoran_status = "MISMATCH";
     } else {
       setoran_status = "MATCHED";
@@ -234,11 +352,29 @@ export function validateDailyClosing(
 
   if (setoran_required > 0) {
     if (setoran_status === "MISSING") {
-      blocking_reasons.push("Setoran Owner belum dibuat (wajib setor > 0).");
+      blocking_reasons.push("Setoran Fisik Tunai belum dibuat (wajib setor tunai > 0).");
     } else if (setoran_status === "UNAPPROVED") {
-      blocking_reasons.push("Setoran Owner belum disetujui (status masih PENDING).");
+      blocking_reasons.push("Setoran Fisik Tunai belum disetujui (status masih PENDING).");
     } else if (setoran_status === "MISMATCH") {
-      blocking_reasons.push(`Selisih setoran Owner: Wajib Setor Rp ${setoran_required.toLocaleString('id-ID')} vs Disetor Rp ${setoran_actual.toLocaleString('id-ID')}.`);
+      const diffDesc = setoran_variance < 0 
+        ? `Kurang Setor Rp ${Math.abs(setoran_variance).toLocaleString('id-ID')}` 
+        : `Lebih Setor Rp ${setoran_variance.toLocaleString('id-ID')}`;
+      blocking_reasons.push(`Selisih setoran fisik tunai: Wajib Setor Tunai Rp ${setoran_required.toLocaleString('id-ID')} vs Disetor Rp ${setoran_actual.toLocaleString('id-ID')} (${diffDesc}).`);
+    }
+  }
+
+  // Multi-Admin Breakdown check
+  for (const adm of adminBreakdown) {
+    if (adm.expected_cash > 0 && adm.setoran_status !== "MATCHED" && adm.setoran_status !== "OK") {
+      if (adm.setoran_status === "MISSING") {
+        blocking_reasons.push(`Admin ${adm.admin_id}: Setoran Tunai Rp ${adm.expected_cash.toLocaleString('id-ID')} belum dibuat.`);
+      } else if (adm.setoran_status === "UNAPPROVED") {
+        blocking_reasons.push(`Admin ${adm.admin_id}: Setoran Tunai Rp ${adm.expected_cash.toLocaleString('id-ID')} masih PENDING.`);
+      } else if (adm.setoran_status === "MISMATCH") {
+        const diff = adm.setoran_variance;
+        const diffDesc = diff < 0 ? `Kurang Rp ${Math.abs(diff).toLocaleString('id-ID')}` : `Lebih Rp ${diff.toLocaleString('id-ID')}`;
+        blocking_reasons.push(`Admin ${adm.admin_id}: Selisih setoran tunai (Wajib Rp ${adm.expected_cash.toLocaleString('id-ID')} vs Aktual Rp ${adm.setoran_actual.toLocaleString('id-ID')} - ${diffDesc}).`);
+      }
     }
   }
 
@@ -264,6 +400,9 @@ export function validateDailyClosing(
     total_owner_deposit: dailyFin.total_owner,
     total_outlet_cash: dailyFin.total_outlet,
     total_rounding,
+    total_cash_payment: dailyFin.total_cash_payment,
+    total_digital_payment: dailyFin.total_digital_payment,
+    total_dfod_outstanding: dailyFin.total_dfod_outstanding,
     transaction_count: outletDateTx.length,
     valid_financial_transaction_count,
     cancelled_transaction_count,
@@ -272,6 +411,8 @@ export function validateDailyClosing(
     setoran_actual,
     setoran_variance,
     setoran_status,
+
+    admin_breakdown: adminBreakdown,
 
     reconciliation_status: reconRes.status,
     open_exceptions_count: reconClosingStatus.open_exceptions_count,
