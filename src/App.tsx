@@ -176,7 +176,7 @@ function AppContent() {
             { id: "transaksi", label: "Resi & Bayar", icon: FileText },            
             { id: "riwayat-transaksi", label: "Riwayat Transaksi", icon: List },
             { id: "keuangan-outlet", label: "Kas Outlet", icon: Wallet, iconColor: "text-purple-600 font-bold" },
-            { id: "daily-closing", label: "Daily Closing", icon: Lock },
+            { id: "daily-closing", label: "Setoran Harian (Daily Closing)", icon: Lock },
           ]
         },
         {

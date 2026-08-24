@@ -339,7 +339,7 @@ export default function DailyClosingPage({
             <Lock className="w-6 h-6 stroke-[2.5]" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-gray-900 tracking-tight">Tutup Buku Harian</h1>
+            <h1 className="text-xl font-black text-gray-900 tracking-tight">Setoran Harian (Tutup Buku Harian)</h1>
             <p className="text-xs text-gray-500 font-medium">Validasi & Penutupan Operasional Outlet J&T</p>
           </div>
         </div>
@@ -510,12 +510,12 @@ export default function DailyClosingPage({
               <span className="font-extrabold text-gray-900">Rp {Number(closingStatusData?.total_customer ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Total Pendapatan / Omzet Gross</span>
+              <span className="text-gray-900 font-bold">Total Pendapatan / Omzet Gross</span>
               <span className="font-bold text-gray-700">Rp {Number(closingStatusData?.total_owner_deposit ?? 0).toLocaleString("id-ID")}</span>
             </div>
-            <div className="flex justify-between items-center py-1 border-b border-gray-50">
-              <span className="text-gray-500 font-medium">Wajib Setor Tunai Fisik (Cash)</span>
-              <span className="font-black text-blue-600">Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0).toLocaleString("id-ID")}</span>
+            <div className="flex justify-between items-center py-1 border-b border-gray-50 text-black">
+              <span className="text-black font-bold">Wajib Setor Tunai Fisik (Cash)</span>
+              <span className="font-black text-black">Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0).toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Digital Payment (QRIS/Transfer)</span>
@@ -863,7 +863,7 @@ export default function DailyClosingPage({
           <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-gray-200 shadow-2xl">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                <Lock className="w-5 h-5 text-[#E4002B]" /> Konfirmasi Tutup Buku Harian
+                <Lock className="w-5 h-5 text-[#E4002B]" /> Konfirmasi Setoran Harian (Tutup Buku Harian)
               </h3>
               <button 
                 onClick={() => setShowCloseModal(false)}
@@ -925,7 +925,7 @@ export default function DailyClosingPage({
             </div>
 
             <p className="text-xs text-gray-600">
-              Membuka kembali operasional yang sudah ditutup memerlukan otorisasi Owner / Super Admin dan wajib menyertakan alasan resmi yang akan dicatat di riwayat audit.
+              Membuka kembali operasional yang sudah ditutup memerlukan otorisasi Owner dan wajib menyertakan alasan resmi yang akan dicatat di riwayat audit.
             </p>
 
             <div>
