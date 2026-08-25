@@ -130,10 +130,31 @@ export default function TransaksiPage({
       return;
     }
 
+    let matchedAdminId = session.user_id;
+    if (parsed.operator) {
+      try {
+        const usersRes = await callBackend("getUsers", {});
+        if (usersRes.status === "success" && usersRes.data) {
+          const matchedUser = usersRes.data.find((u: any) => 
+            u.nama_lengkap?.toLowerCase() === parsed.operator?.toLowerCase() ||
+            u.username?.toLowerCase() === parsed.operator?.toLowerCase()
+          );
+          if (matchedUser) {
+            matchedAdminId = matchedUser.user_id;
+            toast.success(`Operator YoYi (${parsed.operator}) dipetakan ke Admin: ${matchedUser.nama_lengkap}`);
+          } else {
+            toast.info(`Operator YoYi (${parsed.operator}) tidak terdaftar. Menggunakan akun saat ini.`);
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to fetch users for admin mapping");
+      }
+    }
+
     const syntheticPreInput: PreInputBackup = {
       transaksi_id: txId,
       timestamp: new Date().toISOString(),
-      admin_id: session.user_id,
+      admin_id: matchedAdminId,
       outlet_id_tugas: activeOutletId,
       nama_pengirim: senderName,
       hp_pengirim: senderHp,
@@ -147,7 +168,7 @@ export default function TransaksiPage({
       nama_barang: itemName,
       nilai_barang: 0,
       status: "PENDING",
-      catatan_admin: `Import YoYi (${parsed.source_order || "YoYi App"})`,
+      catatan_admin: `Import YoYi (${parsed.source_order || "YoYi App"})${parsed.operator ? ` | Opr: ${parsed.operator}` : ''}`,
       foto_paket_url: "",
       foto_resi_url: "",
       no_resi: resiNum
@@ -160,7 +181,7 @@ export default function TransaksiPage({
     try {
       await callBackend("savePreInput", {
         transaksi_id: txId,
-        admin_id: session.user_id,
+        admin_id: matchedAdminId,
         outlet_id_tugas: activeOutletId,
         nama_pengirim: senderName,
         hp_pengirim: senderHp,
@@ -1094,7 +1115,7 @@ export default function TransaksiPage({
       jam_transaksi: format(now, "HH:mm"),
       resi_id: (resiId || "").trim().toUpperCase(),
       transaksi_id: pendingTxId || preInputData?.transaksi_id || ("TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5)),
-      admin_id_pencatat: session.user_id,
+      admin_id_pencatat: preInputData?.admin_id || session.user_id,
       outlet_id_input: activeOutletId,
       activeOutletId: activeOutletId,
       outlet_id: activeOutletId,

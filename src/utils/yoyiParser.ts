@@ -17,6 +17,7 @@ export interface YoYiParsedData {
   source_order?: string;
   nama_barang: string;
   berat_kg: number;
+  operator?: string;
 }
 
 function parseCurrency(str: string): number {
@@ -155,6 +156,16 @@ export function parseYoYiText(text: string): YoYiParsedData {
       }
     }
 
+    // Detail Alamat Pengirim
+    if (lower.includes("detail alamat pengirim") || lower.includes("alamat pengirim")) {
+      const inlineMatch = line.match(/(?:Detail\s*)?Alamat\s*Pengirim[:\s]*([^\n\r]+)/i);
+      if (inlineMatch && inlineMatch[1].trim()) {
+        result.alamat_pengirim = inlineMatch[1].trim();
+      } else if (i + 1 < rawLines.length && rawLines[i + 1].length > 1) {
+        result.alamat_pengirim = rawLines[i + 1].trim();
+      }
+    }
+
     // Receiver (Penerima)
     if (lower.startsWith("penerima") || lower.startsWith("nama penerima") || lower.startsWith("receiver") || lower.startsWith("consignee") || lower.startsWith("kepada:")) {
       const cleanLine = line.replace(/^(?:penerima|nama\s*penerima|receiver|consignee|kepada)[:\s]*/i, "").trim();
@@ -162,6 +173,27 @@ export function parseYoYiText(text: string): YoYiParsedData {
         result.nama_penerima = cleanLine.replace(/\([^\)]*\)/g, "").trim();
       } else if (i + 1 < rawLines.length) {
         result.nama_penerima = rawLines[i + 1];
+      }
+    }
+
+    // Detail Alamat Penerima
+    if (lower.includes("detail alamat penerima") || lower.includes("alamat penerima")) {
+      const inlineMatch = line.match(/(?:Detail\s*)?Alamat\s*Penerima[:\s]*([^\n\r]+)/i);
+      if (inlineMatch && inlineMatch[1].trim()) {
+        result.alamat_penerima = inlineMatch[1].trim();
+      } else if (i + 1 < rawLines.length && rawLines[i + 1].length > 1) {
+        result.alamat_penerima = rawLines[i + 1].trim();
+      }
+    }
+    
+    // Operator (Riwayat operasi)
+    if (lower.includes("riwayat operasi")) {
+      // Typically the next line has "Buat pesanan baru; RISKA AMUDIA; 2026-08-01 09:43:38"
+      if (i + 1 < rawLines.length) {
+        const nextLineParts = rawLines[i + 1].split(";");
+        if (nextLineParts.length >= 2) {
+          result.operator = nextLineParts[1].trim();
+        }
       }
     }
   }
