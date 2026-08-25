@@ -3976,7 +3976,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
       grand_total: sum.customer_payment || Number(tx.total_customer) || Number(tx.grand_total) || 0,
       pengirim: tx.snapshot_nama_pengirim || p?.nama_pengirim || "",
       penerima: tx.snapshot_nama_penerima || p?.nama_penerima || "",
-      nama_barang: p?.nama_barang || "-",
+      nama_barang: tx.nama_barang || p?.nama_barang || "-",
       status_resi: tx.status_resi || tx.status_transaksi || tx.status || "AKTIF"
     };
   });

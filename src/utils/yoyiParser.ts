@@ -55,7 +55,7 @@ export function parseYoYiText(text: string): YoYiParsedData {
   const rawLines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
   // 1. Extract Resi ID
-  const resiExplicit = text.match(/(?:No\.?\s*(?:Resi|Waybill|Tracking|Connote|Awb|Pesanan)|Resi|Waybill|Nomor\s*Resi)[:\s]*([A-Z0-9]{8,24})/i);
+  const resiExplicit = text.match(/(?:No\.?\s*(?:Resi|Waybill|Tracking|Connote|Awb)|Resi|Waybill|Nomor\s*Resi)[:\s]*([A-Z0-9]{8,24})/i);
   if (resiExplicit) {
     result.nomor_resi = resiExplicit[1].trim().toUpperCase();
   } else {
@@ -138,51 +138,54 @@ export function parseYoYiText(text: string): YoYiParsedData {
 
     // Nama Barang
     if (lower.includes("nama barang") || lower.includes("deskripsi barang") || lower.includes("isi paket") || lower.includes("nama paket")) {
-      const itemMatch = line.match(/(?:Nama\s*Barang|Deskripsi\s*Barang|Jenis\s*Barang|Isi\s*Paket|Nama\s*Paket)[:\s]*([^\n\r]+)/i);
-      if (itemMatch && itemMatch[1].trim()) {
-        result.nama_barang = itemMatch[1].trim().replace(/^[:\s-]+/, "");
+      const itemMatch = line.match(/(?:Nama\s*Barang|Deskripsi\s*Barang|Jenis\s*Barang|Isi\s*Paket|Nama\s*Paket)[:\s]*([^\n\r]*)/i);
+      let val = itemMatch ? itemMatch[1].replace(/^[:\s-]+/, "").trim() : "";
+      if (val) {
+        result.nama_barang = val;
       } else if (i + 1 < rawLines.length && rawLines[i + 1].length > 1) {
-        result.nama_barang = rawLines[i + 1].replace(/^[:\s-]+/, "");
+        result.nama_barang = rawLines[i + 1].replace(/^[:\s-]+/, "").trim();
       }
     }
 
     // Shipper (Pengirim)
     if (lower.startsWith("pengirim") || lower.startsWith("nama pengirim") || lower.startsWith("shipper") || lower.startsWith("dari:")) {
-      const cleanLine = line.replace(/^(?:pengirim|nama\s*pengirim|shipper|dari)[:\s]*/i, "").trim();
+      const cleanLine = line.replace(/^(?:pengirim|nama\s*pengirim|shipper|dari)[:\s]*/i, "").replace(/^[:\s-]+/, "").trim();
       if (cleanLine) {
         result.nama_pengirim = cleanLine.replace(/\([^\)]*\)/g, "").trim();
       } else if (i + 1 < rawLines.length) {
-        result.nama_pengirim = rawLines[i + 1];
+        result.nama_pengirim = rawLines[i + 1].trim();
       }
     }
 
     // Detail Alamat Pengirim
     if (lower.includes("detail alamat pengirim") || lower.includes("alamat pengirim")) {
-      const inlineMatch = line.match(/(?:Detail\s*)?Alamat\s*Pengirim[:\s]*([^\n\r]+)/i);
-      if (inlineMatch && inlineMatch[1].trim()) {
-        result.alamat_pengirim = inlineMatch[1].trim();
+      const inlineMatch = line.match(/(?:Detail\s*)?Alamat\s*Pengirim[:\s]*([^\n\r]*)/i);
+      let val = inlineMatch ? inlineMatch[1].replace(/^[:\s-]+/, "").trim() : "";
+      if (val) {
+        result.alamat_pengirim = val;
       } else if (i + 1 < rawLines.length && rawLines[i + 1].length > 1) {
-        result.alamat_pengirim = rawLines[i + 1].trim();
+        result.alamat_pengirim = rawLines[i + 1].replace(/^[:\s-]+/, "").trim();
       }
     }
 
     // Receiver (Penerima)
     if (lower.startsWith("penerima") || lower.startsWith("nama penerima") || lower.startsWith("receiver") || lower.startsWith("consignee") || lower.startsWith("kepada:")) {
-      const cleanLine = line.replace(/^(?:penerima|nama\s*penerima|receiver|consignee|kepada)[:\s]*/i, "").trim();
+      const cleanLine = line.replace(/^(?:penerima|nama\s*penerima|receiver|consignee|kepada)[:\s]*/i, "").replace(/^[:\s-]+/, "").trim();
       if (cleanLine) {
         result.nama_penerima = cleanLine.replace(/\([^\)]*\)/g, "").trim();
       } else if (i + 1 < rawLines.length) {
-        result.nama_penerima = rawLines[i + 1];
+        result.nama_penerima = rawLines[i + 1].trim();
       }
     }
 
     // Detail Alamat Penerima
     if (lower.includes("detail alamat penerima") || lower.includes("alamat penerima")) {
-      const inlineMatch = line.match(/(?:Detail\s*)?Alamat\s*Penerima[:\s]*([^\n\r]+)/i);
-      if (inlineMatch && inlineMatch[1].trim()) {
-        result.alamat_penerima = inlineMatch[1].trim();
+      const inlineMatch = line.match(/(?:Detail\s*)?Alamat\s*Penerima[:\s]*([^\n\r]*)/i);
+      let val = inlineMatch ? inlineMatch[1].replace(/^[:\s-]+/, "").trim() : "";
+      if (val) {
+        result.alamat_penerima = val;
       } else if (i + 1 < rawLines.length && rawLines[i + 1].length > 1) {
-        result.alamat_penerima = rawLines[i + 1].trim();
+        result.alamat_penerima = rawLines[i + 1].replace(/^[:\s-]+/, "").trim();
       }
     }
     
