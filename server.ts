@@ -2276,7 +2276,8 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
     volume,
     nilai_barang,
     foto_paket_url,
-    foto_resi_url
+    foto_resi_url,
+    timestamp
   } = req.body;
 
   if (!is_draft) {
@@ -2310,7 +2311,7 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
 
   const preInputObj = {
     transaksi_id: txId,
-    timestamp: existing ? existing.timestamp : new Date().toISOString(),
+    timestamp: timestamp || (existing ? existing.timestamp : new Date().toISOString()),
     updated_at: new Date().toISOString(),
     admin_id: admin_id || existing?.admin_id || "SYSTEM",
     outlet_id_tugas: outlet_id_tugas || existing?.outlet_id_tugas || "OUT-001",
@@ -2584,7 +2585,15 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       }).catch((err) => console.warn("Background Apps Script sync note:", err.message));
     }
 
-    const timestamp = new Date().toISOString();
+    let timestamp = new Date().toISOString();
+    if (data.timestamp) {
+      timestamp = data.timestamp;
+    } else if (data.tanggal_transaksi && data.jam_transaksi) {
+      timestamp = `${data.tanggal_transaksi}T${data.jam_transaksi}`;
+    } else if (data.tanggal_transaksi) {
+      timestamp = `${data.tanggal_transaksi}T00:00:00`;
+    }
+
     const metodeBayarOngkir = data.metode_pembayaran_ongkir || data.metode_bayar || data.metode_bayar_ongkir || "Tunai";
     const metodeBayarTambahan = data.metode_pembayaran_tambahan || data.metode_bayar_tambahan || "";
     const biayaAmplop = Number(data.biaya_amplop ?? data.biayaAmplop ?? data.amplop) || 0;

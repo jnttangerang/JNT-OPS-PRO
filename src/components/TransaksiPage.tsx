@@ -151,9 +151,16 @@ export default function TransaksiPage({
       }
     }
 
+    let finalTimestamp = new Date().toISOString();
+    if (parsed.tanggal_transaksi && parsed.jam_transaksi) {
+      finalTimestamp = `${parsed.tanggal_transaksi}T${parsed.jam_transaksi}`;
+    } else if (parsed.tanggal_transaksi) {
+      finalTimestamp = `${parsed.tanggal_transaksi}T00:00:00`;
+    }
+
     const syntheticPreInput: PreInputBackup = {
       transaksi_id: txId,
-      timestamp: new Date().toISOString(),
+      timestamp: finalTimestamp,
       admin_id: matchedAdminId,
       outlet_id_tugas: activeOutletId,
       nama_pengirim: senderName,
@@ -181,6 +188,7 @@ export default function TransaksiPage({
     try {
       await callBackend("savePreInput", {
         transaksi_id: txId,
+        timestamp: finalTimestamp,
         admin_id: matchedAdminId,
         outlet_id_tugas: activeOutletId,
         nama_pengirim: senderName,

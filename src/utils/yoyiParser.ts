@@ -18,6 +18,8 @@ export interface YoYiParsedData {
   nama_barang: string;
   berat_kg: number;
   operator?: string;
+  tanggal_transaksi?: string;
+  jam_transaksi?: string;
 }
 
 function parseCurrency(str: string): number {
@@ -54,6 +56,8 @@ export function parseYoYiText(text: string): YoYiParsedData {
 
   const rawLines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 
+  let currentSection: "pengirim" | "penerima" | "" = "";
+
   // 1. Extract Resi ID
   const resiExplicit = text.match(/(?:No\.?\s*(?:Resi|Waybill|Tracking|Connote|Awb)|Resi|Waybill|Nomor\s*Resi)[:\s]*([A-Z0-9]{8,24})/i);
   if (resiExplicit) {
@@ -70,6 +74,13 @@ export function parseYoYiText(text: string): YoYiParsedData {
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
     const lower = line.toLowerCase();
+
+    // Context tracking for addresses
+    if (lower === "informasi pengirim" || lower.startsWith("pengirim")) {
+      currentSection = "pengirim";
+    } else if (lower === "informasi penerima" || lower.startsWith("penerima")) {
+      currentSection = "penerima";
+    }
 
     // Asuransi
     if (lower.includes("biaya asuransi") || lower.includes("asuransi (idr)") || lower.startsWith("asuransi")) {
@@ -137,7 +148,7 @@ export function parseYoYiText(text: string): YoYiParsedData {
     }
 
     // Nama Barang
-    if (lower.includes("nama barang") || lower.includes("deskripsi barang") || lower.includes("isi paket") || lower.includes("nama paket")) {
+    if (lower.includes("nama barang") || lower.includes("deskripsi barang") || lower.includes("isi paket") || lower.includes("nama paket") || lower.includes("jenis barang")) {
       const itemMatch = line.match(/(?:Nama\s*Barang|Deskripsi\s*Barang|Jenis\s*Barang|Isi\s*Paket|Nama\s*Paket)[:\s]*([^\n\r]*)/i);
       let val = itemMatch ? itemMatch[1].replace(/^[:\s-]+/, "").trim() : "";
       if (val) {
@@ -158,8 +169,8 @@ export function parseYoYiText(text: string): YoYiParsedData {
     }
 
     // Detail Alamat Pengirim
-    if (lower.includes("detail alamat pengirim") || lower.includes("alamat pengirim")) {
-      const inlineMatch = line.match(/(?:Detail\s*)?Alamat\s*Pengirim[:\s]*([^\n\r]*)/i);
+    if (lower.includes("detail alamat pengirim") || lower.includes("alamat pengirim") || (lower === "detail alamat" && currentSection === "pengirim")) {
+      const inlineMatch = line.match(/(?:Detail\s*)?Alamat(?:\s*Pengirim)?[:\s]*([^\n\r]*)/i);
       let val = inlineMatch ? inlineMatch[1].replace(/^[:\s-]+/, "").trim() : "";
       if (val) {
         result.alamat_pengirim = val;
@@ -179,8 +190,8 @@ export function parseYoYiText(text: string): YoYiParsedData {
     }
 
     // Detail Alamat Penerima
-    if (lower.includes("detail alamat penerima") || lower.includes("alamat penerima")) {
-      const inlineMatch = line.match(/(?:Detail\s*)?Alamat\s*Penerima[:\s]*([^\n\r]*)/i);
+    if (lower.includes("detail alamat penerima") || lower.includes("alamat penerima") || (lower === "detail alamat" && currentSection === "penerima")) {
+      const inlineMatch = line.match(/(?:Detail\s*)?Alamat(?:\s*Penerima)?[:\s]*([^\n\r]*)/i);
       let val = inlineMatch ? inlineMatch[1].replace(/^[:\s-]+/, "").trim() : "";
       if (val) {
         result.alamat_penerima = val;
@@ -196,6 +207,14 @@ export function parseYoYiText(text: string): YoYiParsedData {
         const nextLineParts = rawLines[i + 1].split(";");
         if (nextLineParts.length >= 2) {
           result.operator = nextLineParts[1].trim();
+        }
+        if (nextLineParts.length >= 3) {
+          const dtStr = nextLineParts[2].trim(); // e.g. 2026-08-01 09:43:38
+          const dtParts = dtStr.split(" ");
+          if (dtParts.length >= 2) {
+            result.tanggal_transaksi = dtParts[0];
+            result.jam_transaksi = dtParts[1];
+          }
         }
       }
     }
