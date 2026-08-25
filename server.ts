@@ -2948,9 +2948,16 @@ app.post("/api/importYoYi", async (req, res) => {
   if (!adminId) {
     return res.status(400).json({ status: "error", message: "admin_id wajib diisi untuk import YoYi" });
   }
-  const timestamp = new Date().toISOString();
-  const txDate = input.tanggal_transaksi || timestamp.split("T")[0];
-  const txTime = input.jam_transaksi || timestamp.split("T")[1]?.slice(0, 8) || "00:00:00";
+  let timestamp = new Date().toISOString();
+  if (input.tanggal_transaksi && input.jam_transaksi) {
+    timestamp = `${input.tanggal_transaksi}T${input.jam_transaksi}`;
+  } else if (parsed.tanggal_transaksi && parsed.jam_transaksi) {
+    timestamp = `${parsed.tanggal_transaksi}T${parsed.jam_transaksi}`;
+  } else if (input.tanggal_transaksi) {
+    timestamp = `${input.tanggal_transaksi}T00:00:00`;
+  }
+  const txDate = input.tanggal_transaksi || parsed.tanggal_transaksi || timestamp.split("T")[0];
+  const txTime = input.jam_transaksi || parsed.jam_transaksi || timestamp.split("T")[1]?.slice(0, 8) || "00:00:00";
   const transId = "TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5);
 
   // Financial calculations
