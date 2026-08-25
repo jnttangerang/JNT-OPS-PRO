@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Download, AlertTriangle, FileText, CheckCircle, RefreshCw, Layers, ArrowRight, X, Zap } from "lucide-react";
+import { Download, AlertTriangle, FileText, CheckCircle, RefreshCw, Layers, ArrowRight, X, Zap, ClipboardPaste } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { toast } from "../utils/toast";
 import { parseYoYiText, YoYiParsedData } from "../utils/yoyiParser";
@@ -128,9 +128,28 @@ export default function ImportYoYiModal({
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <label className="block text-xs font-bold text-slate-700">Paste Teks Rincian Pesanan YoYi</label>
-                <span className="text-[10px] text-slate-400">Salin langsung dari aplikasi / pesan YoYi</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-slate-400 hidden sm:inline">Salin langsung dari aplikasi / pesan YoYi</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const text = await navigator.clipboard.readText();
+                        setTextInput(text);
+                      } catch (err) {
+                        toast.error("Izin clipboard dibatasi. Silakan tekan Ctrl+V (Windows) atau Cmd+V (Mac) secara manual.");
+                        document.getElementById("yoyi-paste-textarea")?.focus();
+                      }
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[10px] font-bold hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-sm cursor-pointer"
+                  >
+                    <ClipboardPaste className="w-3.5 h-3.5" />
+                    Paste
+                  </button>
+                </div>
               </div>
               <textarea
+                id="yoyi-paste-textarea"
                 value={textInput}
                 onChange={(e) => setTextInput(e.target.value)}
                 className="w-full h-56 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#E4002B]/30 focus:border-[#E4002B] placeholder:text-slate-400"
