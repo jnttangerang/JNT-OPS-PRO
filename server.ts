@@ -6573,12 +6573,23 @@ async function syncDbWithAppsScript(db: any) {
     ]);
 
     if (txRes && txRes.status === "success" && Array.isArray(txRes.data)) {
-      db.MASTER_TRANSAKSI = txRes.data.map((tx: any) => ({
-        id: tx.transaksi_id || tx.id || tx.resi_id,
+      const localTxs = db.MASTER_TRANSAKSI || [];
+      db.MASTER_TRANSAKSI = txRes.data.map((tx: any) => {
+        const id = tx.transaksi_id || tx.id || tx.resi_id;
+        const localTx = localTxs.find((l: any) => l.transaksi_id === id || l.id === id);
+        
+        let remoteAdminId = tx.admin_id_pencatat || tx.admin_id;
+        let finalAdminId = remoteAdminId;
+        if (!remoteAdminId || remoteAdminId === "SYSTEM") {
+          finalAdminId = (localTx && localTx.admin_id && localTx.admin_id !== "SYSTEM") ? localTx.admin_id : "SYSTEM";
+        }
+
+        return {
+        id: id,
         transaksi_id: tx.transaksi_id || tx.id,
         no_resi: tx.resi_id || tx.no_resi,
         outlet_id: tx.outlet_id_input || tx.outlet_id || "OUT-001",
-        admin_id: tx.admin_id_pencatat || tx.admin_id || "SYSTEM",
+        admin_id: finalAdminId,
         tanggal_transaksi: extractBusinessDate(tx) || (tx.timestamp || tx.tanggal_transaksi || "").slice(0, 10),
         jam_transaksi: (tx.timestamp || "").includes("T") ? tx.timestamp.split("T")[1].slice(0, 8) : (tx.jam_transaksi || "00:00:00"),
         created_at: tx.timestamp || tx.created_at || new Date().toISOString(),
@@ -6610,7 +6621,8 @@ async function syncDbWithAppsScript(db: any) {
         status_transaksi: tx.status_resi === "BATAL" ? "CANCELLED" : "PAID",
         status_setoran: tx.status_setoran || "PENDING",
         status_audit: tx.status_audit || "PENDING"
-      }));
+      };
+      });
     }
 
     if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
