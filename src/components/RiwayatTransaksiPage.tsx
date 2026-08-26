@@ -1072,6 +1072,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
         activeOutletId={activeOutletId || session.outlet_id_home}
         adminId={session.user_id}
         outlets={outlets}
+        users={users}
         onImportComplete={() => {
           setIsBulkImportModalOpen(false);
           fetchData();

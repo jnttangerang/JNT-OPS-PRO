@@ -11,6 +11,7 @@ interface BulkImportYoYiModalProps {
   activeOutletId: string;
   adminId: string;
   outlets: any[];
+  users?: any[];
   onImportComplete: () => void;
 }
 
@@ -45,7 +46,7 @@ interface ParsedRow {
   mapped_outlet_id: string;
 }
 
-export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, adminId, outlets, onImportComplete }: BulkImportYoYiModalProps) {
+export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, adminId, outlets, users = [], onImportComplete }: BulkImportYoYiModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { callBackend } = useAppsScript();
   
@@ -310,6 +311,18 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
       const kasOperasional = biayaTambahan;
       const grandTotal = setoranKeOwner + kasOperasional;
       
+      let resolvedAdminId = adminId;
+      if (row.operator && users && users.length > 0) {
+        const normOperator = row.operator.trim().toUpperCase();
+        const matchedUser = users.find(u => 
+          (u.nama_lengkap || "").trim().toUpperCase() === normOperator ||
+          (u.username || "").trim().toUpperCase() === normOperator
+        );
+        if (matchedUser) {
+          resolvedAdminId = matchedUser.user_id;
+        }
+      }
+      
       const transactionData = {
         resi_id: row.resi_id,
         ekspedisi: "Express",
@@ -336,7 +349,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         tanggal_transaksi: row.tanggal_transaksi,
         jam_transaksi: row.jam_transaksi,
         outlet_id_input: row.mapped_outlet_id,
-        admin_id_pencatat: adminId,
+        admin_id_pencatat: resolvedAdminId,
         operator_nama: row.operator,
         catatan_admin: `Bulk Import YoYi | Operator: ${row.operator || "Unknown"}`,
         sumber_data: row.sumber || "YoYi-WEB"
