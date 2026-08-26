@@ -9,6 +9,7 @@ import {
 } from "./operationalEngine";
 import { auditTransaction } from "./auditEngine";
 import { logAuditEvent, getAuditTrail } from "./auditTrailEngine";
+import { extractBusinessDate } from "../utils/dateUtils";
 
 export type ReconciliationStatus = "MATCHED" | "WARNING" | "MISMATCH" | "CRITICAL";
 export type ExceptionSeverity = "INFO" | "WARNING" | "ERROR" | "CRITICAL";
@@ -343,8 +344,8 @@ export function reconcileTransaction(db: any, transaksiId: string): Reconciliati
       }
 
       // F. Owner Deposit & Approval Reconciliation
-      const txDate = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
-      const setoran = allSetoran.find((s: any) => (s.tanggal === txDate || s.date === txDate) && s.outlet_id === tx.outlet_id && s.status !== "DITOLAK");
+      const txDate = extractBusinessDate(tx);
+      const setoran = allSetoran.find((s: any) => (extractBusinessDate(s) === txDate) && s.outlet_id === tx.outlet_id && s.status !== "DITOLAK");
       if (!setoran && (tx.status_transaksi === "PAID" || tx.status_transaksi === "SELESAI")) {
         exceptions.push({
           id: "EXC-" + Math.floor(Math.random() * 100000),
@@ -381,8 +382,8 @@ export function reconcileTransaction(db: any, transaksiId: string): Reconciliati
       // Transaction is invalid for finance (CANCELLED, FAILED, DRAFT, etc.)
       if (safeNum(tx.total_customer) > 0 || safeNum(tx.wajib_setor_owner) > 0) {
         // If it was wrongly included in an active setoran aggregate
-        const txDate = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
-        const activeSetoran = allSetoran.find((s: any) => (s.tanggal === txDate || s.date === txDate) && s.outlet_id === tx.outlet_id && s.status === "DISETUJUI");
+        const txDate = extractBusinessDate(tx);
+        const activeSetoran = allSetoran.find((s: any) => (extractBusinessDate(s) === txDate) && s.outlet_id === tx.outlet_id && s.status === "DISETUJUI");
         if (activeSetoran) {
           exceptions.push({
             id: "EXC-" + Math.floor(Math.random() * 100000),
@@ -512,7 +513,7 @@ export function reconcileDaily(db: any, dateStr: string, outletId?: string): Rec
 
   // Filter transactions
   let dailyTx = allTx.filter((tx: any) => {
-    const d = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
+    const d = extractBusinessDate(tx);
     if (d !== dateStr) return false;
     if (outletId && outletId !== "ALL" && tx.outlet_id !== outletId) return false;
     return true;
@@ -541,7 +542,7 @@ export function reconcileDaily(db: any, dateStr: string, outletId?: string): Rec
   // Check cross-outlet shipment/transaction mismatches for requested outletId
   if (outletId && outletId !== "ALL") {
     const outletShips = allShip.filter((s: any) => {
-      const d = s.created_at ? s.created_at.split("T")[0] : (s.tanggal_pengiriman || "");
+      const d = extractBusinessDate(s) || (s.tanggal_pengiriman || "");
       return d === dateStr && s.outlet_id === outletId;
     });
     for (const ship of outletShips) {
@@ -567,7 +568,7 @@ export function reconcileDaily(db: any, dateStr: string, outletId?: string): Rec
 
   // Also check orphan shipments for this date
   const orphanShips = allShip.filter((s: any) => {
-    const d = s.created_at ? s.created_at.split("T")[0] : (s.tanggal_pengiriman || "");
+    const d = extractBusinessDate(s) || (s.tanggal_pengiriman || "");
     if (d !== dateStr) return false;
     if (outletId && outletId !== "ALL" && s.outlet_id !== outletId) return false;
     return !allTx.some((t: any) => t.id === s.transaksi_id);
@@ -660,13 +661,13 @@ export function reconcileOutlet(db: any, outletId: string, dateRange?: { start?:
   if (dateRange) {
     if (dateRange.start) {
       outletTx = outletTx.filter((tx: any) => {
-        const d = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
+        const d = extractBusinessDate(tx);
         return d >= dateRange.start!;
       });
     }
     if (dateRange.end) {
       outletTx = outletTx.filter((tx: any) => {
-        const d = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
+        const d = extractBusinessDate(tx);
         return d <= dateRange.end!;
       });
     }

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { DollarSign, CheckCircle2, AlertTriangle, XCircle, RefreshCw, Lock, ShieldCheck } from "lucide-react";
+import { getTodayWIB } from "../../utils/dateUtils";
 
 interface SettlementData {
   settlement_id: string;
@@ -25,7 +26,7 @@ interface SettlementData {
 
 export function FinancialSettlementPanel({
   outletId = "OUT-001",
-  tanggal = new Date().toISOString().split("T")[0],
+  tanggal = getTodayWIB(),
   userRole = "OWNER",
   userId = "USER-01"
 }: {

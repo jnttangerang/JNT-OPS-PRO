@@ -8,6 +8,7 @@
  */
 
 import { calculateFinancialSummary } from "./financialEngine";
+import { getWIBDate, getWIBTime } from "../utils/dateUtils";
 
 // ==========================================
 // PART 3 — STATE TRANSITION MATRIX & LIFECYCLE
@@ -509,8 +510,8 @@ export function assembleTransactionDomain(params: {
     outlet_id: inputData.outlet_id || existingTx?.outlet_id || "OUTLET",
     admin_id: inputData.admin_id || existingTx?.admin_id || "ADMIN",
     
-    tanggal_transaksi: (inputData.tanggal || inputData.tanggal_transaksi || existingTx?.tanggal_transaksi || now).split("T")[0],
-    jam_transaksi: (inputData.jam || inputData.jam_transaksi || existingTx?.jam_transaksi || now.split("T")[1] || "00:00:00").substring(0, 8),
+    tanggal_transaksi: inputData.tanggal || inputData.tanggal_transaksi || existingTx?.tanggal_transaksi || getWIBDate(now),
+    jam_transaksi: inputData.jam || inputData.jam_transaksi || existingTx?.jam_transaksi || getWIBTime(now),
     created_at: existingTx?.created_at || now,
     updated_at: now,
     

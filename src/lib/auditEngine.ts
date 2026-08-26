@@ -11,6 +11,7 @@ import {
   calculateFinancialSummary,
   isTransactionValidForFinance
 } from "./financialEngine";
+import { extractBusinessDate } from "../utils/dateUtils";
 
 import {
   normalizeLifecycleStatus,
@@ -296,7 +297,7 @@ export function auditTransaction(db: any, txIdOrObj: any): AuditResult {
 export function auditDaily(db: any, dateStr: string, outletId?: string) {
   const allTxs = db.MASTER_TRANSAKSI || [];
   const filtered = allTxs.filter((tx: any) => {
-    const d = (tx.tanggal_transaksi || tx.created_at || tx.tanggal || "").split("T")[0];
+    const d = extractBusinessDate(tx);
     if (d !== dateStr) return false;
     if (outletId && outletId !== "ALL" && tx.outlet_id !== outletId) return false;
     return true;

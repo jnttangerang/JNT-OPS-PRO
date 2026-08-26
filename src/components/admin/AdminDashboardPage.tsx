@@ -9,6 +9,7 @@ import {
 } from "recharts";
 import useAppsScript from "../../hooks/useAppsScript";
 import { SessionData, Outlet } from "../../types";
+import { getTodayWIB } from "../../utils/dateUtils";
 
 interface AdminDashboardPageProps {
   session: SessionData;
@@ -21,12 +22,8 @@ interface AdminDashboardPageProps {
 export default function AdminDashboardPage({ session, activeOutletId, outlets, onNavigate, onChangeActiveOutlet }: AdminDashboardPageProps) {
   const { callBackend, loading } = useAppsScript();
 
-  const [startDate, setStartDate] = useState(() => {
-    return new Date().toISOString().split("T")[0]; // default today
-  });
-  const [endDate, setEndDate] = useState(() => {
-    return new Date().toISOString().split("T")[0];
-  });
+  const [startDate, setStartDate] = useState(() => getTodayWIB());
+  const [endDate, setEndDate] = useState(() => getTodayWIB());
   const [data, setData] = useState<any>(null);
 
   const loadData = async () => {

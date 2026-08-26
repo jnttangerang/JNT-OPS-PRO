@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { SessionData, Outlet } from "../../types";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
+import { getTodayWIB, shiftWIBDays } from "../../utils/dateUtils";
 import {
   Calendar,
   Filter,
@@ -28,12 +29,8 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
   
   const [filterOutlet, setFilterOutlet] = useState<string>("ALL");
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
-  const [dateStart, setDateStart] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    return d.toISOString().split("T")[0];
-  });
-  const [dateEnd, setDateEnd] = useState(() => new Date().toISOString().split("T")[0]);
+  const [dateStart, setDateStart] = useState(() => shiftWIBDays(getTodayWIB(), -7));
+  const [dateEnd, setDateEnd] = useState(() => getTodayWIB());
   
   const [detail, setDetail] = useState<any>(null);
   const [rejectReason, setRejectReason] = useState("");

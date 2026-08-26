@@ -5,6 +5,7 @@ import {
   History, RotateCcw, X, Info, FileText, Check, AlertOctagon, CornerUpLeft
 } from "lucide-react";
 import { toast } from "../../utils/toast";
+import { getTodayWIB } from "../../utils/dateUtils";
 import { useAppsScript } from "../../hooks/useAppsScript";
 
 export interface DailyClosingPageProps {
@@ -31,7 +32,7 @@ export default function DailyClosingPage({
   // Default to activeOutletId or session's outlet or first outlet
   const defaultOutlet = activeOutletId || session?.outlet_id_home || outlets[0]?.outlet_id || "OUT-A";
   const [selectedOutlet, setSelectedOutlet] = useState<string>(defaultOutlet);
-  const [closingDate, setClosingDate] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [closingDate, setClosingDate] = useState<string>(() => getTodayWIB());
 
   // Data States
   const [loading, setLoading] = useState<boolean>(false);

@@ -3,6 +3,7 @@ import { getExceptions, ExceptionRecord } from "./reconciliationReviewEngine";
 import { getSettlementRecord } from "./settlementEngine";
 import { getDailyClosingRecord } from "./dailyClosingEngine";
 import { getAuditTrail, logAuditEvent } from "./auditTrailEngine";
+import { getTodayWIB } from "../utils/dateUtils";
 
 export type CertificationState = "OPEN" | "VALIDATING" | "READY_FOR_CERTIFICATION" | "CERTIFIED" | "BLOCKED" | "REOPEN_REQUESTED" | "REOPENED";
 
@@ -43,7 +44,7 @@ export interface ActorInfo {
 
 export function generateCertificationId(outletId: string, tanggal: string): string {
   const cleanOutlet = String(outletId || "GLOBAL").trim().toUpperCase();
-  const cleanDate = (tanggal || new Date().toISOString().split("T")[0]).trim();
+  const cleanDate = (tanggal || getTodayWIB()).trim();
   return `FC-${cleanOutlet}-${cleanDate}`;
 }
 

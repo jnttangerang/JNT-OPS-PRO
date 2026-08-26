@@ -13,6 +13,7 @@ import { toast } from "../utils/toast";
 import { calculateWeight } from "../utils/weightCalculator";
 import { getDisplayImageUrl } from "../utils/image";
 import { compressImage } from "../utils/imageCompressor";
+import { getTodayWIB } from "../utils/dateUtils";
 import AddressBookDrawer from "./AddressBookDrawer";
 import ImportYoYiModal, { YoYiImportQueueItem, YoYiParsedData } from "./ImportYoYiModal";
 
@@ -347,7 +348,7 @@ export default function TransaksiPage({
         e.preventDefault();
         const file = item.getAsFile();
         if (file) {
-          const formattedDate = new Date().toISOString().split("T")[0].replace(/-/g, "");
+          const formattedDate = getTodayWIB().replace(/-/g, "");
           const finalResiStr = (resiId || "").trim() || "MOCK_RESI";
           
           let generatedFileName = "";
@@ -919,7 +920,7 @@ export default function TransaksiPage({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const formattedDate = new Date().toISOString().split("T")[0].replace(/-/g, ""); // YYYYMMDD
+    const formattedDate = getTodayWIB().replace(/-/g, ""); // YYYYMMDD
     const finalResiStr = (resiId || "").trim() || "MOCK_RESI";
 
     // Auto-name per instructions: BB-YoYi_[Tanggal]_[NoResi] or BB-JTC_[Tanggal]_[NoResi] or BB-ADD_[Tanggal]_[NoResi]
@@ -1040,7 +1041,7 @@ export default function TransaksiPage({
     let finalFotoResiUrl = fotoResiUrl;
 
     if (fotoPaketBlob || fotoResiBlob) {
-      const formattedDate = new Date().toISOString().split("T")[0].replace(/-/g, "");
+      const formattedDate = getTodayWIB().replace(/-/g, "");
       const resiPrefix = (resiId || "").trim() || `TMP_${Date.now()}`;
 
       try {

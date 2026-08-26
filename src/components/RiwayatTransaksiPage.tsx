@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, User as UserType } from "../types";
+import { getTodayWIB } from "../utils/dateUtils";
 import { toast } from "../utils/toast";
 import { highlightText } from "../utils/highlight";
 import BulkImportYoYiModal from "./BulkImportYoYiModal";
@@ -84,7 +85,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<UserType[]>([]);
   
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = getTodayWIB();
   
   const [filterTanggalAwal, setFilterTanggalAwal] = useState(todayStr);
   const [filterTanggalAkhir, setFilterTanggalAkhir] = useState(todayStr);

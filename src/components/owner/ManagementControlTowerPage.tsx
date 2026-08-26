@@ -14,6 +14,7 @@ import {
   Shield,
   Search
 } from 'lucide-react';
+import { getTodayWIB } from '../../utils/dateUtils';
 
 
 interface ManagementControlTowerPageProps {
@@ -31,7 +32,7 @@ export default function ManagementControlTowerPage({
   onChangeActiveOutlet,
   onNavigate
 }: ManagementControlTowerPageProps) {
-  const [tanggal, setTanggal] = useState<string>(new Date().toISOString().split("T")[0]);
+  const [tanggal, setTanggal] = useState<string>(() => getTodayWIB());
   const [loading, setLoading] = useState(true);
   const [summaryData, setSummaryData] = useState<any>(null);
   const [workflowSummary, setWorkflowSummary] = useState<any>(null);

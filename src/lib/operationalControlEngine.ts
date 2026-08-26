@@ -4,6 +4,7 @@ import { getDailyClosingRecord, validateDailyClosing, executeDailyClosing, reope
 import { getCertificationRecord, validateFinancialClose, certifyFinancialClose, reopenFinancialClose, FinancialCloseCertificationRecord } from "./financialCloseCertificationEngine";
 import { logAuditEvent, getAuditTrail } from "./auditTrailEngine";
 import { calculateDailyFinancial } from "./financialEngine";
+import { getWIBDate, getTodayWIB } from "../utils/dateUtils";
 
 export type RoleType = "OWNER" | "ADMIN";
 export type PriorityLevel = "P0" | "P1" | "P2" | "P3";
@@ -211,7 +212,7 @@ export function getControlActions(
         entity_id: exc.exception_id,
         transaksi_id: exc.transaksi_id,
         outlet_id: outletId,
-        tanggal: targetDate || exc.detected_at?.split("T")[0] || new Date().toISOString().split("T")[0],
+        tanggal: targetDate || getWIBDate(exc.detected_at) || getTodayWIB(),
         title: `Discrepancy [${exc.exception_type}]: ${exc.entity_id}`,
         description: exc.root_cause || "Terdapat perbedaan rekonsiliasi yang memerlukan tindakan resolution.",
         recommended_action: exc.recommendation || "Lakukan review dan tentukan resolution (RESOLVED / ACCEPTED).",

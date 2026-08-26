@@ -50,6 +50,7 @@ import {
 } from "./src/lib/financialCloseEvidenceEngine";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import { getWIBDate, getWIBTime, getTodayWIB, shiftWIBDays, formatWIBDisplay, extractBusinessDate } from "./src/utils/dateUtils";
 
 import {
   calculateFinancialSummary,
@@ -782,8 +783,8 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
   if (!txId) return { success: false, message: "transaksi_id wajib diisi" };
 
   const nowIso = new Date().toISOString();
-  const dateStr = params.tanggal_transaksi || nowIso.split("T")[0];
-  const timeStr = params.jam_transaksi || (nowIso.split("T")[1]?.slice(0, 8) || "00:00:00");
+  const dateStr = params.tanggal_transaksi || getWIBDate(nowIso);
+  const timeStr = params.jam_transaksi || getWIBTime(nowIso);
 
   let targetStatus = normalizeLifecycleStatus(params.status_transaksi || "DRAFT");
 
@@ -1130,8 +1131,8 @@ function syncExistingDataToThreeLayers(db: any) {
           transaksi_id: pi.transaksi_id,
           outlet_id: pi.outlet_id_tugas,
           admin_id: pi.admin_id,
-          tanggal_transaksi: (pi.timestamp || new Date().toISOString()).split("T")[0],
-          jam_transaksi: (pi.timestamp || new Date().toISOString()).split("T")[1]?.slice(0, 8),
+          tanggal_transaksi: getWIBDate(pi.timestamp || new Date()),
+          jam_transaksi: getWIBTime(pi.timestamp || new Date()),
           no_resi: pi.no_resi || "",
           ekspedisi: pi.ekspedisi,
           pengirim_id,
@@ -2363,8 +2364,8 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
     transaksi_id: txId,
     outlet_id: preInputObj.outlet_id_tugas,
     admin_id: preInputObj.admin_id,
-    tanggal_transaksi: (preInputObj.timestamp || new Date().toISOString()).split("T")[0],
-    jam_transaksi: (preInputObj.timestamp || new Date().toISOString()).split("T")[1]?.slice(0, 8),
+    tanggal_transaksi: getWIBDate(preInputObj.timestamp || new Date()),
+    jam_transaksi: getWIBTime(preInputObj.timestamp || new Date()),
     ekspedisi: preInputObj.ekspedisi,
     pengirim_id,
     penerima_id,
@@ -2765,8 +2766,8 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         outlet_id: outletId,
         admin_id: adminId,
         admin_name: data.operator_nama || undefined,
-        tanggal_transaksi: data.tanggal_transaksi || timestamp.split("T")[0],
-        jam_transaksi: data.jam_transaksi || timestamp.split("T")[1]?.slice(0, 8),
+        tanggal_transaksi: data.tanggal_transaksi || getWIBDate(timestamp),
+        jam_transaksi: data.jam_transaksi || getWIBTime(timestamp),
         no_resi: rid,
         ekspedisi: data.ekspedisi || (jenis_layanan === "Cargo" ? "Cargo" : "Express"),
         tipe_produk: data.tipe_produk || (jenis_layanan === "Cargo" ? "FastTrack" : "EZ"),
@@ -2956,8 +2957,8 @@ app.post("/api/importYoYi", async (req, res) => {
   } else if (input.tanggal_transaksi) {
     timestamp = `${input.tanggal_transaksi}T00:00:00`;
   }
-  const txDate = input.tanggal_transaksi || parsed.tanggal_transaksi || timestamp.split("T")[0];
-  const txTime = input.jam_transaksi || parsed.jam_transaksi || timestamp.split("T")[1]?.slice(0, 8) || "00:00:00";
+  const txDate = input.tanggal_transaksi || parsed.tanggal_transaksi || getWIBDate(timestamp);
+  const txTime = input.jam_transaksi || parsed.jam_transaksi || getWIBTime(timestamp);
   const transId = "TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5);
 
   // Financial calculations
@@ -3623,17 +3624,15 @@ function calculateByEkspedisi(filtered: any[]) {
 
 function calculateGrafik(combined: any[], filterOutlet: string, todayStr?: string) {
   const last7Days: any[] = [];
-  const todayDate = new Date(todayStr || new Date().toISOString().split("T")[0]);
+  const baseToday = todayStr || getTodayWIB();
   
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(todayDate.getTime());
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split("T")[0];
+    const dateStr = shiftWIBDays(baseToday, -i);
     let dayTotalResi = 0;
     let daySetoran = 0;
     combined.forEach((tx: any) => {
-      const txDate = tx.tanggal_transaksi || tx.created_at || tx.timestamp;
-      if (txDate && txDate.startsWith(dateStr) && (!filterOutlet || filterOutlet === "ALL" || tx.outlet_id === filterOutlet)) {
+      const txDate = extractBusinessDate(tx);
+      if (txDate === dateStr && (!filterOutlet || filterOutlet === "ALL" || tx.outlet_id === filterOutlet)) {
         if (!isTransactionValidForFinance(tx)) return;
         const sum = calculateFinancialSummary(tx);
         dayTotalResi++;
@@ -3653,11 +3652,11 @@ function calculateStatusSetoran(filtered: any[], dbSetoranData: any[], filterOut
   const setoranMap: Record<string, any> = {};
   filtered.forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
-    const dateStr = (tx.tanggal_transaksi || tx.created_at || tx.timestamp || "").split("T")[0];
+    const dateStr = extractBusinessDate(tx);
     if (!dateStr) return;
     
     if (!setoranMap[dateStr]) {
-      const existing = (dbSetoranData || []).find((s:any) => s.date === dateStr && (!filterOutlet || filterOutlet === "ALL" || s.outlet_id === tx.outlet_id || s.outlet_id === filterOutlet));
+      const existing = (dbSetoranData || []).find((s: any) => (extractBusinessDate(s) === dateStr) && (!filterOutlet || filterOutlet === "ALL" || s.outlet_id === tx.outlet_id || s.outlet_id === filterOutlet));
       setoranMap[dateStr] = {
         date: dateStr,
         total_setoran: 0,
@@ -3669,15 +3668,15 @@ function calculateStatusSetoran(filtered: any[], dbSetoranData: any[], filterOut
     setoranMap[dateStr].total_setoran += sum.owner_deposit;
     setoranMap[dateStr].transaksi.push(tx.no_resi || tx.resi_id);
   });
-  return Object.values(setoranMap).sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return Object.values(setoranMap).sort((a: any, b: any) => b.date.localeCompare(a.date));
 }
 
 function calculateTargetHarian(combined: any[], filterOutlet: string, outlets: any[], todayStr?: string) {
-  const localToday = todayStr || new Date().toISOString().split("T")[0];
-  const currentResiToday = combined.filter((tx:any) => {
+  const localToday = todayStr || getTodayWIB();
+  const currentResiToday = combined.filter((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return false;
-    const txDate = tx.tanggal_transaksi || tx.created_at || tx.timestamp;
-    return txDate && txDate.startsWith(localToday) && (!filterOutlet || filterOutlet === "ALL" || tx.outlet_id === filterOutlet);
+    const txDate = extractBusinessDate(tx);
+    return txDate === localToday && (!filterOutlet || filterOutlet === "ALL" || tx.outlet_id === filterOutlet);
   }).length;
   
   let targetTotal = 0;
@@ -3832,7 +3831,7 @@ app.post("/api/getDashboardData", (req, res) => {
   // Daily transaction trends (past 7 days or matching date range)
   const dailyMap: { [key: string]: { date: string; Express: number; Cargo: number; total: number } } = {};
   filtered.forEach((r: any) => {
-    const dateStr = (r.tanggal_transaksi || r.created_at || r.timestamp || new Date().toISOString()).split("T")[0]; // YYYY-MM-DD
+    const dateStr = extractBusinessDate(r) || getTodayWIB(); // YYYY-MM-DD
     if (!dailyMap[dateStr]) {
       dailyMap[dateStr] = { date: dateStr, Express: 0, Cargo: 0, total: 0 };
     }
@@ -4653,7 +4652,7 @@ app.post("/api/getSetoranDetail", (req, res) => {
   
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
-    let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
+    let txDate = extractBusinessDate(tx);
     const txAdmin = tx.admin_id || "SYSTEM";
     if (txDate === hTanggal && tx.outlet_id === hOutletId && (!hAdmin || txAdmin === hAdmin)) {
       const sum = calculateFinancialSummary(tx);
@@ -4682,7 +4681,7 @@ app.post("/api/createSetoran", (req, res) => {
   
   // Duplicate check for responsibility unit: admin_id + outlet_id + tanggal (excluding DITOLAK)
   let existing = (db.Master_Setoran || db.SetoranData || []).find((s: any) => {
-    const sDate = s.tanggal || s.date || "";
+    const sDate = extractBusinessDate(s);
     const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "";
     return sDate === tanggal && s.outlet_id === outlet_id && sAdmin === adminPembuat && s.status !== "DITOLAK";
   });
@@ -4700,7 +4699,7 @@ app.post("/api/createSetoran", (req, res) => {
   
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
-    let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
+    let txDate = extractBusinessDate(tx);
     const txAdmin = tx.admin_id || "SYSTEM";
     if (txDate === tanggal && tx.outlet_id === outlet_id && txAdmin === adminPembuat) {
       txList.push(tx);
@@ -4868,13 +4867,13 @@ app.post("/api/getAuditData", (req, res) => {
     if (!isTransactionValidForFinance(tx)) return;
     
     if (outlet_id && outlet_id !== "ALL" && tx.outlet_id !== outlet_id) return;
-    let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
+    let txDate = extractBusinessDate(tx);
     if (date_start && txDate < date_start) return;
     if (date_end && txDate > date_end) return;
     
     let sStatus = "BELUM_ADA_SETORAN";
     let setoranData = (db.Master_Setoran || db.SetoranData || []).find((s: any) => 
-      (s.tanggal === txDate || s.date === txDate) && s.outlet_id === tx.outlet_id && s.status !== "DITOLAK"
+      (extractBusinessDate(s) === txDate) && s.outlet_id === tx.outlet_id && s.status !== "DITOLAK"
     );
     if (setoranData) sStatus = setoranData.status;
     
@@ -4985,7 +4984,7 @@ app.post("/api/validateClosing", (req, res) => {
   
   const processTx = (tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
-    let txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
+    let txDate = extractBusinessDate(tx);
     if (txDate === closingDate && tx.outlet_id === outletId) {
       activeTransactions.push(tx);
       const sum = calculateFinancialSummary(tx);
@@ -5106,11 +5105,11 @@ function getReportingRawTransactions(db: any) {
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
     
-    const txDate = tx.tanggal_transaksi || (tx.created_at ? tx.created_at.split("T")[0] : "");
+    const txDate = extractBusinessDate(tx);
     const sum = calculateFinancialSummary(tx);
     
     const setoranObj = (db.Master_Setoran || db.SetoranData || []).find((s: any) => 
-      (s.tanggal === txDate || s.date === txDate) && s.outlet_id === tx.outlet_id && s.status !== "DITOLAK"
+      (extractBusinessDate(s) === txDate) && s.outlet_id === tx.outlet_id && s.status !== "DITOLAK"
     );
     const settlementStatus = setoranObj ? setoranObj.status : "BELUM_ADA_SETORAN";
 
@@ -5637,7 +5636,7 @@ const handleDailySummaryRequest = async (req: any, res: any) => {
 
   // Get date requested or latest available date
   const dateKeys = Object.keys(context.dates).sort().reverse();
-  const targetDate = req.body?.date || (dateKeys.length > 0 ? dateKeys[0] : new Date().toISOString().split("T")[0]);
+  const targetDate = req.body?.date || (dateKeys.length > 0 ? dateKeys[0] : getTodayWIB());
   const dateInfo = context.dates[targetDate] || { count: 0, omset: 0, express: 0, cargo: 0, setoran: 0 };
 
   const prompt = `
@@ -6008,7 +6007,7 @@ function toIsoDateString(val: any, fallback?: any): string {
       return `${y}-${m}-${d}`;
     }
   }
-  return new Date().toISOString().slice(0, 10);
+  return getTodayWIB();
 }
 
 // === KEUANGAN OUTLET (LEDGER) ENDPOINTS ===
@@ -6303,7 +6302,7 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
   txList.forEach((tx, idx) => {
     const resiId = (tx.resi_id || "").toString().trim().toUpperCase();
     if (!resiId) return;
-    const txDate = tx.tanggal || new Date().toISOString().slice(0, 10);
+    const txDate = tx.tanggal || getTodayWIB();
     const outletId = tx.outlet_id || "OUT-001";
     const adminId = tx.admin_id || "SYSTEM";
 
@@ -6427,7 +6426,7 @@ app.post("/api/reconcileTransaction", (req, res) => {
 app.post("/api/reconcileDaily", (req, res) => {
   const db = readDb();
   const { date, date_str, tanggal, outlet_id, actor_id } = req.body || {};
-  const targetDate = date || date_str || tanggal || new Date().toISOString().split("T")[0];
+  const targetDate = date || date_str || tanggal || getTodayWIB();
   const result = reconcileDaily(db, targetDate, outlet_id);
   logReconciliationExecution(db, result, actor_id || "SYSTEM");
   syncReconciliationExceptions(db, result);
@@ -6580,16 +6579,24 @@ async function syncDbWithAppsScript(db: any) {
         no_resi: tx.resi_id || tx.no_resi,
         outlet_id: tx.outlet_id_input || tx.outlet_id || "OUT-001",
         admin_id: tx.admin_id_pencatat || tx.admin_id || "SYSTEM",
-        tanggal_transaksi: (tx.timestamp || tx.tanggal_transaksi || "").slice(0, 10),
-        jam_transaksi: (tx.timestamp || "").includes("T") ? tx.timestamp.split("T")[1].slice(0, 8) : "00:00:00",
+        tanggal_transaksi: extractBusinessDate(tx) || (tx.timestamp || tx.tanggal_transaksi || "").slice(0, 10),
+        jam_transaksi: (tx.timestamp || "").includes("T") ? tx.timestamp.split("T")[1].slice(0, 8) : (tx.jam_transaksi || "00:00:00"),
         created_at: tx.timestamp || tx.created_at || new Date().toISOString(),
         ekspedisi: tx.tipe_layanan || tx.ekspedisi || "Express",
         tipe_produk: tx.tipe_produk || "",
-        snapshot_nama_pengirim: tx.pengirim || tx.snapshot_nama_pengirim || "",
+        pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || "",
+        nama_pengirim: tx.nama_pengirim || tx.pengirim || tx.snapshot_nama_pengirim || "",
+        snapshot_nama_pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || "",
+        hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || "",
         snapshot_hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || "",
+        alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || "",
         snapshot_alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || "",
-        snapshot_nama_penerima: tx.penerima || tx.snapshot_nama_penerima || "",
+        penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || "",
+        nama_penerima: tx.nama_penerima || tx.penerima || tx.snapshot_nama_penerima || "",
+        snapshot_nama_penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || "",
+        hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || "",
         snapshot_hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || "",
+        alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || "",
         snapshot_alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || "",
         nama_barang: tx.nama_barang || "Paket",
         metode_bayar: tx.metode_bayar || "CASH",

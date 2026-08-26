@@ -4,6 +4,7 @@ import { getSettlementRecord } from "./settlementEngine";
 import { getDailyClosingRecord } from "./dailyClosingEngine";
 import { getCertificationRecord } from "./financialCloseCertificationEngine";
 import { generateEvidenceFingerprint } from "./financialCloseEvidenceEngine";
+import { extractBusinessDate, getTodayWIB, shiftWIBDays } from "../utils/dateUtils";
 
 export function getControlTowerSummary(db: any, params: { outlet_id: string; tanggal: string }) {
   const { outlet_id, tanggal } = params;
@@ -58,7 +59,7 @@ export function getControlTowerSummary(db: any, params: { outlet_id: string; tan
       severity: "CRITICAL",
       issue: `Exception: ${e.exception_type}`,
       outlet: outlet_id,
-      tanggal: e.created_at.split("T")[0],
+      tanggal: extractBusinessDate(e) || getTodayWIB(),
       age: Math.floor((Date.now() - new Date(e.created_at).getTime()) / (1000 * 60 * 60 * 24)),
       action: "Review"
     });
@@ -181,14 +182,11 @@ export function getControlTowerTrend(db: any, params: { outlet_id: string; end_d
   if (!outlet_id || !end_date) return { status: "error", message: "outlet_id and end_date required" };
   
   const result = [];
-  const end = new Date(end_date);
   
   for (let i = days - 1; i >= 0; i--) {
-    const d = new Date(end);
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split("T")[0];
+    const dateStr = shiftWIBDays(end_date, -i);
     
-    const allTxs = (db.MASTER_TRANSAKSI || []).filter((tx: any) => tx.outlet_id === outlet_id && tx.tanggal_transaksi === dateStr);
+    const allTxs = (db.MASTER_TRANSAKSI || []).filter((tx: any) => tx.outlet_id === outlet_id && extractBusinessDate(tx) === dateStr);
     const financialSummary = calculateDailyFinancial(allTxs);
     
     result.push({

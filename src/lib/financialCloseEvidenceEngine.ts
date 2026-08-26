@@ -4,6 +4,7 @@ import { getSettlementRecord } from "./settlementEngine";
 import { getDailyClosingRecord } from "./dailyClosingEngine";
 import { getCertificationRecord } from "./financialCloseCertificationEngine";
 import { logAuditEvent } from "./auditTrailEngine";
+import { getTodayWIB, extractBusinessDate } from "../utils/dateUtils";
 
 export interface ActorInfo {
   actor_id: string;
@@ -37,7 +38,7 @@ export interface FinancialCloseReport {
 
 export function generateEvidenceFingerprint(outletId: string, tanggal: string): string {
   const cleanOutlet = String(outletId || "GLOBAL").trim().toUpperCase();
-  const cleanDate = (tanggal || new Date().toISOString().split("T")[0]).trim();
+  const cleanDate = (tanggal || getTodayWIB()).trim();
   return `EV-${cleanOutlet}-${cleanDate}`;
 }
 
@@ -48,7 +49,7 @@ export function generateFinancialCloseReport(db: any, params: { outlet_id: strin
     return { status: "error", message: "outlet_id dan tanggal wajib diisi.", error_code: "INVALID_PARAM" };
   }
 
-  const allTxs = (db.MASTER_TRANSAKSI || []).filter((tx: any) => tx.outlet_id === outlet_id && tx.tanggal_transaksi === tanggal);
+  const allTxs = (db.MASTER_TRANSAKSI || []).filter((tx: any) => tx.outlet_id === outlet_id && extractBusinessDate(tx) === tanggal);
 
   const cert = getCertificationRecord(db, outlet_id, tanggal);
   const dc = getDailyClosingRecord(db, outlet_id, tanggal);

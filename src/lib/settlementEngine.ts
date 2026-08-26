@@ -3,6 +3,7 @@ import {
   calculateDailyFinancial, 
   isTransactionValidForFinance 
 } from "./financialEngine";
+import { getTodayWIB, extractBusinessDate } from "../utils/dateUtils";
 
 export type SettlementStatus =
   | "UNSETTLED"
@@ -74,7 +75,7 @@ export interface SettlementRecord {
 
 export function generateSettlementId(outletId: string, tanggal: string): string {
   const cleanOutlet = String(outletId || "GLOBAL").trim().toUpperCase();
-  const cleanDate = (tanggal || new Date().toISOString().split("T")[0]).trim();
+  const cleanDate = (tanggal || getTodayWIB()).trim();
   return `STL-${cleanOutlet}-${cleanDate}`;
 }
 
@@ -166,7 +167,7 @@ export function ensureSettlementTable(db: any): SettlementRecord[] {
 export function filterOutletDateTransactions(db: any, outlet_id: string, tanggal: string): any[] {
   const allTx = db.MASTER_TRANSAKSI || [];
   return allTx.filter((tx: any) => {
-    const d = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || tx.tanggal || "");
+    const d = extractBusinessDate(tx);
     const outlet = tx.outlet_id || tx.kode_outlet || "";
     return outlet === outlet_id && d === tanggal;
   });
@@ -175,7 +176,7 @@ export function filterOutletDateTransactions(db: any, outlet_id: string, tanggal
 export function getSetoranRecord(db: any, outlet_id: string, tanggal: string): any | null {
   const allSetoran = db.Master_Setoran || db.SetoranData || db.Setoran || [];
   return allSetoran.find((s: any) => {
-    const sDate = s.tanggal || s.date || "";
+    const sDate = extractBusinessDate(s);
     const sOutlet = s.outlet_id || s.kode_outlet || "";
     return sOutlet === outlet_id && sDate === tanggal && s.status !== "DITOLAK";
   }) || null;

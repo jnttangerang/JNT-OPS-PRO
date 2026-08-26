@@ -1,9 +1,10 @@
 // Reusable Dashboard Services for JNT OPS PRO
+import { getWIBDate, getTodayWIB, shiftWIBDays, extractBusinessDate } from "./utils/dateUtils";
 
 export function getCombinedTransactions(db: any) {
   const combined: any[] = [];
   
-  db.EXP_Resi.forEach((r: any) => {
+  (db.EXP_Resi || []).forEach((r: any) => {
     if (r.status !== "BATAL") {
       combined.push({
         ...r,
@@ -14,7 +15,7 @@ export function getCombinedTransactions(db: any) {
     }
   });
 
-  db.CRG_Resi.forEach((r: any) => {
+  (db.CRG_Resi || []).forEach((r: any) => {
     if (r.status !== "BATAL") {
       combined.push({
         ...r,
@@ -31,29 +32,27 @@ export function getCombinedTransactions(db: any) {
 export function filterTransactions(combined: any[], filterOutlet: string, dateStart?: string, dateEnd?: string, filterTipeLayanan?: string) {
   let filtered = combined;
   if (filterOutlet && filterOutlet !== "ALL") {
-    filtered = filtered.filter((r: any) => r.outlet_id_input === filterOutlet);
+    filtered = filtered.filter((r: any) => (r.outlet_id_input || r.outlet_id) === filterOutlet);
   }
   if (filterTipeLayanan && filterTipeLayanan !== "ALL") {
-    filtered = filtered.filter((r: any) => r.tipe_layanan === filterTipeLayanan);
+    filtered = filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "").toUpperCase() === filterTipeLayanan.toUpperCase());
   }
   if (dateStart) {
-    const start = new Date(dateStart).getTime();
-    filtered = filtered.filter((r: any) => new Date(r.timestamp).getTime() >= start);
+    filtered = filtered.filter((r: any) => extractBusinessDate(r) >= dateStart);
   }
   if (dateEnd) {
-    const end = new Date(dateEnd).getTime() + 86400000;
-    filtered = filtered.filter((r: any) => new Date(r.timestamp).getTime() <= end);
+    filtered = filtered.filter((r: any) => extractBusinessDate(r) <= dateEnd);
   }
   return filtered;
 }
 
 export function calculateDashboardSummary(filtered: any[]) {
   const totalTransaksi = filtered.length;
-  const totalResiExpress = filtered.filter((r: any) => r.tipe_layanan === "Express").length;
-  const totalResiCargo = filtered.filter((r: any) => r.tipe_layanan === "Cargo").length;
-  const totalOmsetGlobal = filtered.reduce((sum: number, r: any) => sum + (r.grand_total || 0), 0);
-  const totalSetoranOwner = filtered.reduce((sum: number, r: any) => sum + (r.setoran_ke_owner || 0), 0);
-  const totalKasOperasional = filtered.reduce((sum: number, r: any) => sum + (r.kas_operasional || 0), 0);
+  const totalResiExpress = filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "Express") === "Express").length;
+  const totalResiCargo = filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "") === "Cargo").length;
+  const totalOmsetGlobal = filtered.reduce((sum: number, r: any) => sum + (r.grand_total || r.total_customer || 0), 0);
+  const totalSetoranOwner = filtered.reduce((sum: number, r: any) => sum + (r.setoran_ke_owner || r.wajib_setor_owner || 0), 0);
+  const totalKasOperasional = filtered.reduce((sum: number, r: any) => sum + (r.kas_operasional || r.kas_outlet || 0), 0);
   
   return {
     totalTransaksi,
@@ -71,12 +70,12 @@ export function calculateDashboardSummary(filtered: any[]) {
 export function calculateByAdmin(filtered: any[], users: any[]) {
   const adminMap: Record<string, any> = {};
   filtered.forEach(r => {
-    const admin = r.admin_id_pencatat;
+    const admin = r.admin_id_pencatat || r.admin_id;
     if (!adminMap[admin]) {
-      const user = users.find((u: any) => u.user_id === admin);
+      const user = (users || []).find((u: any) => u.user_id === admin);
       adminMap[admin] = {
         admin_id: admin,
-        nama: user ? user.nama_lengkap : admin,
+        nama: user ? (user.nama_lengkap || user.username) : admin,
         express: 0,
         cargo: 0,
         totalResi: 0,
@@ -84,44 +83,45 @@ export function calculateByAdmin(filtered: any[], users: any[]) {
         kasOutlet: 0
       };
     }
-    if (r.tipe_layanan === "Express") adminMap[admin].express++;
-    if (r.tipe_layanan === "Cargo") adminMap[admin].cargo++;
+    const tipe = (r.tipe_layanan || r.ekspedisi || "Express").toLowerCase();
+    if (tipe === "express") adminMap[admin].express++;
+    if (tipe === "cargo") adminMap[admin].cargo++;
     adminMap[admin].totalResi++;
-    adminMap[admin].totalSetoranOwner += r.setoran_ke_owner || 0;
-    adminMap[admin].kasOutlet += r.kas_operasional || 0;
+    adminMap[admin].totalSetoranOwner += r.setoran_ke_owner || r.wajib_setor_owner || 0;
+    adminMap[admin].kasOutlet += r.kas_operasional || r.kas_outlet || 0;
   });
   return Object.values(adminMap).sort((a: any, b: any) => b.totalResi - a.totalResi);
 }
 
 export function calculateByEkspedisi(filtered: any[]) {
-  const totalResiExpress = filtered.filter((r: any) => r.tipe_layanan === "Express").length;
-  const totalResiCargo = filtered.filter((r: any) => r.tipe_layanan === "Cargo").length;
+  const totalResiExpress = filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "Express") === "Express").length;
+  const totalResiCargo = filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "") === "Cargo").length;
   return {
     Express: {
       resi: totalResiExpress,
-      omset: filtered.filter((r: any) => r.tipe_layanan === "Express").reduce((sum, r) => sum + (r.grand_total || 0), 0),
-      setoran: filtered.filter((r: any) => r.tipe_layanan === "Express").reduce((sum, r) => sum + (r.setoran_ke_owner || 0), 0),
+      omset: filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "Express") === "Express").reduce((sum, r) => sum + (r.grand_total || r.total_customer || 0), 0),
+      setoran: filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "Express") === "Express").reduce((sum, r) => sum + (r.setoran_ke_owner || r.wajib_setor_owner || 0), 0),
     },
     Cargo: {
       resi: totalResiCargo,
-      omset: filtered.filter((r: any) => r.tipe_layanan === "Cargo").reduce((sum, r) => sum + (r.grand_total || 0), 0),
-      setoran: filtered.filter((r: any) => r.tipe_layanan === "Cargo").reduce((sum, r) => sum + (r.setoran_ke_owner || 0), 0),
+      omset: filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "") === "Cargo").reduce((sum, r) => sum + (r.grand_total || r.total_customer || 0), 0),
+      setoran: filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "") === "Cargo").reduce((sum, r) => sum + (r.setoran_ke_owner || r.wajib_setor_owner || 0), 0),
     }
   };
 }
 
 export function calculateGrafik(combined: any[], filterOutlet: string) {
   const last7Days: any[] = [];
+  const today = getTodayWIB();
   for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().split("T")[0];
+    const dateStr = shiftWIBDays(today, -i);
     let dayTotalResi = 0;
     let daySetoran = 0;
     combined.forEach(r => {
-      if (r.timestamp.startsWith(dateStr) && (!filterOutlet || filterOutlet === "ALL" || r.outlet_id_input === filterOutlet)) {
+      const rDate = extractBusinessDate(r);
+      if (rDate === dateStr && (!filterOutlet || filterOutlet === "ALL" || (r.outlet_id_input || r.outlet_id) === filterOutlet)) {
         dayTotalResi++;
-        daySetoran += r.setoran_ke_owner || 0;
+        daySetoran += r.setoran_ke_owner || r.wajib_setor_owner || 0;
       }
     });
     last7Days.push({
@@ -136,9 +136,10 @@ export function calculateGrafik(combined: any[], filterOutlet: string) {
 export function calculateStatusSetoran(filtered: any[], dbSetoranData: any[], filterOutlet: string) {
   const setoranMap: Record<string, any> = {};
   filtered.forEach(r => {
-    const dateStr = r.timestamp.split("T")[0];
+    const dateStr = extractBusinessDate(r);
+    if (!dateStr) return;
     if (!setoranMap[dateStr]) {
-      const existing = dbSetoranData.find((s:any) => s.date === dateStr && (!filterOutlet || filterOutlet === "ALL" || s.outlet_id === r.outlet_id_input || s.outlet_id === filterOutlet));
+      const existing = (dbSetoranData || []).find((s: any) => (extractBusinessDate(s) === dateStr) && (!filterOutlet || filterOutlet === "ALL" || (s.outlet_id || s.kode_outlet) === (r.outlet_id_input || r.outlet_id) || (s.outlet_id || s.kode_outlet) === filterOutlet));
       setoranMap[dateStr] = {
         date: dateStr,
         total_setoran: 0,
@@ -146,23 +147,22 @@ export function calculateStatusSetoran(filtered: any[], dbSetoranData: any[], fi
         transaksi: []
       };
     }
-    setoranMap[dateStr].total_setoran += r.setoran_ke_owner || 0;
-    setoranMap[dateStr].transaksi.push(r.resi_id);
+    setoranMap[dateStr].total_setoran += r.setoran_ke_owner || r.wajib_setor_owner || 0;
+    setoranMap[dateStr].transaksi.push(r.resi_id || r.no_resi);
   });
-  return Object.values(setoranMap).sort((a:any, b:any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return Object.values(setoranMap).sort((a: any, b: any) => b.date.localeCompare(a.date));
 }
 
 export function calculateTargetHarian(combined: any[], filterOutlet: string, outlets: any[]) {
-  const todayStr = new Date().toISOString().split("T")[0];
-  const currentResiToday = combined.filter((r:any) => r.timestamp.startsWith(todayStr) && (!filterOutlet || filterOutlet === "ALL" || r.outlet_id_input === filterOutlet)).length;
+  const todayStr = getTodayWIB();
+  const currentResiToday = combined.filter((r: any) => extractBusinessDate(r) === todayStr && (!filterOutlet || filterOutlet === "ALL" || (r.outlet_id_input || r.outlet_id) === filterOutlet)).length;
   
   let targetTotal = 0;
   if (filterOutlet && filterOutlet !== "ALL") {
-    const outlet = outlets.find((o: any) => o.outlet_id === filterOutlet);
+    const outlet = (outlets || []).find((o: any) => o.outlet_id === filterOutlet);
     targetTotal = outlet?.target_resi_harian || 50;
   } else {
-    // If all, sum targets
-    targetTotal = outlets.reduce((sum, o) => sum + (o.target_resi_harian || 50), 0);
+    targetTotal = (outlets || []).reduce((sum: number, o: any) => sum + (o.target_resi_harian || 50), 0);
   }
 
   return {
@@ -170,4 +170,3 @@ export function calculateTargetHarian(combined: any[], filterOutlet: string, out
     current: currentResiToday
   };
 }
-

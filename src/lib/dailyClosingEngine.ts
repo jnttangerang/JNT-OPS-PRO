@@ -14,6 +14,7 @@ import {
 } from "./reconciliationReviewEngine";
 import { logAuditEvent } from "./auditTrailEngine";
 import { getSettlementRecord } from "./settlementEngine";
+import { getWIBDate, getTodayWIB, extractBusinessDate } from "../utils/dateUtils";
 
 export type ClosingState = "OPEN" | "VALIDATING" | "READY" | "CLOSED" | "BLOCKED" | "REOPENED";
 
@@ -110,7 +111,7 @@ function ensureClosingTable(db: any): DailyClosingRecord[] {
 
 export function generateClosingId(outletId: string, tanggal: string): string {
   const cleanOutlet = String(outletId || "GLOBAL").trim().toUpperCase();
-  const cleanDate = (tanggal || new Date().toISOString().split("T")[0]).trim();
+  const cleanDate = (tanggal || getTodayWIB()).trim();
   return `CLS-${cleanOutlet}-${cleanDate}`;
 }
 
@@ -177,7 +178,7 @@ export function validateDailyClosing(
   // 1. Single Source of Truth Financial Calculation for outlet + tanggal
   const allTx = db.MASTER_TRANSAKSI || [];
   const outletDateTx = allTx.filter((tx: any) => {
-    const d = tx.created_at ? tx.created_at.split("T")[0] : (tx.tanggal_transaksi || "");
+    const d = extractBusinessDate(tx);
     return tx.outlet_id === outlet_id && d === tanggal;
   });
 
@@ -209,7 +210,7 @@ export function validateDailyClosing(
   // 3. Setoran Admin Physical Cash Validation (Admin + Outlet + Tanggal SSOT)
   const allSetoran = db.Master_Setoran || db.SetoranData || db.Setoran || [];
   const activeSetoran = allSetoran.filter((s: any) => {
-    const sDate = s.tanggal || s.date || "";
+    const sDate = extractBusinessDate(s);
     return s.outlet_id === outlet_id && sDate === tanggal && s.status !== "DITOLAK";
   });
 

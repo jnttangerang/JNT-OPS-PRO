@@ -3,6 +3,7 @@ import { Upload, X, CheckCircle, AlertCircle, RefreshCw, Save, Search, Table as 
 import * as XLSX from "xlsx";
 import useAppsScript from "../hooks/useAppsScript";
 import { toast } from "../utils/toast";
+import { getTodayWIB, getWIBDate, getWIBTime } from "../utils/dateUtils";
 
 interface BulkImportYoYiModalProps {
   isOpen: boolean;
@@ -89,7 +90,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
   };
   
   const parseDateAndExtract = (val: any) => {
-    if (!val) return { tanggal: new Date().toISOString().split("T")[0], jam: "00:00:00" };
+    if (!val) return { tanggal: getTodayWIB(), jam: "00:00:00" };
     
     // Check if it's an Excel serial date number
     if (typeof val === "number") {
@@ -97,15 +98,15 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
       const date = new Date((val - (25567 + 2)) * 86400 * 1000); // the +2 is for the 1900 leap year bug
       if (!isNaN(date.getTime())) {
          return {
-           tanggal: date.toISOString().split("T")[0],
-           jam: date.toISOString().split("T")[1].slice(0, 8)
+           tanggal: getWIBDate(date),
+           jam: getWIBTime(date)
          };
       }
     }
     
     const str = String(val).trim();
     const parts = str.split(" ");
-    let tanggal = parts[0] || new Date().toISOString().split("T")[0];
+    let tanggal = parts[0] || getTodayWIB();
     let jam = parts[1] || "00:00:00";
     
     // Normalize YYYY-MM-DD

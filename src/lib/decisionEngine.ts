@@ -1,4 +1,5 @@
 import { logAuditEvent } from "./auditTrailEngine";
+import { extractBusinessDate, getTodayWIB } from "../utils/dateUtils";
 
 export type DecisionPriority = "P0" | "P1" | "P2" | "P3";
 export type DecisionStatus = "OPEN" | "ACKNOWLEDGED" | "IN_PROGRESS" | "RESOLVED" | "ACCEPTED" | "REOPENED";
@@ -79,7 +80,7 @@ export function syncDecisionsFromExceptions(db: any, outlet_id: string, tanggal:
   
   for (const ex of exceptions) {
     // Only sync unresolved ones or actively synced ones
-    const exDate = ex.created_at.split("T")[0]; // Use created_at or explicitly passed tanggal
+    const exDate = extractBusinessDate(ex) || getTodayWIB(); // Use extractBusinessDate or WIB fallback
     // If it's a specific date filter, we might want to skip, but exceptions don't strictly have 'tanggal' in all cases, we use created_at date.
     
     const fingerprint = generateDecisionFingerprint(

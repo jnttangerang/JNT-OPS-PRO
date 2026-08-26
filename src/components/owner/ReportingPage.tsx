@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { SessionData, Outlet } from "../../types";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
+import { getTodayWIB, shiftWIBDays } from "../../utils/dateUtils";
 import {
   Calendar,
   Filter,
@@ -52,12 +53,8 @@ export default function ReportingPage({ session, outlets }: ReportingPageProps) 
   const { callBackend, loading } = useAppsScript();
 
   // Filter States
-  const [dateStart, setDateStart] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().split("T")[0];
-  });
-  const [dateEnd, setDateEnd] = useState(() => new Date().toISOString().split("T")[0]);
+  const [dateStart, setDateStart] = useState(() => shiftWIBDays(getTodayWIB(), -30));
+  const [dateEnd, setDateEnd] = useState(() => getTodayWIB());
   const [filterOutlet, setFilterOutlet] = useState<string>("ALL");
   const [filterOperator, setFilterOperator] = useState<string>("ALL");
   const [filterServiceType, setFilterServiceType] = useState<string>("ALL");
