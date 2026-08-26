@@ -236,6 +236,7 @@ export interface DashboardData {
     }>;
   };
   audit_logs: AuditLog[];
+  pembatalan_logs?: any[];
   monthly_reports?: Array<{
     month: string;
     total_omset: number;

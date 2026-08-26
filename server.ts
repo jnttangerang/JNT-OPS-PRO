@@ -3692,6 +3692,131 @@ function calculateTargetHarian(combined: any[], filterOutlet: string, outlets: a
     current: currentResiToday
   };
 }
+
+function resolveAdminDisplayName(db: any, adminIdOrName: string, outletId?: string): string {
+  if (!adminIdOrName || adminIdOrName === "SYSTEM" || adminIdOrName === "admin" || adminIdOrName === "Admin") {
+    const targetOutlet = outletId || "OUT-001";
+    const activeAdmin = (db.Users || []).find((u: any) => 
+      u.role === "ADMIN" && u.status_aktif === "AKTIF" && u.outlet_id_home === targetOutlet && u.user_id !== "USR-002"
+    );
+    if (activeAdmin && activeAdmin.nama_lengkap) return activeAdmin.nama_lengkap;
+    return "FITRI FAJRIA";
+  }
+
+  const u = (db.Users || []).find((usr: any) => 
+    (usr.user_id && usr.user_id.toLowerCase() === adminIdOrName.toLowerCase()) ||
+    (usr.username && usr.username.toLowerCase() === adminIdOrName.toLowerCase()) ||
+    (usr.nama_lengkap && usr.nama_lengkap.toLowerCase() === adminIdOrName.toLowerCase())
+  );
+
+  if (u) {
+    if (u.nama_lengkap === "ADMIN (SYSTEM)" || u.username === "admin") {
+      const targetOutlet = outletId || u.outlet_id_home || "OUT-001";
+      const activeAdmin = (db.Users || []).find((usr: any) => 
+        usr.role === "ADMIN" && usr.status_aktif === "AKTIF" && usr.outlet_id_home === targetOutlet && usr.user_id !== "USR-002"
+      );
+      if (activeAdmin && activeAdmin.nama_lengkap) return activeAdmin.nama_lengkap;
+      return "FITRI FAJRIA";
+    }
+    return u.nama_lengkap;
+  }
+
+  return adminIdOrName;
+}
+
+function getPembatalanLogs(db: any, filterOutlet?: string, dateStart?: string, dateEnd?: string) {
+  const allTxs = [...(db.MASTER_TRANSAKSI || []), ...(db.EXP_Resi || []), ...(db.CRG_Resi || [])];
+  
+  // Default to today in WIB if date filter is not supplied
+  const nowWIB = new Date(Date.now() + 7 * 3600 * 1000).toISOString().split("T")[0];
+  const effectiveDateStart = dateStart || nowWIB;
+  const effectiveDateEnd = dateEnd || nowWIB;
+
+  const startTime = effectiveDateStart ? new Date(effectiveDateStart).getTime() : null;
+  const endTime = effectiveDateEnd ? new Date(effectiveDateEnd).getTime() + 86400000 : null;
+
+  const cancelledTxs = allTxs.filter((t: any) => {
+    const isCancelled = (t.status_transaksi === "CANCELLED" || t.status_transaksi === "BATAL" || t.status === "BATAL" || t.status_resi === "BATAL");
+    if (!isCancelled) return false;
+    if (filterOutlet && filterOutlet !== "ALL" && t.outlet_id !== filterOutlet && t.outlet_id_input !== filterOutlet) return false;
+    
+    const txTime = new Date(t.tanggal_transaksi ? `${t.tanggal_transaksi}T${t.jam_transaksi || "00:00:00"}` : (t.created_at || t.timestamp || Date.now())).getTime();
+    if (startTime !== null && txTime < startTime) return false;
+    if (endTime !== null && txTime > endTime) return false;
+    return true;
+  });
+
+  const cancelLogs = (db.AuditLogs || []).filter((l: any) => {
+    if (l.aksi !== "BATAL_TRANSAKSI") return false;
+    if (filterOutlet && filterOutlet !== "ALL" && l.outlet_id && l.outlet_id !== "ALL" && l.outlet_id !== filterOutlet) return false;
+    
+    const logTime = new Date(l.timestamp || Date.now()).getTime();
+    if (startTime !== null && logTime < startTime) return false;
+    if (endTime !== null && logTime > endTime) return false;
+    return true;
+  });
+
+  const pembatalanLogs: any[] = [];
+  const seenResi = new Set<string>();
+
+  cancelLogs.forEach((l: any) => {
+    const match = (l.detail || "").match(/resi\s+([A-Z0-9_-]+)/i);
+    const resi = match ? match[1] : "";
+    const tx = allTxs.find((t: any) => 
+      (resi && (t.no_resi === resi || t.resi_id === resi || t.transaksi_id === resi)) || 
+      (l.transaksi_id && (t.transaksi_id === l.transaksi_id || t.id === l.transaksi_id))
+    );
+    const no_resi = tx?.no_resi || tx?.resi_id || resi || "-";
+    if (no_resi && no_resi !== "-") seenResi.add(no_resi);
+    
+    const outletId = l.outlet_id || tx?.outlet_id || tx?.outlet_id_input || "OUT-001";
+    const adminRaw = l.user_id || tx?.admin_id || tx?.admin_id_pencatat || "USR-003";
+    const adminName = resolveAdminDisplayName(db, adminRaw, outletId);
+    const ekspedisi = tx?.ekspedisi || tx?.tipe_layanan || (no_resi?.startsWith("CRG") ? "Cargo" : "Express");
+    const tipeProduk = tx?.tipe_produk || (ekspedisi === "Cargo" ? "Cargo Standard" : "EZ");
+
+    pembatalanLogs.push({
+      log_id: l.log_id || "LOG-" + Date.now(),
+      timestamp: l.timestamp || new Date().toISOString(),
+      user_id: adminRaw,
+      nama_lengkap: adminName,
+      nama_operator: adminName,
+      ekspedisi: ekspedisi,
+      no_resi: no_resi,
+      tipe_produk: tipeProduk,
+      detail: l.detail || `Membatalkan resi ${no_resi}`,
+      outlet_id: outletId
+    });
+  });
+
+  cancelledTxs.forEach((tx: any) => {
+    const no_resi = tx.no_resi || tx.resi_id || tx.id;
+    if (no_resi && !seenResi.has(no_resi)) {
+      seenResi.add(no_resi);
+      const outletId = tx.outlet_id || tx.outlet_id_input || "OUT-001";
+      const adminRaw = tx.admin_id || tx.admin_id_pencatat || tx.user_id || "USR-003";
+      const adminName = resolveAdminDisplayName(db, adminRaw, outletId);
+      const ekspedisi = tx.ekspedisi || tx.tipe_layanan || (no_resi?.startsWith("CRG") ? "Cargo" : "Express");
+      const tipeProduk = tx.tipe_produk || (ekspedisi === "Cargo" ? "Cargo Standard" : "EZ");
+
+      pembatalanLogs.push({
+        log_id: "CANCEL-" + (tx.transaksi_id || tx.id || no_resi),
+        timestamp: tx.created_at || tx.timestamp || (tx.tanggal_transaksi ? `${tx.tanggal_transaksi}T${tx.jam_transaksi || "00:00:00"}` : new Date().toISOString()),
+        user_id: adminRaw,
+        nama_lengkap: adminName,
+        nama_operator: adminName,
+        ekspedisi: ekspedisi,
+        no_resi: no_resi,
+        tipe_produk: tipeProduk,
+        detail: `Membatalkan resi ${no_resi}`,
+        outlet_id: outletId
+      });
+    }
+  });
+
+  pembatalanLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return pembatalanLogs;
+}
 // --- END DASHBOARD HELPERS ---
 
 app.post("/api/getAdminDashboardData", (req, res) => {
@@ -3744,12 +3869,8 @@ app.post("/api/getAdminDashboardData", (req, res) => {
       nama_lengkap: userMap[log.user_id] || "Sistem"
     }));
 
-    // Riwayat Pembatalan
-    const cancelLogs = db.AuditLogs.filter((l: any) => l.aksi === "BATAL_TRANSAKSI" && (filterOutlet === "ALL" || !filterOutlet || l.outlet_id === filterOutlet));
-    const pembatalanLogs = cancelLogs.map((l:any) => ({
-      ...l,
-      nama_lengkap: userMap[l.user_id] || "Sistem"
-    }));
+    // Riwayat Pembatalan (Enriched from AuditLogs and Cancelled Transactions, reset per date)
+    const pembatalanLogs = getPembatalanLogs(db, filterOutlet, dateStart, dateEnd);
 
     // Alert Operasional
     const alerts: string[] = [];
@@ -3767,6 +3888,7 @@ app.post("/api/getAdminDashboardData", (req, res) => {
         aktivitasLogs,
         grafik,
         pembatalanLogs,
+        pembatalan_logs: pembatalanLogs,
         alerts,
         targetHarian,
         recentTransactions: filtered.sort((a:any, b:any) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()).slice(0, 10)
@@ -3905,6 +4027,9 @@ app.post("/api/getDashboardData", (req, res) => {
   });
   const payment_shares = Object.keys(paymentMap).map(k => ({ name: k, value: paymentMap[k] }));
 
+  // Pembatalan logs for owner dashboard (reset per date)
+  const pembatalan_logs = getPembatalanLogs(db, filterOutlet, dateStart, dateEnd);
+
   return res.json({
     status: "success",
     data: {
@@ -3914,6 +4039,8 @@ app.post("/api/getDashboardData", (req, res) => {
         payment_shares
       },
       audit_logs,
+      pembatalan_logs,
+      pembatalanLogs: pembatalan_logs,
       monthly_reports,
       target_harian
     }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { 
   Lock, TrendingUp, DollarSign, Wallet, RefreshCw, Calendar, 
-  MapPin, Database, ListCollapse, Search, Eye, ExternalLink, HelpCircle, Download, Target
+  MapPin, Database, ListCollapse, Search, Eye, ExternalLink, HelpCircle, Download, Target, XCircle
 } from "lucide-react";
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -513,6 +513,49 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* RIWAYAT PEMBATALAN */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-4 w-4 text-red-500" />
+            <h3 className="font-bold text-gray-800 text-sm">Riwayat Pembatalan</h3>
+          </div>
+          <span className="text-xs font-bold text-red-600 bg-red-50 px-2.5 py-1 rounded-lg">
+            {(dashboardData?.pembatalan_logs || []).length} Batal
+          </span>
+        </div>
+        <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1 text-xs">
+          {(!dashboardData?.pembatalan_logs || dashboardData.pembatalan_logs.length === 0) ? (
+            <p className="text-center text-xs text-gray-400 py-6 font-medium">Belum ada riwayat pembatalan.</p>
+          ) : dashboardData.pembatalan_logs.map((l: any, i: number) => {
+            const rawName = l.nama_operator || l.nama_lengkap || l.user_id || "FITRI FAJRIA";
+            const operatorName = (rawName === "Admin" || rawName === "SYSTEM" || rawName === "admin" || rawName === "ADMIN (SYSTEM)") ? "FITRI FAJRIA" : rawName;
+            const ekspedisi = l.ekspedisi || (l.tipe === "Cargo" ? "Cargo" : "Express");
+            const resi = l.no_resi || l.resi_id || (l.detail ? (l.detail.match(/resi\s+([A-Z0-9_-]+)/i)?.[1] || "-") : "-");
+            const tipeProduk = l.tipe_produk ? `(${l.tipe_produk})` : (ekspedisi === "Cargo" ? "(Cargo Standard)" : "(EZ)");
+            const dateTime = l.timestamp ? new Date(l.timestamp).toLocaleString("id-ID") : "-";
+
+            return (
+              <div key={l.log_id || l.id || i} className="p-3 bg-red-50/50 border border-red-100 rounded-xl space-y-1">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="font-bold text-gray-800">{operatorName}</span>
+                  <span className="text-gray-300 font-normal">|</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${ekspedisi === "Cargo" ? "bg-blue-100 text-blue-700" : "bg-red-100 text-red-700"}`}>
+                    {ekspedisi}
+                  </span>
+                  <span className="text-gray-300 font-normal">|</span>
+                  <span className="font-mono font-bold text-gray-800">
+                    {resi} <span className="font-sans font-normal text-gray-500 text-[11px]">{tipeProduk}</span>
+                  </span>
+                  <span className="text-gray-300 font-normal">|</span>
+                  <span className="text-gray-500 text-[11px] font-medium">{dateTime}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

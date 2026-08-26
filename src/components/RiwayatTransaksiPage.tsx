@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Search, 
   Eye, 
@@ -19,7 +19,8 @@ import {
   Clock,
   Building2,
   Calendar,
-  Filter
+  Filter,
+  Truck
 } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, User as UserType } from "../types";
@@ -90,6 +91,8 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
   const [filterTanggalAwal, setFilterTanggalAwal] = useState(todayStr);
   const [filterTanggalAkhir, setFilterTanggalAkhir] = useState(todayStr);
   const [filterOutlet, setFilterOutlet] = useState<string>(session.role === "OWNER" ? "ALL" : (activeOutletId || session.outlet_id_home));
+  const [filterAdmin, setFilterAdmin] = useState<string>("ALL");
+  const [filterEkspedisi, setFilterEkspedisi] = useState<string>("ALL");
   const [searchTerm, setSearchTerm] = useState("");
 
   // Pagination State
@@ -104,7 +107,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
   const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  // Edit Modal State (Owner Only)
+  // Edit Modal State
   const [editItem, setEditItem] = useState<TransaksiDetail | null>(null);
   const [originalResiId, setOriginalResiId] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
@@ -169,17 +172,73 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
     return rawAdmin;
   };
 
+  // Distinct list of Admins for filter dropdown (Hanya admin yang ada di data transaksi saat ini & tanpa duplikat)
+  const adminOptions = useMemo(() => {
+    const seenNames = new Set<string>();
+    const options: { id: string; name: string }[] = [];
+
+    data.forEach((item) => {
+      if (!item.admin || item.admin.trim() === "" || item.admin === "-") return;
+      const displayName = getAdminName(item.admin);
+      if (!displayName || displayName === "-") return;
+
+      const normalized = displayName.trim().toLowerCase();
+      if (!seenNames.has(normalized)) {
+        seenNames.add(normalized);
+        options.push({
+          id: displayName,
+          name: displayName
+        });
+      }
+    });
+
+    return options.sort((a, b) => a.name.localeCompare(b.name, "id-ID"));
+  }, [data, users]);
+
+  // Reset filterAdmin jika nama admin tidak ada di transaksi saat ini
+  useEffect(() => {
+    if (filterAdmin !== "ALL" && !adminOptions.some((opt) => opt.id.toLowerCase() === filterAdmin.toLowerCase())) {
+      setFilterAdmin("ALL");
+    }
+  }, [adminOptions, filterAdmin]);
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterOutlet]);
+  }, [searchTerm, filterOutlet, filterAdmin, filterEkspedisi]);
 
-  const filteredData = data.filter(item => 
-    item.resi_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.pengirim.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.penerima.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.admin.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.transaksi_id.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredData = data.filter((item) => {
+    // 1. Ekspedisi Filter
+    if (filterEkspedisi !== "ALL" && item.tipe !== filterEkspedisi) {
+      return false;
+    }
+
+    // 2. Admin Filter (Hanya tampilkan transaksi milik admin terpilih)
+    if (filterAdmin !== "ALL") {
+      const adminName = getAdminName(item.admin);
+      const target = filterAdmin.trim().toLowerCase();
+      const matchesAdmin = 
+        adminName.trim().toLowerCase() === target ||
+        item.admin.trim().toLowerCase() === target;
+      if (!matchesAdmin) return false;
+    }
+
+    // 3. Search Term
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      const adminName = getAdminName(item.admin).toLowerCase();
+      return (
+        item.resi_id.toLowerCase().includes(term) ||
+        item.pengirim.toLowerCase().includes(term) ||
+        item.penerima.toLowerCase().includes(term) ||
+        item.admin.toLowerCase().includes(term) ||
+        adminName.includes(term) ||
+        item.transaksi_id.toLowerCase().includes(term) ||
+        (item.nama_barang && item.nama_barang.toLowerCase().includes(term))
+      );
+    }
+
+    return true;
+  });
 
   const totalPages = Math.ceil(filteredData.length / pageSize) || 1;
   const paginatedData = filteredData.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -431,6 +490,39 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
               onChange={(e) => setFilterTanggalAkhir(e.target.value)}
               className="bg-transparent font-semibold text-gray-800 focus:outline-none"
             />
+          </div>
+
+          {/* Filter Ekspedisi (Semua Level: ADMIN & OWNER) */}
+          <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs">
+            <Truck className="h-3.5 w-3.5 text-gray-400" />
+            <span className="text-gray-500 font-bold">Ekspedisi:</span>
+            <select
+              value={filterEkspedisi}
+              onChange={(e) => setFilterEkspedisi(e.target.value)}
+              className="bg-transparent font-semibold text-gray-800 focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">Semua Ekspedisi</option>
+              <option value="Express">Express</option>
+              <option value="Cargo">Cargo</option>
+            </select>
+          </div>
+
+          {/* Filter Admin (Semua Level: ADMIN & OWNER) */}
+          <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs">
+            <User className="h-3.5 w-3.5 text-gray-400" />
+            <span className="text-gray-500 font-bold">Admin:</span>
+            <select
+              value={filterAdmin}
+              onChange={(e) => setFilterAdmin(e.target.value)}
+              className="bg-transparent font-semibold text-gray-800 focus:outline-none cursor-pointer max-w-[150px] truncate"
+            >
+              <option value="ALL">Semua Admin</option>
+              {adminOptions.map((adm) => (
+                <option key={adm.id} value={adm.id}>
+                  {adm.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           {session.role === "OWNER" && (
@@ -943,7 +1035,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Ongkir Dasar</label>
                     <input
@@ -951,8 +1043,43 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                       value={editItem.ongkir_dasar}
                       onChange={(e) => {
                         const val = Number(e.target.value) || 0;
-                        const grand = val + Number(editItem.biaya_packing || 0) + Number(editItem.biaya_asuransi || 0) + Number(editItem.biaya_amplop || 0);
-                        setEditItem({ ...editItem, ongkir_dasar: val, grand_total: grand });
+                        const amplop = Number(editItem.biaya_amplop || 0);
+                        const packing = Number(editItem.biaya_packing || 0);
+                        const asuransi = Number(editItem.biaya_asuransi || 0);
+                        const lain = Number(editItem.biaya_lain || 0);
+                        const grand = val + amplop + packing + asuransi + lain;
+                        const kas = amplop + packing;
+                        setEditItem({ 
+                          ...editItem, 
+                          ongkir_dasar: val, 
+                          grand_total: grand, 
+                          kas_operasional: kas, 
+                          setoran_ke_owner: grand - kas 
+                        });
+                      }}
+                      className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Biaya Amplop</label>
+                    <input
+                      type="number"
+                      value={editItem.biaya_amplop ?? 0}
+                      onChange={(e) => {
+                        const amplop = Number(e.target.value) || 0;
+                        const ongkir = Number(editItem.ongkir_dasar || 0);
+                        const packing = Number(editItem.biaya_packing || 0);
+                        const asuransi = Number(editItem.biaya_asuransi || 0);
+                        const lain = Number(editItem.biaya_lain || 0);
+                        const grand = ongkir + amplop + packing + asuransi + lain;
+                        const kas = amplop + packing;
+                        setEditItem({ 
+                          ...editItem, 
+                          biaya_amplop: amplop, 
+                          grand_total: grand, 
+                          kas_operasional: kas, 
+                          setoran_ke_owner: grand - kas 
+                        });
                       }}
                       className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono"
                     />
@@ -961,11 +1088,22 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                     <label className="block text-xs font-medium text-gray-600 mb-1">Biaya Packing</label>
                     <input
                       type="number"
-                      value={editItem.biaya_packing}
+                      value={editItem.biaya_packing ?? 0}
                       onChange={(e) => {
-                        const val = Number(e.target.value) || 0;
-                        const grand = Number(editItem.ongkir_dasar || 0) + val + Number(editItem.biaya_asuransi || 0) + Number(editItem.biaya_amplop || 0);
-                        setEditItem({ ...editItem, biaya_packing: val, grand_total: grand });
+                        const packing = Number(e.target.value) || 0;
+                        const ongkir = Number(editItem.ongkir_dasar || 0);
+                        const amplop = Number(editItem.biaya_amplop || 0);
+                        const asuransi = Number(editItem.biaya_asuransi || 0);
+                        const lain = Number(editItem.biaya_lain || 0);
+                        const grand = ongkir + amplop + packing + asuransi + lain;
+                        const kas = amplop + packing;
+                        setEditItem({ 
+                          ...editItem, 
+                          biaya_packing: packing, 
+                          grand_total: grand, 
+                          kas_operasional: kas, 
+                          setoran_ke_owner: grand - kas 
+                        });
                       }}
                       className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono"
                     />
@@ -974,11 +1112,22 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                     <label className="block text-xs font-medium text-gray-600 mb-1">Biaya Asuransi</label>
                     <input
                       type="number"
-                      value={editItem.biaya_asuransi}
+                      value={editItem.biaya_asuransi ?? 0}
                       onChange={(e) => {
-                        const val = Number(e.target.value) || 0;
-                        const grand = Number(editItem.ongkir_dasar || 0) + Number(editItem.biaya_packing || 0) + val + Number(editItem.biaya_amplop || 0);
-                        setEditItem({ ...editItem, biaya_asuransi: val, grand_total: grand });
+                        const asuransi = Number(e.target.value) || 0;
+                        const ongkir = Number(editItem.ongkir_dasar || 0);
+                        const amplop = Number(editItem.biaya_amplop || 0);
+                        const packing = Number(editItem.biaya_packing || 0);
+                        const lain = Number(editItem.biaya_lain || 0);
+                        const grand = ongkir + amplop + packing + asuransi + lain;
+                        const kas = amplop + packing;
+                        setEditItem({ 
+                          ...editItem, 
+                          biaya_asuransi: asuransi, 
+                          grand_total: grand, 
+                          kas_operasional: kas, 
+                          setoran_ke_owner: grand - kas 
+                        });
                       }}
                       className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono"
                     />
@@ -988,7 +1137,15 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                     <input
                       type="number"
                       value={editItem.grand_total}
-                      onChange={(e) => setEditItem({ ...editItem, grand_total: Number(e.target.value) || 0 })}
+                      onChange={(e) => {
+                        const val = Number(e.target.value) || 0;
+                        const kas = Number(editItem.biaya_amplop || 0) + Number(editItem.biaya_packing || 0);
+                        setEditItem({ 
+                          ...editItem, 
+                          grand_total: val, 
+                          setoran_ke_owner: val - kas 
+                        });
+                      }}
                       className="w-full px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-sm font-mono font-bold text-[#E4002B]"
                     />
                   </div>
