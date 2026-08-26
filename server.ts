@@ -1455,7 +1455,7 @@ app.use("/api/:action", async (req, res, next) => {
       }
       return res.json(json);
     } catch (err: any) {
-      console.error(`Apps Script proxy error for ${action}:`, err.message);
+      console.warn(`Apps Script proxy error for ${action}:`, err.message);
       console.warn(`Falling back to local route handler for ${action}...`);
       return next();
     }
@@ -2924,7 +2924,7 @@ app.post("/api/importYoYi", async (req, res) => {
         }
       }
     } catch (err: any) {
-      console.error("Error proxying importYoYi to Apps Script:", err.message);
+      console.warn("Error proxying importYoYi to Apps Script:", err.message);
     }
   }
 
@@ -6400,7 +6400,7 @@ app.post("/api/apps-script", async (req, res) => {
       });
     }
   } catch (err: any) {
-    console.error("Proxy error calling Apps Script:", err);
+    console.warn("Proxy error calling Apps Script:", err.message);
     return res.status(500).json({
       status: "error",
       message: err.message || "Gagal menghubungi Google Apps Script via proxy server.",
