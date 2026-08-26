@@ -6576,7 +6576,11 @@ async function syncDbWithAppsScript(db: any) {
       const localTxs = db.MASTER_TRANSAKSI || [];
       db.MASTER_TRANSAKSI = txRes.data.map((tx: any) => {
         const id = tx.transaksi_id || tx.id || tx.resi_id;
-        const localTx = localTxs.find((l: any) => l.transaksi_id === id || l.id === id);
+        const localTx = localTxs.find((l: any) => 
+          (id && (l.transaksi_id === id || l.id === id)) || 
+          (tx.resi_id && (l.no_resi === tx.resi_id || l.resi_id === tx.resi_id)) ||
+          (tx.no_resi && (l.no_resi === tx.no_resi || l.resi_id === tx.no_resi))
+        );
         
         let remoteAdminId = tx.admin_id_pencatat || tx.admin_id;
         let finalAdminId = remoteAdminId;
@@ -6584,44 +6588,64 @@ async function syncDbWithAppsScript(db: any) {
           finalAdminId = (localTx && localTx.admin_id && localTx.admin_id !== "SYSTEM") ? localTx.admin_id : "SYSTEM";
         }
 
+        // Helper to pick financial field: remote valid (>0 or authoritative) > local valid > fallback 0
+        const resolveNum = (remoteVal: any, localVal: any): number => {
+          if (remoteVal !== undefined && remoteVal !== null && String(remoteVal).trim() !== "") {
+            const rNum = Number(remoteVal);
+            if (!isNaN(rNum)) {
+              if (rNum !== 0) return rNum;
+              if (localVal !== undefined && localVal !== null && Number(localVal) !== 0) {
+                return Number(localVal);
+              }
+              return 0;
+            }
+          }
+          if (localVal !== undefined && localVal !== null && String(localVal).trim() !== "") {
+            const lNum = Number(localVal);
+            if (!isNaN(lNum)) return lNum;
+          }
+          return 0;
+        };
+
         return {
-        id: id,
-        transaksi_id: tx.transaksi_id || tx.id,
-        no_resi: tx.resi_id || tx.no_resi,
-        outlet_id: tx.outlet_id_input || tx.outlet_id || "OUT-001",
-        admin_id: finalAdminId,
-        tanggal_transaksi: extractBusinessDate(tx) || (tx.timestamp || tx.tanggal_transaksi || "").slice(0, 10),
-        jam_transaksi: (tx.timestamp || "").includes("T") ? tx.timestamp.split("T")[1].slice(0, 8) : (tx.jam_transaksi || "00:00:00"),
-        created_at: tx.timestamp || tx.created_at || new Date().toISOString(),
-        ekspedisi: tx.tipe_layanan || tx.ekspedisi || "Express",
-        tipe_produk: tx.tipe_produk || "",
-        pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || "",
-        nama_pengirim: tx.nama_pengirim || tx.pengirim || tx.snapshot_nama_pengirim || "",
-        snapshot_nama_pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || "",
-        hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || "",
-        snapshot_hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || "",
-        alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || "",
-        snapshot_alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || "",
-        penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || "",
-        nama_penerima: tx.nama_penerima || tx.penerima || tx.snapshot_nama_penerima || "",
-        snapshot_nama_penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || "",
-        hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || "",
-        snapshot_hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || "",
-        alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || "",
-        snapshot_alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || "",
-        nama_barang: tx.nama_barang || "Paket",
-        metode_bayar: tx.metode_bayar || "CASH",
-        ongkir_customer: Number(tx.ongkir_dasar) || 0,
-        packing: Number(tx.biaya_packing) || 0,
-        amplop: Number(tx.biaya_amplop) || 0,
-        biaya_lain: Number(tx.biaya_lain) || 0,
-        total_customer: Number(tx.grand_total) || Number(tx.total_dibayar_customer) || 0,
-        wajib_setor_owner: Number(tx.setoran_ke_owner) || 0,
-        kas_outlet: Number(tx.kas_operasional) || 0,
-        status_transaksi: tx.status_resi === "BATAL" ? "CANCELLED" : "PAID",
-        status_setoran: tx.status_setoran || "PENDING",
-        status_audit: tx.status_audit || "PENDING"
-      };
+          id: id,
+          transaksi_id: tx.transaksi_id || tx.id || localTx?.transaksi_id || id,
+          no_resi: tx.resi_id || tx.no_resi || localTx?.no_resi || "",
+          outlet_id: tx.outlet_id_input || tx.outlet_id || localTx?.outlet_id || "OUT-001",
+          admin_id: finalAdminId,
+          tanggal_transaksi: extractBusinessDate(tx) || (tx.timestamp || tx.tanggal_transaksi || localTx?.tanggal_transaksi || "").slice(0, 10),
+          jam_transaksi: (tx.timestamp || "").includes("T") ? tx.timestamp.split("T")[1].slice(0, 8) : (tx.jam_transaksi || localTx?.jam_transaksi || "00:00:00"),
+          created_at: tx.timestamp || tx.created_at || localTx?.created_at || new Date().toISOString(),
+          ekspedisi: tx.tipe_layanan || tx.ekspedisi || localTx?.ekspedisi || "Express",
+          tipe_produk: tx.tipe_produk || localTx?.tipe_produk || "",
+          pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || localTx?.pengirim || localTx?.nama_pengirim || "",
+          nama_pengirim: tx.nama_pengirim || tx.pengirim || tx.snapshot_nama_pengirim || localTx?.nama_pengirim || localTx?.pengirim || "",
+          snapshot_nama_pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || localTx?.snapshot_nama_pengirim || "",
+          hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || localTx?.hp_pengirim || "",
+          snapshot_hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || localTx?.snapshot_hp_pengirim || "",
+          alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || localTx?.alamat_pengirim || "",
+          snapshot_alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || localTx?.snapshot_alamat_pengirim || "",
+          penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || localTx?.penerima || localTx?.nama_penerima || "",
+          nama_penerima: tx.nama_penerima || tx.penerima || tx.snapshot_nama_penerima || localTx?.nama_penerima || localTx?.penerima || "",
+          snapshot_nama_penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || localTx?.snapshot_nama_penerima || "",
+          hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || localTx?.hp_penerima || "",
+          snapshot_hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || localTx?.snapshot_hp_penerima || "",
+          alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || localTx?.alamat_penerima || "",
+          snapshot_alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || localTx?.snapshot_alamat_penerima || "",
+          nama_barang: tx.nama_barang || localTx?.nama_barang || "Paket",
+          metode_bayar: tx.metode_bayar || tx.metode_pembayaran_ongkir || localTx?.metode_bayar || localTx?.metode_pembayaran_ongkir || "CASH",
+          ongkir_customer: resolveNum(tx.ongkir_dasar ?? tx.ongkir_customer ?? tx.biaya_kirim ?? tx.ongkir_yoyi, localTx?.ongkir_customer ?? localTx?.ongkir_dasar ?? localTx?.biaya_kirim ?? localTx?.ongkir_yoyi),
+          packing: resolveNum(tx.biaya_packing ?? tx.packing, localTx?.packing ?? localTx?.biaya_packing),
+          amplop: resolveNum(tx.biaya_amplop ?? tx.amplop, localTx?.amplop ?? localTx?.biaya_amplop),
+          biaya_lain: resolveNum(tx.biaya_lain ?? tx.biaya_lain_yoyi, localTx?.biaya_lain ?? localTx?.biaya_lain_yoyi),
+          asuransi: resolveNum(tx.asuransi ?? tx.biaya_asuransi, localTx?.asuransi ?? localTx?.biaya_asuransi),
+          total_customer: resolveNum(tx.grand_total ?? tx.total_dibayar_customer ?? tx.total_customer ?? tx.jumlah_dibayar_customer, localTx?.total_customer ?? localTx?.grand_total ?? localTx?.total_dibayar_customer ?? localTx?.jumlah_dibayar_customer),
+          wajib_setor_owner: resolveNum(tx.setoran_ke_owner ?? tx.wajib_setor_owner ?? tx.setoran_owner, localTx?.wajib_setor_owner ?? localTx?.setoran_owner ?? localTx?.setoran_ke_owner),
+          kas_outlet: resolveNum(tx.kas_operasional ?? tx.kas_outlet, localTx?.kas_outlet ?? localTx?.kas_operasional),
+          status_transaksi: tx.status_resi === "BATAL" ? "CANCELLED" : (localTx?.status_transaksi || "PAID"),
+          status_setoran: tx.status_setoran || localTx?.status_setoran || "PENDING",
+          status_audit: tx.status_audit || localTx?.status_audit || "PENDING"
+        };
       });
     }
 
