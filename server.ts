@@ -4048,29 +4048,21 @@ app.post("/api/getDashboardData", (req, res) => {
 });
 
 app.post("/api/getRiwayatTransaksi", (req, res) => {
+  console.log("--> /api/getRiwayatTransaksi called with body:", req.body);
   const db = readDb();
-  const { filterOutlet, tanggal_awal, tanggal_akhir } = req.body;
+  const { filterOutlet, tanggal_awal, tanggal_akhir } = req.body || {};
 
-  let startT: number | null = null;
-  let endT: number | null = null;
-  
-  if (tanggal_awal) {
-    const s = new Date(tanggal_awal);
-    s.setHours(0, 0, 0, 0);
-    startT = s.getTime();
-  }
-  
-  if (tanggal_akhir) {
-    const e = new Date(tanggal_akhir);
-    e.setHours(23, 59, 59, 999);
-    endT = e.getTime();
-  }
-
-  const checkDate = (timestampStr: string) => {
-    if (!startT && !endT) return true;
-    const t = new Date(timestampStr).getTime();
-    if (startT && t < startT) return false;
-    if (endT && t > endT) return false;
+  const checkDateMatch = (txOrTimestamp: any) => {
+    if (!tanggal_awal && !tanggal_akhir) return true;
+    let d = "";
+    if (typeof txOrTimestamp === "object" && txOrTimestamp !== null) {
+      d = txOrTimestamp.tanggal_transaksi || extractBusinessDate(txOrTimestamp) || getWIBDate(txOrTimestamp.created_at || txOrTimestamp.timestamp);
+    } else {
+      d = getWIBDate(txOrTimestamp);
+    }
+    if (!d) return true;
+    if (tanggal_awal && d < tanggal_awal) return false;
+    if (tanggal_akhir && d > tanggal_akhir) return false;
     return true;
   };
 
@@ -4093,8 +4085,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
 
   const filtered = (db.MASTER_TRANSAKSI || []).filter((tx: any) => {
     if (filterOutlet && filterOutlet !== "ALL" && tx.outlet_id !== filterOutlet) return false;
-    const ts = tx.created_at || tx.tanggal_transaksi;
-    if (ts && !checkDate(ts)) return false;
+    if (!checkDateMatch(tx)) return false;
     return true;
   });
 
@@ -4129,7 +4120,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     const txKey = (r.transaksi_id || "").toUpperCase();
     if ((resiKey && !seenKeys.has(resiKey)) && (!txKey || !seenKeys.has(txKey))) {
       if (!filterOutlet || filterOutlet === "ALL" || r.outlet_id_input === filterOutlet) {
-        if (!checkDate(r.timestamp)) return;
+        if (!checkDateMatch(r.timestamp)) return;
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[r.transaksi_id];
@@ -4156,7 +4147,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     const txKey = (c.transaksi_id || "").toUpperCase();
     if ((resiKey && !seenKeys.has(resiKey)) && (!txKey || !seenKeys.has(txKey))) {
       if (!filterOutlet || filterOutlet === "ALL" || c.outlet_id_input === filterOutlet) {
-        if (!checkDate(c.timestamp)) return;
+        if (!checkDateMatch(c.timestamp)) return;
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[c.transaksi_id];

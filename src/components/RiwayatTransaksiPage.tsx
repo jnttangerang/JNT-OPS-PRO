@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, User as UserType } from "../types";
-import { getTodayWIB } from "../utils/dateUtils";
+import { getTodayWIB, getWIBDate } from "../utils/dateUtils";
 import { toast } from "../utils/toast";
 import { highlightText } from "../utils/highlight";
 import BulkImportYoYiModal from "./BulkImportYoYiModal";
@@ -207,6 +207,15 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
   }, [searchTerm, filterOutlet, filterAdmin, filterEkspedisi]);
 
   const filteredData = data.filter((item) => {
+    // 0. Date Range Filter (WIB Date)
+    if (filterTanggalAwal || filterTanggalAkhir) {
+      const itemDate = getWIBDate(item.timestamp);
+      if (itemDate) {
+        if (filterTanggalAwal && itemDate < filterTanggalAwal) return false;
+        if (filterTanggalAkhir && itemDate > filterTanggalAkhir) return false;
+      }
+    }
+
     // 1. Ekspedisi Filter
     if (filterEkspedisi !== "ALL" && item.tipe !== filterEkspedisi) {
       return false;

@@ -1,4 +1,4 @@
-import app from "./server.js";
+import app from "./server.ts";
 import { createServer as createViteServer } from "vite";
 
 async function startDevServer() {
