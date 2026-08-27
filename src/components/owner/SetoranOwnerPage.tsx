@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { SessionData, Outlet } from "../../types";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
-import { getTodayWIB, shiftWIBDays } from "../../utils/dateUtils";
+import { getTodayWIB, shiftWIBDays, calculateSettlementAging } from "../../utils/dateUtils";
 import {
   Calendar,
   Filter,
@@ -148,6 +148,22 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
     }
   };
 
+  const getAgingBadge = (tanggal: string, createdAt?: string, isSubmitted: boolean = true) => {
+    const aging = calculateSettlementAging(tanggal, createdAt || null, isSubmitted);
+    if (!aging) return null;
+    switch (aging.badge_variant) {
+      case "success":
+        return <span className="bg-emerald-50 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-bold">{aging.status_label}</span>;
+      case "warning":
+        return <span className="bg-amber-50 text-amber-800 border border-amber-300 px-2 py-0.5 rounded text-[10px] font-bold">{aging.status_label}</span>;
+      case "danger":
+        return <span className="bg-red-50 text-red-700 border border-red-300 px-2 py-0.5 rounded text-[10px] font-bold">{aging.status_label}</span>;
+      case "neutral":
+      default:
+        return <span className="bg-slate-50 text-slate-700 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold">{aging.status_label}</span>;
+    }
+  };
+
   if (detail) {
     const { header = {}, summary = {}, transactions = [] } = detail;
     const expected = Number(summary.expected_cash ?? summary.total_wajib_setor_owner ?? header.expected_cash ?? header.wajib_setor_owner ?? 0);
@@ -170,6 +186,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
               <p className="text-sm text-gray-500 font-mono mt-1">{header.setoran_id} • {summary.outlet_name || header.outlet_name}</p>
             </div>
             <div className="flex items-center gap-3">
+              {getAgingBadge(header.tanggal, header.created_at, true)}
               {getStatusBadge(header.status)}
               {header.status === "MENUNGGU_APPROVAL" && (
                 <div className="flex gap-2">
@@ -397,6 +414,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                 <th className="p-4 text-center">Selisih</th>
                 <th className="p-4 text-right">Kas Outlet</th>
                 <th className="p-4">Dibuat Oleh</th>
+                <th className="p-4 text-center">Aging</th>
                 <th className="p-4">Status</th>
                 <th className="p-4 text-center">Aksi</th>
               </tr>
@@ -404,7 +422,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             <tbody className="divide-y divide-gray-50 font-sans">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="p-6">
+                  <td colSpan={11} className="p-6">
                     <div className="space-y-3 animate-pulse">
                       {[1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="h-10 bg-gray-100 rounded-lg w-full"></div>
@@ -423,6 +441,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                     <td className="p-4 text-center">{getVarianceBadge(Number(item.variance ?? 0))}</td>
                     <td className="p-4 text-right font-mono font-semibold text-emerald-700">Rp {Number(item.total_kas_outlet ?? 0).toLocaleString("id-ID")}</td>
                     <td className="p-4 text-xs font-semibold text-gray-700">{item.admin_pembuat}</td>
+                    <td className="p-4 text-center">{getAgingBadge(item.tanggal, item.created_at, item.status !== "BELUM_SUBMIT")}</td>
                     <td className="p-4">{getStatusBadge(item.status)}</td>
                     <td className="p-4 text-center">
                       <button 
@@ -436,7 +455,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                 ))
               ) : (
                 <tr>
-                  <td colSpan={10} className="p-12 text-center text-gray-400">
+                  <td colSpan={11} className="p-12 text-center text-gray-400">
                     <CheckCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                     <p className="font-semibold text-xs text-gray-600">Belum ada data setoran dalam periode filter ini.</p>
                   </td>

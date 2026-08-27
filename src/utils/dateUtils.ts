@@ -130,3 +130,79 @@ export function extractBusinessDate(entity: any): string {
   if (entity.timestamp) return getWIBDate(entity.timestamp);
   return "";
 }
+
+export interface SettlementAgingResult {
+  diff_days: number;
+  late_days: number;
+  is_late: boolean;
+  due_date: string;
+  status_label: string;
+  badge_variant: "success" | "warning" | "danger" | "neutral";
+}
+
+/**
+ * Calculate settlement aging based on operational due date H+1 rule.
+ * - Transaction Date: T
+ * - Due Date: T + 1 day
+ * - On-time: Submitted on T or T+1 (diff_days <= 1, late_days = 0)
+ * - Late: Submitted or evaluated after T+1 (diff_days > 1, late_days = diff_days - 1)
+ */
+export function calculateSettlementAging(
+  transactionDate: string,
+  submissionTimestampOrDate?: string | Date | null,
+  isSubmitted: boolean = true
+): SettlementAgingResult {
+  const txDate = getWIBDate(transactionDate);
+  if (!txDate) {
+    return {
+      diff_days: 0,
+      late_days: 0,
+      is_late: false,
+      due_date: "",
+      status_label: "-",
+      badge_variant: "neutral"
+    };
+  }
+
+  const dueDate = shiftWIBDays(txDate, 1);
+  const refDate = submissionTimestampOrDate 
+    ? getWIBDate(submissionTimestampOrDate) 
+    : getTodayWIB();
+
+  const txParts = txDate.split("-").map(Number);
+  const refParts = refDate.split("-").map(Number);
+  const txUtc = Date.UTC(txParts[0], txParts[1] - 1, txParts[2]);
+  const refUtc = Date.UTC(refParts[0], refParts[1] - 1, refParts[2]);
+  const diffDays = Math.round((refUtc - txUtc) / 86400000);
+
+  if (diffDays <= 0) {
+    return {
+      diff_days: diffDays,
+      late_days: 0,
+      is_late: false,
+      due_date: dueDate,
+      status_label: isSubmitted ? "TEPAT WAKTU" : "BELUM JATUH TEMPO",
+      badge_variant: isSubmitted ? "success" : "neutral"
+    };
+  } else if (diffDays === 1) {
+    return {
+      diff_days: diffDays,
+      late_days: 0,
+      is_late: false,
+      due_date: dueDate,
+      status_label: isSubmitted ? "TEPAT WAKTU" : "JATUH TEMPO HARI INI",
+      badge_variant: isSubmitted ? "success" : "warning"
+    };
+  } else {
+    const lateDays = diffDays - 1;
+    return {
+      diff_days: diffDays,
+      late_days: lateDays,
+      is_late: true,
+      due_date: dueDate,
+      status_label: `TERLAMBAT ${lateDays} HARI`,
+      badge_variant: "danger"
+    };
+  }
+}
+

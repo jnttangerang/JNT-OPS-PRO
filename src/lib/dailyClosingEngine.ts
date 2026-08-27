@@ -14,7 +14,7 @@ import {
 } from "./reconciliationReviewEngine";
 import { logAuditEvent } from "./auditTrailEngine";
 import { getSettlementRecord } from "./settlementEngine";
-import { getWIBDate, getTodayWIB, extractBusinessDate } from "../utils/dateUtils";
+import { getWIBDate, getTodayWIB, extractBusinessDate, calculateSettlementAging, SettlementAgingResult } from "../utils/dateUtils";
 
 export type ClosingState = "OPEN" | "VALIDATING" | "READY" | "CLOSED" | "BLOCKED" | "REOPENED";
 
@@ -26,6 +26,7 @@ export interface ActorInfo {
 
 export interface AdminClosingBreakdown {
   admin_id: string;
+  admin_nama?: string;
   outlet_id: string;
   tanggal: string;
   customer_payment: number;
@@ -39,6 +40,8 @@ export interface AdminClosingBreakdown {
   setoran_variance: number;
   setoran_status: "MATCHED" | "MISMATCH" | "UNAPPROVED" | "MISSING" | "OK";
   jumlah_resi: number;
+  created_at?: string;
+  aging?: SettlementAgingResult;
 }
 
 export interface DailyClosingRecord {
@@ -277,7 +280,7 @@ export function validateDailyClosing(
   const adminBreakdown: AdminClosingBreakdown[] = Object.values(adminMap).map((adm) => {
     const variance = adm.setoran_actual - adm.expected_cash;
     const adminSetorans = activeSetoran.filter((s: any) => {
-      const sAdmin = s.admin_id || s.user_id || s.created_by || "UNKNOWN";
+      const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "UNKNOWN";
       return sAdmin === adm.admin_id;
     });
 
@@ -300,10 +303,15 @@ export function validateDailyClosing(
       }
     }
 
+    const sCreatedAt = adminSetorans[0]?.created_at || null;
+    const aging = calculateSettlementAging(adm.tanggal, sCreatedAt, adminSetorans.length > 0);
+
     return {
       ...adm,
       setoran_variance: variance,
-      setoran_status: status
+      setoran_status: status,
+      created_at: sCreatedAt,
+      aging
     };
   });
 
@@ -813,10 +821,12 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
       return sDate === row.tanggal && s.outlet_id === row.outlet_id && sAdmin === row.admin_id;
     });
 
+    let sCreatedAt: string | null = null;
     if (setoran) {
       row.setoran_id = setoran.setoran_id;
       row.actual_cash = Number(setoran.actual_cash ?? setoran.nominal_setor ?? setoran.nominal ?? setoran.total_setoran_owner ?? 0);
       row.setoran_status = setoran.status as any;
+      sCreatedAt = setoran.created_at || null;
       if (setoran.closing_status) {
         row.closing_status = setoran.closing_status;
       }
@@ -840,7 +850,13 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
       row.closing_status = closingRecord.status;
     }
 
-    return row;
+    const aging = calculateSettlementAging(row.tanggal, sCreatedAt, row.setoran_status !== "BELUM_SUBMIT");
+
+    return {
+      ...row,
+      created_at: sCreatedAt,
+      aging
+    };
   });
 
   // Filter by status if requested
@@ -875,6 +891,8 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
   let count_rejected = 0;
   let count_short = 0;
   let count_over = 0;
+  let count_late = 0;
+  let count_on_time = 0;
 
   rows.forEach(r => {
     total_expected_cash += r.expected_cash;
@@ -887,6 +905,12 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
 
     if (r.variance_status === "SHORT") count_short++;
     else if (r.variance_status === "OVER") count_over++;
+
+    if (r.aging?.is_late) {
+      count_late++;
+    } else {
+      count_on_time++;
+    }
   });
 
   return {
@@ -902,6 +926,8 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
         count_rejected,
         count_short,
         count_over,
+        count_late,
+        count_on_time,
         total_rows: rows.length
       },
       rows

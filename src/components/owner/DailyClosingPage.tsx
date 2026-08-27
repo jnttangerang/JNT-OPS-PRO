@@ -5,7 +5,7 @@ import {
   History, RotateCcw, X, Info, FileText, Check, AlertOctagon, CornerUpLeft
 } from "lucide-react";
 import { toast } from "../../utils/toast";
-import { getTodayWIB } from "../../utils/dateUtils";
+import { getTodayWIB, calculateSettlementAging } from "../../utils/dateUtils";
 import { useAppsScript } from "../../hooks/useAppsScript";
 
 export interface DailyClosingPageProps {
@@ -383,6 +383,24 @@ export default function DailyClosingPage({
     }
   };
 
+  const getAgingBadge = (aging: any) => {
+    if (!aging) return null;
+    switch (aging.badge_variant) {
+      case "success":
+        return <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded text-[10px] font-bold">{aging.status_label}</span>;
+      case "warning":
+        return <span className="bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded text-[10px] font-bold">{aging.status_label}</span>;
+      case "danger":
+        return <span className="bg-red-100 text-red-800 border border-red-300 px-2 py-0.5 rounded text-[10px] font-bold">{aging.status_label}</span>;
+      case "neutral":
+      default:
+        return <span className="bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded text-[10px] font-bold">{aging.status_label}</span>;
+    }
+  };
+
+  const currentAging = isOwner
+    ? calculateSettlementAging(closingDate, null, displaySetoranStatus === "MATCHED" || displaySetoranStatus === "OK")
+    : calculateSettlementAging(closingDate, myBreakdown?.created_at || null, (displayActual > 0 || displaySetoranStatus === "MATCHED"));
 
   const statusVal = closingStatusData?.status || "OPEN";
   const blockingReasons: string[] = closingStatusData?.blocking_reasons || [];
@@ -630,6 +648,10 @@ export default function DailyClosingPage({
                 Rp {displayVariance.toLocaleString("id-ID")}
               </span>
             </div>
+            <div className="flex justify-between items-center py-1 border-b border-gray-50">
+              <span className="text-gray-500 font-medium">Status Aging</span>
+              <div>{getAgingBadge(currentAging)}</div>
+            </div>
             <div className="pt-2">
               <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-[11px] text-gray-600 mb-3">
                 {displaySetoranStatus === "MATCHED" || displaySetoranStatus === "OK" ? (
@@ -719,6 +741,7 @@ export default function DailyClosingPage({
                   <th className="py-3 px-3 text-right text-blue-600">Wajib Setor Tunai</th>
                   <th className="py-3 px-3 text-right text-emerald-600">Disetor (Aktual)</th>
                   <th className="py-3 px-3 text-right">Selisih</th>
+                  <th className="py-3 px-3 text-center">Aging</th>
                   <th className="py-3 px-3 text-center">Status</th>
                 </tr>
               </thead>
@@ -735,6 +758,9 @@ export default function DailyClosingPage({
                       (adm.setoran_variance || 0) === 0 ? "text-emerald-600" : (adm.setoran_variance || 0) < 0 ? "text-red-600" : "text-blue-600"
                     }`}>
                       Rp {Number(adm.setoran_variance || 0).toLocaleString("id-ID")}
+                    </td>
+                    <td className="py-3 px-3 text-center">
+                      {getAgingBadge(adm.aging || calculateSettlementAging(adm.tanggal || closingDate, adm.created_at || null, adm.setoran_actual > 0 || adm.setoran_status !== "MISSING"))}
                     </td>
                     <td className="py-3 px-3 text-center">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
