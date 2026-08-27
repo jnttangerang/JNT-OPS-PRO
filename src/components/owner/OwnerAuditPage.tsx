@@ -19,7 +19,8 @@ import {
   Shield,
   HelpCircle,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Truck
 } from "lucide-react";
 
 interface OwnerAuditPageProps {
@@ -31,16 +32,31 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
   const { callBackend, loading } = useAppsScript();
   
   const [filterOutlet, setFilterOutlet] = useState<string>("ALL");
+  const [filterEkspedisi, setFilterEkspedisi] = useState<string>("ALL");
   const [filterStatus, setFilterStatus] = useState<string>("ALL");
   const [filterAdmin, setFilterAdmin] = useState<string>("");
-  const [dateStart, setDateStart] = useState(() => shiftWIBDays(getTodayWIB(), -7));
+  const [dateStart, setDateStart] = useState(() => getTodayWIB());
   const [dateEnd, setDateEnd] = useState(() => getTodayWIB());
   
   const [auditData, setAuditData] = useState<any>(null);
   const [selectedTx, setSelectedTx] = useState<any>(null);
   const [auditNote, setAuditNote] = useState("");
   const [savingAudit, setSavingAudit] = useState(false);
+  const [userRegistry, setUserRegistry] = useState<any[]>([]);
 
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await callBackend("getUsers");
+        if (res?.status === "success" && Array.isArray(res.data)) {
+          setUserRegistry(res.data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch user registry", err);
+      }
+    };
+    fetchUsers();
+  }, []);
 
   useEffect(() => {
     fetchAuditData();
@@ -106,23 +122,74 @@ const getStatusBadge = (status: string) => {
     }
   };
 
-  // Filter the list dynamically in frontend for admin and status so we don't refetch
+  const getAdminFullName = (adminVal: string) => {
+    if (!adminVal) return "-";
+    const idStr = String(adminVal).trim();
+    const lower = idStr.toLowerCase();
+
+    const found = userRegistry.find(
+      (u: any) =>
+        u.user_id === idStr ||
+        (u.username && u.username.toLowerCase() === lower) ||
+        (u.nama_lengkap && u.nama_lengkap.toLowerCase() === lower)
+    );
+
+    if (found?.nama_lengkap) return found.nama_lengkap;
+    if (found?.username) return found.username;
+
+    if (lower === "system" || lower === "admin") {
+      const sysAdmin = userRegistry.find((u: any) => u.username === "admin" || u.user_id === "USR-002");
+      if (sysAdmin?.nama_lengkap) return sysAdmin.nama_lengkap;
+      return "ADMIN (SYSTEM)";
+    }
+
+    return idStr;
+  };
+
+  // Filter the list dynamically in frontend for admin, status, and ekspedisi so we don't refetch
   const filteredList = auditData?.detail?.filter((tx: any) => {
     if (filterStatus !== "ALL" && tx.audit_status !== filterStatus) return false;
-    if (filterAdmin && !tx.admin.toLowerCase().includes(filterAdmin.toLowerCase())) return false;
+    if (filterEkspedisi !== "ALL") {
+      const expType = String(tx.ekspedisi || tx.tipe || "").toUpperCase();
+      const targetExp = filterEkspedisi.toUpperCase();
+      if (targetExp === "EXPRESS" && !expType.includes("EXP") && !expType.includes("EXPRESS")) return false;
+      if (targetExp === "CARGO" && !expType.includes("CRG") && !expType.includes("CARGO")) return false;
+    }
+    if (filterAdmin) {
+      const adminName = getAdminFullName(tx.admin || tx.admin_id);
+      if (adminName !== filterAdmin) return false;
+    }
     return true;
   }) || [];
 
+  // Extract unique admins from the fetched audit data mapped to nama_lengkap
+  const uniqueAdmins = Array.from(new Set(
+    (auditData?.detail || [])
+      .map((tx: any) => getAdminFullName(tx.admin || tx.admin_id))
+      .filter(Boolean)
+  )).sort() as string[];
+
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [jumpPage, setJumpPage] = useState<string>("");
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterOutlet, filterStatus, filterAdmin, dateStart, dateEnd]);
+  }, [filterOutlet, filterStatus, filterEkspedisi, filterAdmin, dateStart, dateEnd, pageSize]);
 
-  const totalPages = Math.ceil(filteredList.length / pageSize) || 1;
+  const totalPages = Math.max(1, Math.ceil(filteredList.length / pageSize));
   const paginatedList = filteredList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const handleJumpPage = () => {
+    const p = parseInt(jumpPage, 10);
+    if (!isNaN(p) && p >= 1 && p <= totalPages) {
+      setCurrentPage(p);
+      setJumpPage("");
+    } else {
+      toast.error(`Masukkan nomor halaman antara 1 - ${totalPages}`);
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -176,8 +243,8 @@ const getStatusBadge = (status: string) => {
 
       {/* Filters & List */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 sm:p-5">
-        <div className="flex flex-col md:flex-row gap-4 mb-4">
-          <div className="flex-1 space-y-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Outlet</label>
             <div className="relative">
               <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -193,7 +260,22 @@ const getStatusBadge = (status: string) => {
               </select>
             </div>
           </div>
-          <div className="flex-1 space-y-1">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Ekspedisi</label>
+            <div className="relative">
+              <Truck className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <select 
+                value={filterEkspedisi}
+                onChange={(e) => setFilterEkspedisi(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500/20"
+              >
+                <option value="ALL">Semua Ekspedisi</option>
+                <option value="Express">Express</option>
+                <option value="Cargo">Cargo</option>
+              </select>
+            </div>
+          </div>
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Status Audit</label>
             <div className="relative">
               <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -210,20 +292,23 @@ const getStatusBadge = (status: string) => {
               </select>
             </div>
           </div>
-          <div className="flex-1 space-y-1">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Cari Admin</label>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input 
-                type="text"
-                placeholder="Nama Admin..."
+              <select 
                 value={filterAdmin}
                 onChange={(e) => setFilterAdmin(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500/20"
-              />
+              >
+                <option value="">Semua Admin</option>
+                {uniqueAdmins.map((adminName, i) => (
+                  <option key={i} value={adminName}>{adminName}</option>
+                ))}
+              </select>
             </div>
           </div>
-          <div className="flex-1 space-y-1">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Mulai</label>
             <div className="relative">
               <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -235,7 +320,7 @@ const getStatusBadge = (status: string) => {
               />
             </div>
           </div>
-          <div className="flex-1 space-y-1">
+          <div className="space-y-1">
             <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Sampai</label>
             <div className="relative">
               <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -277,12 +362,12 @@ const getStatusBadge = (status: string) => {
                 paginatedList.map((tx: any) => (
                   <tr key={tx.resi_id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="p-4">
-                      <p className="font-mono font-bold text-gray-800">{highlightText(tx.resi_id, filterAdmin)}</p>
+                      <p className="font-mono font-bold text-gray-800">{tx.resi_id}</p>
                       <p className="text-[10px] text-gray-500 font-mono mt-0.5">{new Date(tx.timestamp).toLocaleString("id-ID")} • {tx.tipe}</p>
                     </td>
                     <td className="p-4">
                       <p className="font-semibold text-gray-800">{tx.outlet_name}</p>
-                      <p className="text-[10px] text-gray-500 mt-0.5">{highlightText(tx.admin, filterAdmin)}</p>
+                      <p className="text-[10px] text-gray-500 mt-0.5">{getAdminFullName(tx.admin || tx.admin_id)}</p>
                     </td>
                     <td className="p-4 text-right">
                       <p className="font-mono font-bold text-gray-800">Rp {Number(tx.total_customer).toLocaleString("id-ID")}</p>
@@ -322,29 +407,75 @@ const getStatusBadge = (status: string) => {
         </div>
 
         {/* Pagination Bar */}
-        {totalPages > 1 && (
-          <div className="mt-4 p-3 bg-gray-50 rounded-xl border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-            <span className="text-gray-500 font-medium">
-              Menampilkan {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, filteredList.length)} dari {filteredList.length} data audit
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <span className="font-extrabold text-gray-700 px-2">
-                Halaman {currentPage} dari {totalPages}
+        {filteredList.length > 0 && (
+          <div className="mt-4 p-3 bg-gray-50 rounded-xl border border-gray-100 flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-3 text-gray-500 font-medium">
+              <span>
+                Menampilkan <strong className="text-gray-800 font-bold">{((currentPage - 1) * pageSize) + 1}</strong> - <strong className="text-gray-800 font-bold">{Math.min(currentPage * pageSize, filteredList.length)}</strong> dari <strong className="text-gray-800 font-bold">{filteredList.length}</strong> data audit
               </span>
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1.5 pl-2 border-l border-gray-200">
+                <label className="text-[11px] font-semibold text-gray-500">Tampilkan:</label>
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  className="bg-white border border-gray-200 rounded-lg px-2 py-1 text-xs font-bold text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500/20 cursor-pointer"
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+                <span className="text-[11px] text-gray-400">/ hal.</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Lompat Halaman */}
+              <div className="flex items-center gap-1.5 bg-white px-2 py-1 rounded-lg border border-gray-200 shadow-sm">
+                <span className="text-[11px] font-semibold text-gray-500">Lompat:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={jumpPage}
+                  onChange={(e) => setJumpPage(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleJumpPage();
+                  }}
+                  placeholder={`1-${totalPages}`}
+                  className="w-14 px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-xs font-bold text-center text-gray-800 focus:outline-none focus:bg-white focus:ring-1 focus:ring-red-500"
+                />
+                <button
+                  type="button"
+                  onClick={handleJumpPage}
+                  className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-bold transition-colors cursor-pointer"
+                >
+                  Go
+                </button>
+              </div>
+
+              {/* Prev / Next */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+                  title="Halaman Sebelumnya"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="font-extrabold text-gray-700 px-2 min-w-[90px] text-center">
+                  Hal {currentPage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 border border-gray-200 bg-white rounded-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 cursor-pointer text-gray-700"
+                  title="Halaman Berikutnya"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -385,7 +516,7 @@ const getStatusBadge = (status: string) => {
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-50">
                    <span className="text-xs text-gray-500 font-semibold">Admin</span>
-                   <span className="text-xs font-bold text-gray-800">{selectedTx.admin}</span>
+                   <span className="text-xs font-bold text-gray-800">{getAdminFullName(selectedTx.admin || selectedTx.admin_id)}</span>
                 </div>
                 <div className="flex justify-between py-2 border-b border-gray-50">
                    <span className="text-xs text-gray-500 font-semibold">Customer / Referensi</span>

@@ -5103,7 +5103,7 @@ app.post("/api/auditTransaction", (req, res) => {
 
 app.post("/api/getAuditData", (req, res) => {
   const db = readDb();
-  const { outlet_id, date_start, date_end } = req.body;
+  const { outlet_id, date_start, date_end, ekspedisi } = req.body;
   
   let list: any[] = [];
   
@@ -5114,6 +5114,16 @@ app.post("/api/getAuditData", (req, res) => {
     let txDate = extractBusinessDate(tx);
     if (date_start && txDate < date_start) return;
     if (date_end && txDate > date_end) return;
+
+    const txEkspedisi = (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express";
+    if (ekspedisi && ekspedisi !== "ALL") {
+      const filterExpUpper = String(ekspedisi).toUpperCase();
+      if (filterExpUpper === "CARGO" || filterExpUpper === "CRG") {
+        if (txEkspedisi !== "Cargo") return;
+      } else if (filterExpUpper === "EXPRESS" || filterExpUpper === "EXP") {
+        if (txEkspedisi !== "Express") return;
+      }
+    }
     
     let sStatus = "BELUM_ADA_SETORAN";
     let setoranData = (db.Master_Setoran || db.SetoranData || []).find((s: any) => 
@@ -5127,11 +5137,44 @@ app.post("/api/getAuditData", (req, res) => {
     const auditEngineResult = auditTransaction(db, tx);
     let auditStatus = tx.owner_audit_status || auditEngineResult.status;
     
+    const outletName = (db.Outlets || db.Master_Outlet || []).find((o: any) => o.outlet_id === tx.outlet_id)?.nama_outlet || tx.outlet_name || tx.outlet_id;
+    
+    // Resolve Admin Full Name (nama_lengkap)
+    const allUsers = db.Users || db.Master_User || [];
+    const adminRawId = tx.admin_id || tx.admin_id_pencatat || tx.admin || tx.created_by || tx.user_id;
+    let adminName = tx.admin_name;
+    
+    if (!adminName && adminRawId) {
+      const rawStr = String(adminRawId).trim();
+      const rawLower = rawStr.toLowerCase();
+      const adminObj = allUsers.find((u: any) => 
+        u.user_id === rawStr || 
+        (u.username && u.username.toLowerCase() === rawLower) ||
+        (u.nama_lengkap && u.nama_lengkap.toLowerCase() === rawLower)
+      );
+      if (adminObj) {
+        adminName = adminObj.nama_lengkap || adminObj.username;
+      } else if (rawLower === "system" || rawLower === "admin") {
+        const sysUser = allUsers.find((u: any) => u.username === "admin" || u.user_id === "USR-002");
+        adminName = sysUser?.nama_lengkap || "ADMIN (SYSTEM)";
+      } else {
+        adminName = adminRawId;
+      }
+    }
+    if (!adminName) {
+      adminName = "ADMIN (SYSTEM)";
+    }
+    
     list.push({
       resi_id: tx.no_resi || tx.resi_id || tx.id,
       transaksi_id: tx.id || tx.transaksi_id,
-      tipe: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "CRG" : "EXP",
+      tipe: txEkspedisi === "Cargo" ? "CRG" : "EXP",
+      ekspedisi: txEkspedisi,
       outlet_id: tx.outlet_id,
+      outlet_name: outletName,
+      admin: adminName,
+      admin_id: adminRawId || tx.admin_id,
+      customer: tx.nama_pelanggan || tx.customer_name || tx.nama_pengirim || "-",
       tanggal: txDate,
       total_customer: sum.customer_payment,
       total_yoyi: yoyi,
