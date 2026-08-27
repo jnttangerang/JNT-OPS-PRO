@@ -136,7 +136,11 @@ export function useAppsScript() {
         "saveAllSettings",
         "initDatabaseSheets",
         "login",
-        "changePassword"
+        "changePassword",
+        "parseYoYiOrder",
+        "parseYoYiScreenshot",
+        "perbaikiAlamatAI",
+        "analyzeResiPhoto"
       ];
       const isNodeOnlyAction = nodeOnlyActions.some((act) => action === act || action.startsWith(act + "/"));
 

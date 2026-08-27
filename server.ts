@@ -3353,6 +3353,132 @@ ${text}`;
   }
 });
 
+// YoYi Screenshot OCR (Image to Text) using Gemini AI
+app.post("/api/parseYoYiScreenshot", async (req, res) => {
+  const { imageBase64, fileBase64 } = req.body || {};
+  const rawInput = imageBase64 || fileBase64;
+
+  if (!rawInput || typeof rawInput !== "string" || rawInput.trim().length === 0) {
+    return res.status(400).json({ status: "error", message: "File gambar screenshot YoYi tidak boleh kosong atau tidak valid!" });
+  }
+
+  let mimeType = "image/jpeg";
+  let base64Data = "";
+
+  const matches = rawInput.match(/^data:([A-Za-z0-9\/\-+.]+);base64,(.+)$/);
+  if (matches && matches.length === 3) {
+    mimeType = matches[1].toLowerCase();
+    base64Data = matches[2];
+  } else {
+    base64Data = rawInput;
+  }
+
+  if (rawInput.startsWith("data:") && !mimeType.startsWith("image/")) {
+    return res.status(400).json({ status: "error", message: "Format file tidak didukung. Harap upload gambar JPG, PNG, atau WEBP." });
+  }
+
+  if (!base64Data || base64Data.length < 50) {
+    return res.status(400).json({ status: "error", message: "Data gambar screenshot kosong atau tidak valid!" });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({
+      status: "error",
+      message: "Kunci API Gemini (GEMINI_API_KEY) belum dikonfigurasi di Pengaturan Server. Silakan gunakan tab Paste Teks atau hubungi administrator."
+    });
+  }
+
+  try {
+    const ai = getGeminiClient();
+    const systemInstruction = 
+      "Kamu adalah 'AI OCR Pakar Ekstraksi Detail Pesanan YoYi'. Tugasmu adalah membaca gambar/screenshot detail pengiriman aplikasi YoYi J&T secara teliti dan akurat.\n" +
+      "Ekstrak data teks dan angka yang ada di screenshot ke dalam JSON dengan schema yang ditentukan.\n" +
+      "Pedoman Ekstraksi:\n" +
+      "1. 'nomor_resi': Cari nomor resi di bagian atas sebelah logo J&T (misal: 'JD0584317210'). Jika resi kargo/lainnya, ambil nomor resi lengkap tanpa spasi.\n" +
+      "2. 'nama_pengirim', 'no_hp_pengirim', 'alamat_pengirim': Cari bagian pengirim (ikon hijau/panah). Ekstrak nama, nomor HP (contoh '085814200293'), dan alamat lengkap pengirim.\n" +
+      "3. 'nama_penerima', 'no_hp_penerima', 'alamat_penerima': Cari bagian penerima (ikon dompet/biru). Ekstrak nama, nomor HP (contoh '083147587120'), dan alamat lengkap penerima.\n" +
+      "4. 'nama_barang': Dari label 'Nama barang' (misal: 'SEPATU', 'BAJU', dll). Jika tidak ada isi 'Paket'.\n" +
+      "5. 'berat_kg': Dari label 'Berat' (misal: '1.00KG' -> 1, '2.50KG' -> 2.5). Nilai desimal number.\n" +
+      "6. 'ongkir_dasar': Dari label 'Biaya kirim' (misal: 'IDR 9.000' -> 9000). Konversi ke number murni.\n" +
+      "7. 'asuransi': Dari label 'Biaya Asuransi' (misal: 'IDR 160' -> 160). Konversi ke number murni.\n" +
+      "8. 'biaya_lain': Dari label 'Biaya lain-lain' (misal: 'IDR 0' -> 0). Konversi ke number murni.\n" +
+      "9. 'total_yoyi': Dari label 'Total biaya' (misal: 'IDR 9.160' -> 9160). Konversi ke number murni.\n" +
+      "10. 'tipe_produk': Dari label 'Tipe Produk' (misal: 'EZ', 'DOC', 'SUPER', dll). Default 'EZ'.\n" +
+      "11. 'metode_perhitungan': Dari label 'Metode perhitungan' (misal: 'Biaya oleh pengirim', 'DFOD', dll).\n" +
+      "12. 'status_paket': Dari status pesanan (misal: 'Untuk diserahkan', dll).\n" +
+      "13. 'ekspedisi': Default 'JT_EXPRESS'.\n" +
+      "14. 'sumber': Dari label 'Sumber' (misal 'YoYi-WEB' atau 'YoYi-APP').\n" +
+      "PENTING: Jangan mengada-ada informasi. Jika gambar blur, tidak terbaca, atau bukan screenshot YoYi, kosongkan field string dan set angka ke 0.";
+
+    const imagePart = {
+      inlineData: {
+        mimeType: mimeType || "image/jpeg",
+        data: base64Data
+      }
+    };
+    const textPart = {
+      text: "Ekstrak semua informasi detail transaksi YoYi dari gambar screenshot ini ke dalam format JSON yang valid."
+    };
+
+    const response = await generateGeminiContentWithFallback(ai, {
+      contents: { parts: [imagePart, textPart] },
+      config: {
+        systemInstruction,
+        temperature: 0.1,
+        responseMimeType: "application/json",
+      }
+    });
+
+    const resultText = response.text || "{}";
+    let parsedData: any = {};
+    try {
+      parsedData = JSON.parse(resultText);
+    } catch (parseErr) {
+      console.error("Failed to parse Gemini OCR JSON response:", resultText);
+      return res.status(422).json({
+        status: "error",
+        message: "Gambar tidak terbaca, silakan coba dengan gambar yang lebih jelas atau gunakan tab Paste Teks."
+      });
+    }
+
+    const finalData = {
+      nomor_resi: String(parsedData.nomor_resi || "").trim().toUpperCase(),
+      nama_pengirim: String(parsedData.nama_pengirim || "").trim(),
+      no_hp_pengirim: String(parsedData.no_hp_pengirim || "").trim(),
+      alamat_pengirim: String(parsedData.alamat_pengirim || "").trim(),
+      nama_penerima: String(parsedData.nama_penerima || "").trim(),
+      no_hp_penerima: String(parsedData.no_hp_penerima || "").trim(),
+      alamat_penerima: String(parsedData.alamat_penerima || "").trim(),
+      tipe_produk: String(parsedData.tipe_produk || "EZ").trim().toUpperCase(),
+      ongkir_dasar: Number(parsedData.ongkir_dasar) || 0,
+      asuransi: Number(parsedData.asuransi) || 0,
+      biaya_lain: Number(parsedData.biaya_lain) || 0,
+      total_yoyi: Number(parsedData.total_yoyi) || (Number(parsedData.ongkir_dasar || 0) + Number(parsedData.asuransi || 0) + Number(parsedData.biaya_lain || 0)),
+      metode_perhitungan: String(parsedData.metode_perhitungan || "Biaya oleh pengirim").trim(),
+      nama_barang: String(parsedData.nama_barang || "Paket").trim(),
+      berat_kg: Number(parsedData.berat_kg) || 1
+    };
+
+    const hasContent = !!(finalData.nomor_resi || finalData.nama_pengirim || finalData.nama_penerima || finalData.total_yoyi > 0 || finalData.ongkir_dasar > 0);
+    if (!hasContent) {
+      return res.status(422).json({
+        status: "error",
+        message: "Gambar tidak terbaca, silakan coba dengan gambar yang lebih jelas atau gunakan tab Paste Teks."
+      });
+    }
+
+    res.json({ status: "success", data: finalData });
+  } catch (error: any) {
+    console.error("parseYoYiScreenshot Gemini Error:", error);
+    const userMsg = formatGeminiErrorMessage(error);
+    return res.status(500).json({
+      status: "error",
+      message: `Gambar tidak terbaca, silakan coba dengan gambar yang lebih jelas (${userMsg})`
+    });
+  }
+});
+
 // 10. AI ADDRESS CORRECTION (GEMINI)
 
 app.post("/api/perbaikiAlamatAI", async (req, res) => {
