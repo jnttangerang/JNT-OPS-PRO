@@ -64,47 +64,51 @@ export default function DailyClosingPage({
 
   const selectedOutletName = outlets.find((o) => o.outlet_id === selectedOutlet)?.nama_outlet || selectedOutlet;
   const isOwner = session?.role === "OWNER" || session?.role === "SUPER_ADMIN" || session?.role === "DEVELOPER";
+  const currentUserId = session?.user_id || session?.username || "SYSTEM";
 
-  // Fetch status, exceptions, and audit logs on outlet or date change
+  const getActorInfo = useCallback(() => ({
+    actor_id: session?.user_id || session?.username || "SYSTEM",
+    actor_name: session?.nama_lengkap || session?.username || "Admin",
+    actor_role: session?.role || "ADMIN"
+  }), [session]);
+
+  const handleOutletChange = (newOutletId: string) => {
+    setSelectedOutlet(newOutletId);
+    if (onChangeActiveOutlet) {
+      onChangeActiveOutlet(newOutletId);
+    }
+  };
+
   const fetchData = useCallback(async () => {
-    if (!selectedOutlet || !closingDate) return;
+    if (!selectedOutlet) return;
     setLoading(true);
-
     try {
       // 1. Fetch Daily Closing Status
-      const statusRes = await fetch(`/api/dailyClosing/status?outlet_id=${encodeURIComponent(selectedOutlet)}&tanggal=${encodeURIComponent(closingDate)}`);
+      const statusRes = await fetch(`/api/dailyClosing/status?outlet_id=${selectedOutlet}&tanggal=${closingDate}`);
       if (statusRes.ok) {
         const statusJson = await statusRes.json();
-        setClosingStatusData(statusJson?.data || statusJson || null);
-      } else {
-        const errJson = await statusRes.json().catch(() => ({}));
-        toast.error(errJson.message || "Gagal mengambil status daily closing.");
+        setClosingStatusData(statusJson);
       }
 
-      // 2. Fetch Reconciliation Exceptions for the selected outlet
-      const excRes = await fetch("/api/reconciliation/exceptions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outlet_id: selectedOutlet })
-      });
-      if (excRes.ok) {
-        const excJson = await excRes.json();
-        setExceptions(excJson?.data || []);
+      // 2. Fetch Exceptions
+      const exRes = await fetch(`/api/reconciliation/exceptions?outlet_id=${selectedOutlet}&tanggal=${closingDate}`);
+      if (exRes.ok) {
+        const exJson = await exRes.json();
+        setExceptions(exJson.data || []);
       }
 
-      // 3. Fetch Audit Trail for Daily Closing events
-      const auditRes = await fetch("/api/auditTrail", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outlet_id: selectedOutlet, entity_type: "DAILY_CLOSING" })
-      });
-      if (auditRes.ok) {
-        const auditJson = await auditRes.json();
-        setAuditLogs(auditJson?.data || []);
+      // 3. Fetch Audit Logs if available
+      try {
+        const logsRes = await fetch(`/api/reconciliation/logs?outlet_id=${selectedOutlet}&tanggal=${closingDate}`);
+        if (logsRes.ok) {
+          const logsJson = await logsRes.json();
+          setAuditLogs(logsJson.data || []);
+        }
+      } catch {
+        // ignore log fetch failure
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error("Error fetching daily closing data:", err);
-      toast.error(err?.message || "Gagal memuat data daily closing.");
     } finally {
       setLoading(false);
     }
@@ -114,24 +118,55 @@ export default function DailyClosingPage({
     fetchData();
   }, [fetchData]);
 
-  // Handle Outlet Change
-  const handleOutletChange = (newOutletId: string) => {
-    setSelectedOutlet(newOutletId);
-    if (onChangeActiveOutlet) {
-      onChangeActiveOutlet(newOutletId);
-    }
-  };
+  // Multi-Admin Scope filtering
+  const myBreakdown = (!isOwner && closingStatusData?.admin_breakdown)
+    ? closingStatusData.admin_breakdown.find((a: any) => a.admin_id === currentUserId)
+    : null;
 
-  // Actor payload helper
-  const getActorInfo = () => ({
-    actor_id: session?.user_id || session?.username || "USER-01",
-    actor_name: session?.nama_lengkap || session?.username || "Operator",
-    actor_role: session?.role || "ADMIN"
-  });
+  const displayExpected = isOwner 
+    ? Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0)
+    : Number(myBreakdown?.expected_cash ?? 0);
+    
+  const displayActual = isOwner
+    ? Number(closingStatusData?.setoran_actual ?? 0)
+    : Number(myBreakdown?.setoran_actual ?? 0);
+    
+  const displayVariance = isOwner
+    ? Number(closingStatusData?.setoran_variance ?? 0)
+    : Number(myBreakdown?.setoran_variance ?? 0);
+    
+  const displaySetoranStatus = isOwner
+    ? (closingStatusData?.setoran_status || "PENDING")
+    : (myBreakdown?.setoran_status || "PENDING");
+    
+  const displayCustomer = isOwner
+    ? Number(closingStatusData?.total_customer ?? 0)
+    : Number(myBreakdown?.customer_payment ?? 0);
+    
+  const displayOwnerDeposit = isOwner
+    ? Number(closingStatusData?.total_owner_deposit ?? 0)
+    : Number(myBreakdown?.owner_deposit ?? 0);
+    
+  const displayDigital = isOwner
+    ? Number(closingStatusData?.total_digital_payment ?? 0)
+    : Number(myBreakdown?.digital_payment ?? 0);
+    
+  const displayDfod = isOwner
+    ? Number(closingStatusData?.total_dfod_outstanding ?? 0)
+    : Number(myBreakdown?.dfod_outstanding ?? 0);
+    
+  const displayOutletCash = isOwner
+    ? Number(closingStatusData?.total_outlet_cash ?? 0)
+    : Number(myBreakdown?.outlet_cash ?? 0);
+    
+  const displayTransactionCount = isOwner
+    ? Number(closingStatusData?.transaction_count ?? 0)
+    : Number(myBreakdown?.jumlah_resi ?? 0);
 
-  // Action: Open Setoran Modal
+
+  // Multi-Admin Scope filtering
   const openSetoranModal = () => {
-    const required = Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0);
+    const required = displayExpected;
     setNominalSetorInput(required);
     setSetoranNotes("");
     setShowSetoranModal(true);
@@ -348,6 +383,7 @@ export default function DailyClosingPage({
     }
   };
 
+
   const statusVal = closingStatusData?.status || "OPEN";
   const blockingReasons: string[] = closingStatusData?.blocking_reasons || [];
 
@@ -516,7 +552,7 @@ export default function DailyClosingPage({
           <div className="space-y-2.5 text-xs">
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Total Resi / Paket</span>
-              <span className="font-extrabold text-gray-900">{closingStatusData?.transaction_count ?? 0}</span>
+              <span className="font-extrabold text-gray-900">{displayTransactionCount}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Resi Valid (Lunas)</span>
@@ -528,29 +564,29 @@ export default function DailyClosingPage({
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-black font-bold">Total Pembayaran Customer</span>
-              <span className="font-extrabold text-gray-900">Rp {Number(closingStatusData?.total_customer ?? 0).toLocaleString("id-ID")}</span>
+              <span className="font-extrabold text-gray-900">Rp {displayCustomer.toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-black font-bold">Total Pendapatan / Omzet Gross</span>
-              <span className="font-bold text-gray-700">Rp {Number(closingStatusData?.total_owner_deposit ?? 0).toLocaleString("id-ID")}</span>
+              <span className="font-bold text-gray-700">Rp {displayOwnerDeposit.toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50 text-black">
               <span className="text-black font-bold">Wajib Setor Tunai Fisik (Cash)</span>
-              <span className="font-bold text-black">Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0).toLocaleString("id-ID")}</span>
+              <span className="font-bold text-black">Rp {displayExpected.toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Digital Payment (QRIS/Transfer)</span>
-              <span className="font-bold text-indigo-600">Rp {Number(closingStatusData?.total_digital_payment ?? 0).toLocaleString("id-ID")}</span>
+              <span className="font-bold text-indigo-600">Rp {displayDigital.toLocaleString("id-ID")}</span>
             </div>
-            {Number(closingStatusData?.total_dfod_outstanding ?? 0) > 0 && (
+            {displayDfod > 0 && (
               <div className="flex justify-between items-center py-1 border-b border-gray-50">
                 <span className="text-gray-500 font-medium">DFOD Outstanding (Piutang)</span>
-                <span className="font-bold text-amber-600">Rp {Number(closingStatusData?.total_dfod_outstanding ?? 0).toLocaleString("id-ID")}</span>
+                <span className="font-bold text-amber-600">Rp {displayDfod.toLocaleString("id-ID")}</span>
               </div>
             )}
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Kas Outlet / Operasional</span>
-              <span className="font-black text-purple-600">Rp {Number(closingStatusData?.total_outlet_cash ?? 0).toLocaleString("id-ID")}</span>
+              <span className="font-black text-purple-600">Rp {displayOutletCash.toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1">
               <span className="text-gray-500 font-medium">Pembulatan Nilai</span>
@@ -569,34 +605,34 @@ export default function DailyClosingPage({
               <h3 className="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Status Setoran Admin</h3>
             </div>
             <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded ${
-              closingStatusData?.setoran_status === "MATCHED" 
+              displaySetoranStatus === "MATCHED" || displaySetoranStatus === "OK" 
                 ? "bg-emerald-100 text-emerald-800" 
                 : "bg-red-100 text-red-800"
             }`}>
-              {closingStatusData?.setoran_status === "MATCHED" ? "SESUAI" : (closingStatusData?.setoran_status || "PENDING")}
+              {displaySetoranStatus === "MATCHED" || displaySetoranStatus === "OK" ? "SESUAI" : (displaySetoranStatus)}
             </span>
           </div>
 
           <div className="space-y-2.5 text-xs">
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Kewajiban Setor</span>
-              <span className="font-black text-gray-900">Rp {Number(closingStatusData?.setoran_required ?? 0).toLocaleString("id-ID")}</span>
+              <span className="font-black text-gray-900">Rp {displayExpected.toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Nominal Disetor (Aktual)</span>
-              <span className="font-black text-emerald-600">Rp {Number(closingStatusData?.setoran_actual ?? 0).toLocaleString("id-ID")}</span>
+              <span className="font-black text-emerald-600">Rp {displayActual.toLocaleString("id-ID")}</span>
             </div>
             <div className="flex justify-between items-center py-1 border-b border-gray-50">
               <span className="text-gray-500 font-medium">Selisih Setoran</span>
               <span className={`font-black ${
-                (closingStatusData?.setoran_variance ?? 0) === 0 ? "text-emerald-600" : "text-red-600"
+                (displayVariance) === 0 ? "text-emerald-600" : "text-red-600"
               }`}>
-                Rp {Number(closingStatusData?.setoran_variance ?? 0).toLocaleString("id-ID")}
+                Rp {displayVariance.toLocaleString("id-ID")}
               </span>
             </div>
             <div className="pt-2">
               <div className="p-3 bg-gray-50 rounded-xl border border-gray-100 text-[11px] text-gray-600 mb-3">
-                {closingStatusData?.setoran_status === "MATCHED" ? (
+                {displaySetoranStatus === "MATCHED" || displaySetoranStatus === "OK" ? (
                   <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Setoran telah sesuai dengan kewajiban sistem.
                   </span>
@@ -607,7 +643,7 @@ export default function DailyClosingPage({
                 )}
               </div>
               
-              {closingStatusData?.setoran_status !== "MATCHED" && closingStatusData?.status !== "CLOSED" && (
+              {displaySetoranStatus !== "MATCHED" && displaySetoranStatus !== "OK" && closingStatusData?.status !== "CLOSED" && (
                 <button
                   onClick={openSetoranModal}
                   disabled={loading || (closingStatusData?.setoran_required ?? 0) <= 0}
@@ -1073,7 +1109,7 @@ export default function DailyClosingPage({
               <div className="flex justify-between items-center text-slate-600 border-t border-slate-200/60 pt-2">
                 <span className="font-bold">Wajib Setor Sistem (Fisik Cash):</span>
                 <span className="font-mono font-extrabold text-blue-700">
-                  Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0).toLocaleString("id-ID")}
+                  Rp {displayExpected.toLocaleString("id-ID")}
                 </span>
               </div>
             </div>
@@ -1091,7 +1127,7 @@ export default function DailyClosingPage({
                 min={0}
               />
               {(() => {
-                const req = Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0);
+                const req = displayExpected;
                 const act = Number(nominalSetorInput);
                 const diff = act - req;
                 return (

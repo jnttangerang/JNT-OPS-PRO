@@ -1,0 +1,1 @@
+sed -i 's/const isOwner = session?.role === "OWNER" || session?.role === "SUPER_ADMIN" || session?.role === "DEVELOPER";/const isOwner = session?.role === "OWNER" || session?.role === "SUPER_ADMIN" || session?.role === "DEVELOPER";\n  const currentUserId = session?.user_id || session?.username || "SYSTEM";/g' src/components/owner/DailyClosingPage.tsx

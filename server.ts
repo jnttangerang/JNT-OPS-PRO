@@ -5029,11 +5029,14 @@ app.post("/api/createSetoran", (req, res) => {
   if (outData) outletName = outData.nama_outlet;
 
   const expectedCash = totalPhysicalCash;
+  
+  if (actual_cash === undefined && nominal_setor === undefined) {
+    return res.json({ status: "error", message: "Nominal setoran (actual_cash) harus diisi." });
+  }
+
   const submittedCash = actual_cash !== undefined 
     ? Number(actual_cash) 
-    : nominal_setor !== undefined 
-    ? Number(nominal_setor) 
-    : expectedCash;
+    : Number(nominal_setor);
   const variance = submittedCash - expectedCash;
   const varianceStatus = Math.abs(variance) < 0.01 ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
   
