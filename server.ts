@@ -121,7 +121,8 @@ import {
   executeDailyClosing,
   reopenDailyClosing,
   getDailyClosingStatus,
-  getDailyClosingRecord
+  getDailyClosingRecord,
+  getOwnerClosingSummary
 } from "./src/lib/dailyClosingEngine";
 import {
   processCreateSettlement,
@@ -4857,6 +4858,13 @@ app.post("/api/analyzeReview", async (req, res) => {
 // MOCK ENDPOINTS FOR PHASE 5, 6, 7
 // ==========================================
 
+app.post(["/api/getOwnerClosingSummary", "/api/dailyClosing/ownerSummary"], async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
+  const filters = req.body || {};
+  const result = getOwnerClosingSummary(db, filters);
+  return res.json(result);
+});
+
 app.post("/api/getSetoranList", (req, res) => {
   const db = readDb();
   let setoranData = db.Master_Setoran || [];
@@ -4869,6 +4877,23 @@ app.post("/api/getSetoranList", (req, res) => {
     if (date_start && s.tanggal < date_start) return false;
     if (date_end && s.tanggal > date_end) return false;
     return true;
+  });
+
+  // Enrich with expected_cash, actual_cash, variance, variance_status
+  list = list.map((s: any) => {
+    const expected = Number(s.expected_cash ?? s.wajib_setor_owner ?? s.total_setoran_owner ?? 0);
+    const actual = Number(s.actual_cash ?? s.nominal_setor ?? s.nominal ?? s.total_setoran_owner ?? 0);
+    const variance = actual - expected;
+    const variance_status = Math.abs(variance) < 0.01 ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
+    return {
+      ...s,
+      expected_cash: expected,
+      actual_cash: actual,
+      variance,
+      variance_status,
+      total_setoran_owner: actual,
+      wajib_setor_owner: expected
+    };
   });
   
   list = list.reverse(); // newest first
@@ -4893,6 +4918,10 @@ app.post("/api/getSetoranDetail", (req, res) => {
   const hAdmin = header.admin_pembuat;
   
   let txList: any[] = [];
+  let totalCustomerPay = 0;
+  let totalOwnerDeposit = 0;
+  let totalKasOutlet = 0;
+  let totalExpectedCash = 0;
   
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
@@ -4900,46 +4929,69 @@ app.post("/api/getSetoranDetail", (req, res) => {
     const txAdmin = tx.admin_id || "SYSTEM";
     if (txDate === hTanggal && tx.outlet_id === hOutletId && (!hAdmin || txAdmin === hAdmin)) {
       const sum = calculateFinancialSummary(tx);
+      totalCustomerPay += sum.customer_payment;
+      totalOwnerDeposit += sum.owner_deposit;
+      totalKasOutlet += sum.outlet_cash;
+      totalExpectedCash += sum.cash_payment;
+
       txList.push({ 
         ...tx, 
         tipe_layanan: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express",
         grand_total: sum.customer_payment,
         setoran_ke_owner: sum.owner_deposit,
         kas_operasional: sum.outlet_cash,
-        total_dibayar_customer: sum.customer_payment
+        total_dibayar_customer: sum.customer_payment,
+        metode_bayar: tx.metode_bayar || tx.metode_pembayaran_ongkir || "CASH",
+        status_resi: tx.status_resi || tx.status || "OK"
       });
     }
   });
+
+  const expected_cash = Number(header.expected_cash ?? header.wajib_setor_owner ?? totalExpectedCash);
+  const actual_cash = Number(header.actual_cash ?? header.nominal_setor ?? header.nominal ?? header.total_setoran_owner ?? expected_cash);
+  const variance = actual_cash - expected_cash;
+  const variance_status = Math.abs(variance) < 0.01 ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
+
+  const enrichedHeader = {
+    ...header,
+    expected_cash,
+    actual_cash,
+    variance,
+    variance_status,
+    total_setoran_owner: actual_cash,
+    wajib_setor_owner: expected_cash
+  };
+
+  const summary = {
+    outlet_name: header.outlet_name || hOutletId,
+    jumlah_resi: txList.length,
+    expected_cash,
+    actual_cash,
+    variance,
+    variance_status,
+    total_customer_payment: totalCustomerPay,
+    total_setoran_owner: actual_cash,
+    total_wajib_setor_owner: expected_cash,
+    total_kas_outlet: totalKasOutlet
+  };
   
-  return res.json({ status: "success", data: { header, transactions: txList } });
+  return res.json({ status: "success", data: { header: enrichedHeader, summary, transactions: txList } });
 });
 
 app.post("/api/createSetoran", (req, res) => {
   const db = readDb();
-  const { outlet_id, tanggal, admin_id } = req.body;
+  const { outlet_id, tanggal, admin_id, nominal_setor, actual_cash, catatan } = req.body;
   const adminPembuat = admin_id || "SYSTEM";
   
   if (!outlet_id || !tanggal) {
     return res.json({ status: "error", message: "Parameter outlet_id dan tanggal diperlukan." });
   }
   
-  // Duplicate check for responsibility unit: admin_id + outlet_id + tanggal (excluding DITOLAK)
-  let existing = (db.Master_Setoran || db.SetoranData || []).find((s: any) => {
-    const sDate = extractBusinessDate(s);
-    const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "";
-    return sDate === tanggal && s.outlet_id === outlet_id && sAdmin === adminPembuat && s.status !== "DITOLAK";
-  });
-  if (existing) {
-    return res.json({ status: "error", message: `Setoran untuk admin ${adminPembuat} pada outlet dan tanggal ini sudah ada dan tidak dalam status DITOLAK.` });
-  }
-  
-  let outletName = outlet_id;
-  let outData = (db.Outlets || []).find((o: any) => o.outlet_id === outlet_id);
-  if (outData) outletName = outData.nama_outlet;
-  
+  // Find transactions for this admin_id + outlet_id + tanggal
   let txList: any[] = [];
   let totalPhysicalCash = 0; // expected_cash from cash_payment
   let totalKasOutlet = 0;
+  let totalCustomerPay = 0;
   
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
@@ -4950,22 +5002,56 @@ app.post("/api/createSetoran", (req, res) => {
       const sum = calculateFinancialSummary(tx);
       totalPhysicalCash += sum.cash_payment;
       totalKasOutlet += sum.outlet_cash;
+      totalCustomerPay += sum.customer_payment;
     }
   });
   
   if (txList.length === 0) {
-    return res.json({ status: "error", message: `Tidak ada transaksi valid untuk disetor oleh admin ${adminPembuat} pada tanggal ini.` });
+    return res.json({ status: "error", message: `Tidak ada transaksi valid untuk disetor oleh admin ${adminPembuat} pada tanggal ${tanggal}.` });
+  }
+
+  // Duplicate check for responsibility unit: admin_id + outlet_id + tanggal (excluding DITOLAK)
+  let existingIndex = (db.Master_Setoran || []).findIndex((s: any) => {
+    const sDate = extractBusinessDate(s);
+    const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "";
+    return sDate === tanggal && s.outlet_id === outlet_id && sAdmin === adminPembuat;
+  });
+
+  if (existingIndex !== -1) {
+    const existing = db.Master_Setoran[existingIndex];
+    if (existing.status !== "DITOLAK") {
+      return res.json({ status: "error", message: `Setoran untuk admin ${adminPembuat} pada outlet dan tanggal ini sudah diajukan (status: ${existing.status}).` });
+    }
   }
   
+  let outletName = outlet_id;
+  let outData = (db.Outlets || []).find((o: any) => o.outlet_id === outlet_id);
+  if (outData) outletName = outData.nama_outlet;
+
+  const expectedCash = totalPhysicalCash;
+  const submittedCash = actual_cash !== undefined 
+    ? Number(actual_cash) 
+    : nominal_setor !== undefined 
+    ? Number(nominal_setor) 
+    : expectedCash;
+  const variance = submittedCash - expectedCash;
+  const varianceStatus = Math.abs(variance) < 0.01 ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
+  
   const setoranObj = {
-    setoran_id: "SET-" + Date.now(),
+    setoran_id: existingIndex !== -1 ? db.Master_Setoran[existingIndex].setoran_id : "SET-" + Date.now(),
     tanggal,
     outlet_id,
     outlet_name: outletName,
     admin_pembuat: adminPembuat,
     jumlah_resi: txList.length,
-    total_setoran_owner: totalPhysicalCash, // Physical Cash Responsibility
+    expected_cash: expectedCash,
+    actual_cash: submittedCash,
+    variance: variance,
+    variance_status: varianceStatus,
+    wajib_setor_owner: expectedCash,
+    total_setoran_owner: submittedCash,
     total_kas_outlet: totalKasOutlet,
+    catatan_admin: catatan || "",
     status: "MENUNGGU_APPROVAL",
     created_at: new Date().toISOString(),
     approved_at: "",
@@ -4977,7 +5063,12 @@ app.post("/api/createSetoran", (req, res) => {
   };
   
   if (!db.Master_Setoran) db.Master_Setoran = [];
-  db.Master_Setoran.push(setoranObj);
+  if (existingIndex !== -1) {
+    db.Master_Setoran[existingIndex] = setoranObj;
+  } else {
+    db.Master_Setoran.push(setoranObj);
+  }
+
   logAuditEvent(db, {
     actor_id: adminPembuat,
     actor_name: adminPembuat,
@@ -4994,7 +5085,7 @@ app.post("/api/createSetoran", (req, res) => {
   });
   writeDb(db);
   
-  return res.json({ status: "success", message: "Setoran berhasil dibuat", data: setoranObj });
+  return res.json({ status: "success", message: "Setoran berhasil diajukan ke Owner", data: setoranObj });
 });
 
 app.post("/api/approveSetoran", (req, res) => {
@@ -5010,6 +5101,20 @@ app.post("/api/approveSetoran", (req, res) => {
   s.approved_by = admin_id;
   s.catatan_owner = catatan || "";
   
+  logAuditEvent(db, {
+    actor_id: admin_id || "OWNER",
+    actor_name: admin_id || "Owner",
+    actor_role: "OWNER",
+    outlet_id: s.outlet_id,
+    entity_type: "SETORAN",
+    entity_id: setoran_id,
+    event_type: "SETORAN_APPROVED",
+    action: "APPROVE_SETORAN",
+    after: s,
+    result: "SUCCESS",
+    source: "FINANCIAL_ENGINE"
+  });
+
   writeDb(db);
   return res.json({ status: "success", message: "Setoran berhasil disetujui", data: s });
 });

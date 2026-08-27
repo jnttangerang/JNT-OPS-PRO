@@ -94,66 +94,37 @@ export function calculateFinancialSummary(tx: any): any {
 
   const paymentMethod = tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "";
 
-  // If transaction already has computed SSOT fields, trust them directly
-  const hasSSOT = tx.wajib_setor_owner !== undefined || tx.kas_outlet !== undefined || tx.kas_operasional !== undefined;
-  
-  if (hasSSOT) {
-    const owner_deposit = safeNum(tx.wajib_setor_owner ?? tx.setoran_owner ?? tx.setoran_ke_owner ?? 0);
-    const packing = safeNum(tx.biaya_packing ?? tx.packing ?? 0);
-    const amplop = safeNum(tx.biaya_amplop ?? tx.amplop ?? 0);
-    
-    let outlet_cash = safeNum(tx.kas_outlet ?? tx.kas_operasional ?? 0);
-    if (outlet_cash === 0) {
-      outlet_cash = packing + amplop;
-    }
-    
-    const customer_payment = safeNum(tx.jumlah_dibayar_customer ?? tx.grand_total ?? tx.total_customer ?? tx.total_dibayar_customer ?? (owner_deposit + outlet_cash));
-    const rounding = safeNum(tx.pembulatan ?? 0);
-    const classification = classifyPayment(owner_deposit, paymentMethod);
-    
-    return {
-      customer_payment,
-      owner_deposit,
-      outlet_cash,
-      rounding,
-      cash_payment: classification.cash_payment,
-      digital_payment: classification.digital_payment,
-      dfod_outstanding: classification.dfod_outstanding
-    };
-  }
-
   // Pure inputs
-  const ongkir_customer = safeNum(tx.ongkir_customer || tx.ongkir_dasar);
-  const asuransi = safeNum(tx.asuransi || tx.biaya_asuransi);
-  const biaya_lain = safeNum(tx.biaya_lain);
-  const amplop = safeNum(tx.amplop || tx.biaya_amplop);
-  const packing = safeNum(tx.packing || tx.biaya_packing);
+  const ongkir_customer = safeNum(tx.ongkir_customer ?? tx.ongkir_dasar ?? tx.biaya_kirim ?? tx.ongkir_yoyi ?? tx.biaya_ongkir ?? tx.ongkir);
+  const asuransi = safeNum(tx.asuransi ?? tx.biaya_asuransi);
+  const biaya_lain = safeNum(tx.biaya_lain ?? tx.biaya_lain_yoyi);
+  const amplop = safeNum(tx.amplop ?? tx.biaya_amplop);
+  const packing = safeNum(tx.packing ?? tx.biaya_packing);
+  const biaya_tambahan_direct = safeNum(tx.biaya_tambahan ?? tx.surcharge);
   
   // Total Uang Dibayar Customer
-  const total_customer = safeNum(tx.grand_total || tx.total_customer || tx.total_dibayar_customer);
+  const total_customer = safeNum(tx.grand_total ?? tx.total_customer ?? tx.total_dibayar_customer ?? tx.jumlah_dibayar_customer ?? tx.total_bayar ?? tx.total_biaya ?? tx.total_diterima);
   
   // Biaya Dasar Layanan
   const biayaDasarLayanan = ongkir_customer + asuransi + biaya_lain;
   
   // Surcharges / Kas Operasional Outlet
-  const biayaTambahan = amplop + packing;
+  const biayaTambahan = (amplop + packing > 0) ? (amplop + packing) : biaya_tambahan_direct;
 
   // Subtotal sebelum pembulatan
   const subtotal = biayaDasarLayanan + biayaTambahan;
   
-  // Pembulatan (Rounding)
+  // Pembulatan (Rounding) -> Wajib Setor OWNER
   let rounding = 0;
   if (total_customer > 0) {
     rounding = total_customer - subtotal;
     if (rounding < 0) rounding = 0;
   } else {
-    rounding = safeNum(tx.pembulatan);
+    rounding = safeNum(tx.pembulatan ?? tx.rounding);
   }
   
   // Setoran Ke Owner = Biaya Dasar Layanan + Pembulatan
-  const owner_deposit = tx.wajib_setor_owner !== undefined && tx.wajib_setor_owner !== null && safeNum(tx.wajib_setor_owner) > 0 && Math.abs(safeNum(tx.wajib_setor_owner) - (biayaDasarLayanan + rounding)) <= 0.01
-    ? safeNum(tx.wajib_setor_owner)
-    : (biayaDasarLayanan + rounding);
+  const owner_deposit = biayaDasarLayanan + rounding;
   
   // Customer Payment Total
   const customer_payment = total_customer > 0 ? total_customer : (owner_deposit + biayaTambahan);

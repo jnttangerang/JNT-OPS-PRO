@@ -125,6 +125,16 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
     }
   };
 
+  const getVarianceBadge = (variance: number) => {
+    if (Math.abs(variance) < 0.01) {
+      return <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[10px] font-bold font-mono">MATCH (Rp 0)</span>;
+    }
+    if (variance < 0) {
+      return <span className="bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded text-[10px] font-bold font-mono">KURANG (Rp {Math.abs(variance).toLocaleString("id-ID")})</span>;
+    }
+    return <span className="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-[10px] font-bold font-mono">LEBIH (+Rp {variance.toLocaleString("id-ID")})</span>;
+  };
+
   const getStatusBadge = (status: string) => {
     switch(status) {
       case "MENUNGGU_APPROVAL":
@@ -140,6 +150,10 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
 
   if (detail) {
     const { header = {}, summary = {}, transactions = [] } = detail;
+    const expected = Number(summary.expected_cash ?? summary.total_wajib_setor_owner ?? header.expected_cash ?? header.wajib_setor_owner ?? 0);
+    const actual = Number(summary.actual_cash ?? summary.total_setoran_owner ?? header.actual_cash ?? header.total_setoran_owner ?? expected);
+    const variance = actual - expected;
+
     return (
       <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
         <button 
@@ -153,7 +167,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-gray-100 pb-4">
             <div>
               <h2 className="text-lg font-bold text-gray-800">Detail Setoran {header.tanggal}</h2>
-              <p className="text-sm text-gray-500 font-mono mt-1">{header.setoran_id} • {summary.outlet_name}</p>
+              <p className="text-sm text-gray-500 font-mono mt-1">{header.setoran_id} • {summary.outlet_name || header.outlet_name}</p>
             </div>
             <div className="flex items-center gap-3">
               {getStatusBadge(header.status)}
@@ -176,28 +190,28 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Total Transaksi</p>
-              <p className="font-mono text-lg font-black text-gray-800">{summary.jumlah_resi}</p>
+              <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Total Resi</p>
+              <p className="font-mono text-lg font-black text-gray-800">{summary.jumlah_resi ?? transactions.length}</p>
+            </div>
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <p className="text-[10px] text-slate-600 font-bold uppercase tracking-wider mb-1">Wajib Setor</p>
+              <p className="font-mono text-lg font-black text-slate-800">Rp {expected.toLocaleString("id-ID")}</p>
             </div>
             <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-              <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-1">Setoran Owner</p>
-              <p className="font-mono text-lg font-black text-blue-800">Rp {Number(summary.total_setoran_owner).toLocaleString("id-ID")}</p>
+              <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-1">Uang Disetor</p>
+              <p className="font-mono text-lg font-black text-blue-800">Rp {actual.toLocaleString("id-ID")}</p>
+            </div>
+            <div className={`p-4 rounded-xl border ${Math.abs(variance) < 0.01 ? "bg-emerald-50 border-emerald-100" : variance < 0 ? "bg-red-50 border-red-100" : "bg-blue-50 border-blue-100"}`}>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-600">Selisih Rekonsiliasi</p>
+              <p className={`font-mono text-lg font-black ${Math.abs(variance) < 0.01 ? "text-emerald-700" : variance < 0 ? "text-red-700" : "text-blue-700"}`}>
+                {variance === 0 ? "Rp 0 (MATCH)" : (variance < 0 ? `-Rp ${Math.abs(variance).toLocaleString("id-ID")}` : `+Rp ${variance.toLocaleString("id-ID")}`)}
+              </p>
             </div>
             <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100">
               <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1">Kas Operasional</p>
-              <p className="font-mono text-lg font-black text-emerald-800">Rp {Number(summary.total_kas_outlet).toLocaleString("id-ID")}</p>
-            </div>
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex flex-col justify-center">
-              <p className="text-xs text-gray-500">
-                <span className="font-bold">Dibuat:</span> {header.admin_pembuat}
-              </p>
-              {header.approved_by && (
-                <p className="text-xs text-gray-500 mt-1">
-                  <span className="font-bold">Oleh:</span> {header.approved_by}
-                </p>
-              )}
+              <p className="font-mono text-lg font-black text-emerald-800">Rp {Number(summary.total_kas_outlet ?? 0).toLocaleString("id-ID")}</p>
             </div>
           </div>
           
@@ -218,7 +232,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                 <tr>
                   <th className="p-3">Resi</th>
                   <th className="p-3">Layanan</th>
-                  <th className="p-3">Customer</th>
+                  <th className="p-3">Metode Bayar</th>
                   <th className="p-3 text-right">Dibayar Customer</th>
                   <th className="p-3 text-right">Setoran Owner</th>
                   <th className="p-3 text-right">Kas Outlet</th>
@@ -230,8 +244,8 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                   transactions.map((tx: any) => (
                     <tr key={tx.resi_id} className="hover:bg-gray-50/50">
                       <td className="p-3 font-mono font-bold">{tx.resi_id}</td>
-                      <td className="p-3">{tx.tipe_layanan}</td>
-                      <td className="p-3">{tx.transaksi_id}</td> {/* Use transaksi ID or other available info for customer context if needed, currently we don't fetch customer name directly in tx list unless joined, keeping simple */}
+                      <td className="p-3">{tx.tipe_layanan || (tx.ekspedisi === "CARGO" ? "Cargo" : "Express")}</td>
+                      <td className="p-3 font-semibold">{tx.metode_bayar || tx.metode_pembayaran_ongkir || "CASH"}</td>
                       <td className="p-3 text-right font-mono text-gray-800">Rp {Number(tx.total_dibayar_customer).toLocaleString("id-ID")}</td>
                       <td className="p-3 text-right font-mono font-semibold text-blue-700">Rp {Number(tx.setoran_ke_owner).toLocaleString("id-ID")}</td>
                       <td className="p-3 text-right font-mono font-semibold text-emerald-700">Rp {Number(tx.kas_operasional).toLocaleString("id-ID")}</td>
@@ -378,10 +392,11 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                 <th className="p-4">Tanggal</th>
                 <th className="p-4">Outlet</th>
                 <th className="p-4 text-center">Trx</th>
-                <th className="p-4 text-right">Setoran Owner</th>
+                <th className="p-4 text-right">Wajib Setor</th>
+                <th className="p-4 text-right">Uang Disetor</th>
+                <th className="p-4 text-center">Selisih</th>
                 <th className="p-4 text-right">Kas Outlet</th>
                 <th className="p-4">Dibuat Oleh</th>
-                <th className="p-4">Waktu Dibuat</th>
                 <th className="p-4">Status</th>
                 <th className="p-4 text-center">Aksi</th>
               </tr>
@@ -389,7 +404,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             <tbody className="divide-y divide-gray-50 font-sans">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="p-6">
+                  <td colSpan={10} className="p-6">
                     <div className="space-y-3 animate-pulse">
                       {[1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="h-10 bg-gray-100 rounded-lg w-full"></div>
@@ -403,10 +418,11 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                     <td className="p-4 font-mono font-bold text-gray-800">{item.tanggal}</td>
                     <td className="p-4 font-semibold">{item.outlet_name}</td>
                     <td className="p-4 text-center font-mono font-bold">{item.jumlah_resi}</td>
-                    <td className="p-4 text-right font-mono font-semibold text-blue-700">Rp {Number(item.total_setoran_owner).toLocaleString("id-ID")}</td>
-                    <td className="p-4 text-right font-mono font-semibold text-emerald-700">Rp {Number(item.total_kas_outlet).toLocaleString("id-ID")}</td>
+                    <td className="p-4 text-right font-mono font-semibold text-slate-700">Rp {Number(item.expected_cash ?? item.wajib_setor_owner ?? item.total_setoran_owner ?? 0).toLocaleString("id-ID")}</td>
+                    <td className="p-4 text-right font-mono font-semibold text-blue-700">Rp {Number(item.actual_cash ?? item.total_setoran_owner ?? 0).toLocaleString("id-ID")}</td>
+                    <td className="p-4 text-center">{getVarianceBadge(Number(item.variance ?? 0))}</td>
+                    <td className="p-4 text-right font-mono font-semibold text-emerald-700">Rp {Number(item.total_kas_outlet ?? 0).toLocaleString("id-ID")}</td>
                     <td className="p-4 text-xs font-semibold text-gray-700">{item.admin_pembuat}</td>
-                    <td className="p-4 text-[10px] text-gray-500 font-mono">{new Date(item.created_at).toLocaleString("id-ID")}</td>
                     <td className="p-4">{getStatusBadge(item.status)}</td>
                     <td className="p-4 text-center">
                       <button 
@@ -420,7 +436,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                 ))
               ) : (
                 <tr>
-                  <td colSpan={9} className="p-12 text-center text-gray-400">
+                  <td colSpan={10} className="p-12 text-center text-gray-400">
                     <CheckCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
                     <p className="font-semibold text-xs text-gray-600">Belum ada data setoran dalam periode filter ini.</p>
                   </td>

@@ -46,6 +46,9 @@ export default function DailyClosingPage({
   const [closeNotes, setCloseNotes] = useState<string>("");
   const [showReopenModal, setShowReopenModal] = useState<boolean>(false);
   const [reopenReason, setReopenReason] = useState<string>("");
+  const [showSetoranModal, setShowSetoranModal] = useState<boolean>(false);
+  const [nominalSetorInput, setNominalSetorInput] = useState<number | string>("");
+  const [setoranNotes, setSetoranNotes] = useState<string>("");
   
   // Exception Resolution Modal State
   const [selectedException, setSelectedException] = useState<any | null>(null);
@@ -126,18 +129,35 @@ export default function DailyClosingPage({
     actor_role: session?.role || "ADMIN"
   });
 
-  // Action: Create Setoran
-  const handleCreateSetoran = async () => {
-    if (!confirm("Buat Laporan Setoran sejumlah Wajib Setor saat ini?")) return;
+  // Action: Open Setoran Modal
+  const openSetoranModal = () => {
+    const required = Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0);
+    setNominalSetorInput(required);
+    setSetoranNotes("");
+    setShowSetoranModal(true);
+  };
+
+  // Action: Submit Setoran
+  const handleSubmitSetoran = async () => {
+    const nominal = Number(nominalSetorInput);
+    if (isNaN(nominal) || nominal < 0) {
+      toast.error("Nominal uang yang disetor tidak valid.");
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await callBackend("createSetoran", {
         outlet_id: selectedOutlet,
         tanggal: closingDate,
-        admin_id: session?.user_id || session?.username || "SYSTEM"
+        admin_id: session?.user_id || session?.username || "SYSTEM",
+        nominal_setor: nominal,
+        actual_cash: nominal,
+        catatan: setoranNotes.trim()
       });
       if (res.status === "success") {
-        toast.success(res.message || "Laporan setoran berhasil dibuat.");
+        toast.success(res.message || "Laporan setoran berhasil diajukan ke Owner.");
+        setShowSetoranModal(false);
         fetchData();
       } else {
         toast.error(res.message || "Gagal membuat laporan setoran.");
@@ -587,14 +607,14 @@ export default function DailyClosingPage({
                 )}
               </div>
               
-              {closingStatusData?.setoran_status !== "MATCHED" && closingStatusData?.status !== "CLOSED" && session?.role === "ADMIN" && (
+              {closingStatusData?.setoran_status !== "MATCHED" && closingStatusData?.status !== "CLOSED" && (
                 <button
-                  onClick={handleCreateSetoran}
-                  disabled={loading || closingStatusData?.setoran_required <= 0}
-                  className="w-full flex justify-center items-center gap-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  onClick={openSetoranModal}
+                  disabled={loading || (closingStatusData?.setoran_required ?? 0) <= 0}
+                  className="w-full flex justify-center items-center gap-2 px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed cursor-pointer shadow-sm shadow-emerald-600/20"
                 >
                   <DollarSign className="w-4 h-4" />
-                  Buat Laporan Setoran
+                  Buat Laporan Setoran ke Owner
                 </button>
               )}
             </div>
@@ -1019,6 +1039,99 @@ export default function DailyClosingPage({
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 Simpan Keputusan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: SUBMIT SETORAN ADMIN */}
+      {showSetoranModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-gray-200 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-emerald-600" /> Pengajuan Setoran Kasir ke Owner
+              </h3>
+              <button 
+                onClick={() => setShowSetoranModal(false)}
+                className="text-gray-400 hover:text-gray-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2 text-xs">
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Outlet:</span>
+                <span className="font-bold text-slate-800">{selectedOutletName}</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span>Tanggal Operasional:</span>
+                <span className="font-mono font-bold text-slate-800">{closingDate}</span>
+              </div>
+              <div className="flex justify-between items-center text-slate-600 border-t border-slate-200/60 pt-2">
+                <span className="font-bold">Wajib Setor Sistem (Fisik Cash):</span>
+                <span className="font-mono font-extrabold text-blue-700">
+                  Rp {Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0).toLocaleString("id-ID")}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">
+                Nominal Uang Fisik Disetor (Rp)
+              </label>
+              <input
+                type="number"
+                value={nominalSetorInput}
+                onChange={(e) => setNominalSetorInput(e.target.value)}
+                className="w-full p-3 border border-gray-200 rounded-xl text-sm font-mono font-bold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                placeholder="0"
+                min={0}
+              />
+              {(() => {
+                const req = Number(closingStatusData?.setoran_required ?? closingStatusData?.total_cash_payment ?? 0);
+                const act = Number(nominalSetorInput);
+                const diff = act - req;
+                return (
+                  <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                    <span className="text-gray-500">Selisih Kas:</span>
+                    <span className={`font-mono font-bold ${Math.abs(diff) < 0.01 ? "text-emerald-600" : diff < 0 ? "text-red-600" : "text-blue-600"}`}>
+                      {diff === 0 ? "PAS / MATCH (Rp 0)" : diff < 0 ? `KURANG Rp ${Math.abs(diff).toLocaleString("id-ID")}` : `LEBIH +Rp ${diff.toLocaleString("id-ID")}`}
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-gray-700 uppercase mb-1">
+                Catatan / Keterangan (Opsional)
+              </label>
+              <textarea
+                value={setoranNotes}
+                onChange={(e) => setSetoranNotes(e.target.value)}
+                placeholder="Contoh: Titip di brankas outlet, transfer via rekening, selisih kembalian..."
+                className="w-full p-3 border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                rows={2}
+              />
+            </div>
+
+            <div className="flex gap-2 pt-2 justify-end">
+              <button
+                onClick={() => setShowSetoranModal(false)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-xl cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleSubmitSetoran}
+                disabled={loading || Number(nominalSetorInput) < 0}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Kirim Setoran ke Owner
               </button>
             </div>
           </div>

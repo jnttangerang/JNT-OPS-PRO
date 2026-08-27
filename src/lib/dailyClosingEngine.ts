@@ -664,3 +664,247 @@ export function getDailyClosingStatus(db: any, outletId: string, tanggal: string
   const valRes = validateDailyClosing(db, { outlet_id: outletId, tanggal, actor: dummyActor }, { isDryRun: true });
   return { status: "success", data: valRes.data };
 }
+
+export interface OwnerSummaryFilter {
+  outlet_id?: string;
+  admin_id?: string;
+  date_start?: string;
+  date_end?: string;
+  status?: string;
+}
+
+export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}) {
+  const { outlet_id, admin_id, date_start, date_end, status } = filters;
+
+  const userMap: Record<string, string> = {};
+  (db.Users || []).forEach((u: any) => {
+    userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
+  });
+
+  const outletMap: Record<string, string> = {};
+  (db.Outlets || db.Master_Outlet || []).forEach((o: any) => {
+    outletMap[o.outlet_id] = o.nama_outlet || o.nama || o.outlet_id;
+  });
+
+  const allTx = db.MASTER_TRANSAKSI || [];
+  const allSetoran = db.Master_Setoran || db.SetoranData || db.Setoran || [];
+
+  // Group key: `${admin_id}_${outlet_id}_${tanggal}`
+  const groupMap: Record<string, {
+    admin_id: string;
+    admin_nama: string;
+    outlet_id: string;
+    outlet_name: string;
+    tanggal: string;
+    jumlah_resi: number;
+    customer_payment: number;
+    owner_deposit: number;
+    digital_payment: number;
+    dfod_outstanding: number;
+    kas_outlet: number;
+    rounding: number;
+    expected_cash: number;
+    actual_cash: number;
+    variance: number;
+    variance_status: "MATCH" | "SHORT" | "OVER";
+    setoran_status: "BELUM_SUBMIT" | "MENUNGGU_APPROVAL" | "DISETUJUI" | "DITOLAK";
+    setoran_id?: string;
+    closing_status: string;
+    transactions: any[];
+  }> = {};
+
+  allTx.forEach((tx: any) => {
+    if (!isTransactionValidForFinance(tx)) return;
+    const txDate = extractBusinessDate(tx);
+    if (!txDate) return;
+    if (date_start && txDate < date_start) return;
+    if (date_end && txDate > date_end) return;
+    if (outlet_id && outlet_id !== "ALL" && tx.outlet_id !== outlet_id) return;
+    const txAdmin = tx.admin_id || "UNKNOWN";
+    if (admin_id && admin_id !== "ALL" && txAdmin !== admin_id) return;
+
+    const groupKey = `${txAdmin}_${tx.outlet_id}_${txDate}`;
+    if (!groupMap[groupKey]) {
+      groupMap[groupKey] = {
+        admin_id: txAdmin,
+        admin_nama: userMap[txAdmin] || txAdmin,
+        outlet_id: tx.outlet_id,
+        outlet_name: outletMap[tx.outlet_id] || tx.outlet_id,
+        tanggal: txDate,
+        jumlah_resi: 0,
+        customer_payment: 0,
+        owner_deposit: 0,
+        digital_payment: 0,
+        dfod_outstanding: 0,
+        kas_outlet: 0,
+        rounding: 0,
+        expected_cash: 0,
+        actual_cash: 0,
+        variance: 0,
+        variance_status: "MATCH",
+        setoran_status: "BELUM_SUBMIT",
+        closing_status: "OPEN",
+        transactions: []
+      };
+    }
+
+    const sum = calculateFinancialSummary(tx);
+    groupMap[groupKey].jumlah_resi++;
+    groupMap[groupKey].customer_payment += sum.customer_payment;
+    groupMap[groupKey].owner_deposit += sum.owner_deposit;
+    groupMap[groupKey].digital_payment += sum.digital_payment;
+    groupMap[groupKey].dfod_outstanding += sum.dfod_outstanding;
+    groupMap[groupKey].kas_outlet += sum.outlet_cash;
+    groupMap[groupKey].rounding += sum.rounding;
+    groupMap[groupKey].expected_cash += sum.cash_payment;
+    groupMap[groupKey].transactions.push({
+      resi_id: tx.resi_id || tx.no_resi,
+      ekspedisi: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express",
+      customer_payment: sum.customer_payment,
+      wajib_setor_owner: sum.owner_deposit,
+      kas_outlet: sum.outlet_cash,
+      metode_bayar: tx.metode_bayar || tx.metode_pembayaran_ongkir || "CASH",
+      status_resi: tx.status_resi || tx.status || "OK"
+    });
+  });
+
+  // Also include groups from setoran records that might have no transactions matching
+  allSetoran.forEach((s: any) => {
+    const sDate = extractBusinessDate(s);
+    if (!sDate) return;
+    if (date_start && sDate < date_start) return;
+    if (date_end && sDate > date_end) return;
+    if (outlet_id && outlet_id !== "ALL" && s.outlet_id !== outlet_id) return;
+    const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "UNKNOWN";
+    if (admin_id && admin_id !== "ALL" && sAdmin !== admin_id) return;
+
+    const groupKey = `${sAdmin}_${s.outlet_id}_${sDate}`;
+    if (!groupMap[groupKey]) {
+      groupMap[groupKey] = {
+        admin_id: sAdmin,
+        admin_nama: userMap[sAdmin] || sAdmin,
+        outlet_id: s.outlet_id,
+        outlet_name: outletMap[s.outlet_id] || s.outlet_name || s.outlet_id,
+        tanggal: sDate,
+        jumlah_resi: s.jumlah_resi || 0,
+        customer_payment: 0,
+        owner_deposit: 0,
+        digital_payment: 0,
+        dfod_outstanding: 0,
+        kas_outlet: s.total_kas_outlet || 0,
+        rounding: 0,
+        expected_cash: 0,
+        actual_cash: 0,
+        variance: 0,
+        variance_status: "MATCH",
+        setoran_status: "BELUM_SUBMIT",
+        closing_status: "OPEN",
+        transactions: []
+      };
+    }
+  });
+
+  // Process setoran and closing status for each group
+  let rows = Object.values(groupMap).map(row => {
+    // Find active setoran for admin + outlet + date
+    const setoran = allSetoran.find((s: any) => {
+      const sDate = extractBusinessDate(s);
+      const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "UNKNOWN";
+      return sDate === row.tanggal && s.outlet_id === row.outlet_id && sAdmin === row.admin_id;
+    });
+
+    if (setoran) {
+      row.setoran_id = setoran.setoran_id;
+      row.actual_cash = Number(setoran.actual_cash ?? setoran.nominal_setor ?? setoran.nominal ?? setoran.total_setoran_owner ?? 0);
+      row.setoran_status = setoran.status as any;
+      if (setoran.closing_status) {
+        row.closing_status = setoran.closing_status;
+      }
+    } else {
+      row.actual_cash = 0;
+      row.setoran_status = "BELUM_SUBMIT";
+    }
+
+    row.variance = row.actual_cash - row.expected_cash;
+    if (Math.abs(row.variance) < 0.01) {
+      row.variance_status = "MATCH";
+    } else if (row.variance < 0) {
+      row.variance_status = "SHORT";
+    } else {
+      row.variance_status = "OVER";
+    }
+
+    // Check DailyClosing table
+    const closingRecord = getDailyClosingRecord(db, row.outlet_id, row.tanggal);
+    if (closingRecord) {
+      row.closing_status = closingRecord.status;
+    }
+
+    return row;
+  });
+
+  // Filter by status if requested
+  if (status && status !== "ALL") {
+    if (status === "BELUM_SUBMIT") {
+      rows = rows.filter(r => r.setoran_status === "BELUM_SUBMIT");
+    } else if (status === "MENUNGGU_APPROVAL") {
+      rows = rows.filter(r => r.setoran_status === "MENUNGGU_APPROVAL");
+    } else if (status === "DISETUJUI") {
+      rows = rows.filter(r => r.setoran_status === "DISETUJUI");
+    } else if (status === "DITOLAK") {
+      rows = rows.filter(r => r.setoran_status === "DITOLAK");
+    } else if (status === "SHORT") {
+      rows = rows.filter(r => r.variance_status === "SHORT");
+    } else if (status === "OVER") {
+      rows = rows.filter(r => r.variance_status === "OVER");
+    } else if (status === "MATCH") {
+      rows = rows.filter(r => r.variance_status === "MATCH");
+    }
+  }
+
+  // Sort descending by tanggal, then outlet_id
+  rows.sort((a, b) => b.tanggal.localeCompare(a.tanggal) || a.outlet_id.localeCompare(b.outlet_id));
+
+  // Compute aggregate stats across rows
+  let total_expected_cash = 0;
+  let total_actual_cash = 0;
+  let total_variance = 0;
+  let count_belum_submit = 0;
+  let count_submitted = 0;
+  let count_approved = 0;
+  let count_rejected = 0;
+  let count_short = 0;
+  let count_over = 0;
+
+  rows.forEach(r => {
+    total_expected_cash += r.expected_cash;
+    total_actual_cash += r.actual_cash;
+    total_variance += r.variance;
+    if (r.setoran_status === "BELUM_SUBMIT") count_belum_submit++;
+    else if (r.setoran_status === "MENUNGGU_APPROVAL") count_submitted++;
+    else if (r.setoran_status === "DISETUJUI") count_approved++;
+    else if (r.setoran_status === "DITOLAK") count_rejected++;
+
+    if (r.variance_status === "SHORT") count_short++;
+    else if (r.variance_status === "OVER") count_over++;
+  });
+
+  return {
+    status: "success",
+    data: {
+      summary: {
+        total_expected_cash,
+        total_actual_cash,
+        total_variance,
+        count_belum_submit,
+        count_submitted,
+        count_approved,
+        count_rejected,
+        count_short,
+        count_over,
+        total_rows: rows.length
+      },
+      rows
+    }
+  };
+}

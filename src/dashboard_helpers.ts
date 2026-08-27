@@ -1,5 +1,6 @@
 // Reusable Dashboard Services for JNT OPS PRO
 import { getWIBDate, getTodayWIB, shiftWIBDays, extractBusinessDate } from "./utils/dateUtils";
+import { calculateFinancialSummary } from "./lib/financialEngine";
 
 export function getCombinedTransactions(db: any) {
   const combined: any[] = [];
@@ -50,9 +51,17 @@ export function calculateDashboardSummary(filtered: any[]) {
   const totalTransaksi = filtered.length;
   const totalResiExpress = filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "Express") === "Express").length;
   const totalResiCargo = filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "") === "Cargo").length;
-  const totalOmsetGlobal = filtered.reduce((sum: number, r: any) => sum + (r.grand_total || r.total_customer || 0), 0);
-  const totalSetoranOwner = filtered.reduce((sum: number, r: any) => sum + (r.setoran_ke_owner || r.wajib_setor_owner || 0), 0);
-  const totalKasOperasional = filtered.reduce((sum: number, r: any) => sum + (r.kas_operasional || r.kas_outlet || 0), 0);
+  
+  let totalOmsetGlobal = 0;
+  let totalSetoranOwner = 0;
+  let totalKasOperasional = 0;
+
+  for (const r of filtered) {
+    const sum = calculateFinancialSummary(r);
+    totalOmsetGlobal += sum.customer_payment;
+    totalSetoranOwner += sum.owner_deposit;
+    totalKasOperasional += sum.outlet_cash;
+  }
   
   return {
     totalTransaksi,
@@ -83,29 +92,49 @@ export function calculateByAdmin(filtered: any[], users: any[]) {
         kasOutlet: 0
       };
     }
+    const sum = calculateFinancialSummary(r);
     const tipe = (r.tipe_layanan || r.ekspedisi || "Express").toLowerCase();
     if (tipe === "express") adminMap[admin].express++;
     if (tipe === "cargo") adminMap[admin].cargo++;
     adminMap[admin].totalResi++;
-    adminMap[admin].totalSetoranOwner += r.setoran_ke_owner || r.wajib_setor_owner || 0;
-    adminMap[admin].kasOutlet += r.kas_operasional || r.kas_outlet || 0;
+    adminMap[admin].totalSetoranOwner += sum.owner_deposit;
+    adminMap[admin].kasOutlet += sum.outlet_cash;
   });
   return Object.values(adminMap).sort((a: any, b: any) => b.totalResi - a.totalResi);
 }
 
 export function calculateByEkspedisi(filtered: any[]) {
-  const totalResiExpress = filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "Express") === "Express").length;
-  const totalResiCargo = filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "") === "Cargo").length;
+  let expressResi = 0;
+  let expressOmset = 0;
+  let expressSetoran = 0;
+  let cargoResi = 0;
+  let cargoOmset = 0;
+  let cargoSetoran = 0;
+
+  for (const r of filtered) {
+    const sum = calculateFinancialSummary(r);
+    const isCargo = (r.tipe_layanan || r.ekspedisi || "").toLowerCase() === "cargo";
+    if (isCargo) {
+      cargoResi++;
+      cargoOmset += sum.customer_payment;
+      cargoSetoran += sum.owner_deposit;
+    } else {
+      expressResi++;
+      expressOmset += sum.customer_payment;
+      expressSetoran += sum.owner_deposit;
+    }
+  }
+
   return {
     Express: {
-      resi: totalResiExpress,
-      omset: filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "Express") === "Express").reduce((sum, r) => sum + (r.grand_total || r.total_customer || 0), 0),
-      setoran: filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "Express") === "Express").reduce((sum, r) => sum + (r.setoran_ke_owner || r.wajib_setor_owner || 0), 0),
+      resi: expressResi,
+      omset: expressOmset,
+      setoran: expressSetoran,
     },
     Cargo: {
-      resi: totalResiCargo,
-      omset: filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "") === "Cargo").reduce((sum, r) => sum + (r.grand_total || r.total_customer || 0), 0),
-      setoran: filtered.filter((r: any) => (r.tipe_layanan || r.ekspedisi || "") === "Cargo").reduce((sum, r) => sum + (r.setoran_ke_owner || r.wajib_setor_owner || 0), 0),
+      resi: cargoResi,
+      omset: cargoOmset,
+      setoran: cargoSetoran,
     }
   };
 }
