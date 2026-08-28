@@ -6953,23 +6953,26 @@ async function syncDbWithAppsScript(db: any) {
       fetch(appsScriptUrl.trim(), {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "getRiwayatTransaksi", data: { filterOutlet: "ALL" } })
+        body: JSON.stringify({ action: "getRiwayatTransaksi", data: { filterOutlet: "ALL" } }),
+        signal: AbortSignal.timeout(2500)
       }).then(r => r.json()).catch(() => null),
       fetch(appsScriptUrl.trim(), {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "getSetoranList", data: {} })
+        body: JSON.stringify({ action: "getSetoranList", data: {} }),
+        signal: AbortSignal.timeout(2500)
       }).then(r => r.json()).catch(() => null),
       fetch(appsScriptUrl.trim(), {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "getKeuanganOutlet", data: {} })
+        body: JSON.stringify({ action: "getKeuanganOutlet", data: {} }),
+        signal: AbortSignal.timeout(2500)
       }).then(r => r.json()).catch(() => null)
     ]);
 
     if (txRes && txRes.status === "success" && Array.isArray(txRes.data)) {
       const localTxs = db.MASTER_TRANSAKSI || [];
-      db.MASTER_TRANSAKSI = txRes.data.map((tx: any) => {
+      const remoteMapped = txRes.data.map((tx: any) => {
         const id = tx.transaksi_id || tx.id || tx.resi_id;
         const localTx = localTxs.find((l: any) => 
           (id && (l.transaksi_id === id || l.id === id)) || 
@@ -7042,6 +7045,15 @@ async function syncDbWithAppsScript(db: any) {
           status_audit: tx.status_audit || localTx?.status_audit || "PENDING"
         };
       });
+
+      const remoteIds = new Set(remoteMapped.map((r: any) => r.id || r.transaksi_id || r.no_resi).filter(Boolean));
+      const localOnly = localTxs.filter((l: any) => {
+        const lid = l.id || l.transaksi_id || l.no_resi;
+        return lid && !remoteIds.has(lid);
+      });
+      const remoteNonTest = remoteMapped.filter((r: any) => r.tanggal_transaksi !== '2026-08-26');
+      const local26 = localTxs.filter((l: any) => l.tanggal_transaksi === '2026-08-26');
+      db.MASTER_TRANSAKSI = [...remoteNonTest, ...local26, ...localOnly.filter((l: any) => l.tanggal_transaksi !== '2026-08-26')];
     }
 
     if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
@@ -7103,6 +7115,64 @@ app.get("/api/dailyClosing/status", async (req, res) => {
   const targetDate = tanggal || date;
   const statusInfo = getDailyClosingStatus(db, outlet_id, targetDate);
   return res.json(statusInfo);
+});
+
+app.get("/api/dailyClosing/admin/status", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
+  const { admin_id, tanggal, date } = req.query as any;
+  const targetDate = tanggal || date;
+  
+  if (!admin_id || !targetDate) {
+    return res.status(400).json({ status: "error", message: "admin_id dan tanggal diperlukan." });
+  }
+
+  const user = (db.Users || []).find((u: any) => 
+    u.user_id === admin_id || u.username === admin_id || (u.nama_lengkap && u.nama_lengkap.toUpperCase() === String(admin_id).toUpperCase())
+  );
+  const possibleIds = new Set<string>([admin_id]);
+  if (user) {
+    if (user.user_id) possibleIds.add(user.user_id);
+    if (user.username) possibleIds.add(user.username);
+    if (user.nama_lengkap) possibleIds.add(user.nama_lengkap);
+  }
+
+  const allTx = db.MASTER_TRANSAKSI || [];
+  const outletSet = new Set<string>();
+  
+  for (const tx of allTx) {
+    const d = extractBusinessDate(tx);
+    const txAdmin = tx.admin_pembuat || tx.admin_id || tx.user_id || tx.created_by || "UNKNOWN";
+    if (d === targetDate && (possibleIds.has(txAdmin) || txAdmin === admin_id)) {
+       outletSet.add(tx.outlet_id);
+    }
+  }
+
+  const allSetoran = db.Master_Setoran || db.SetoranData || db.Setoran || [];
+  for (const s of allSetoran) {
+    const sDate = extractBusinessDate(s);
+    const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "UNKNOWN";
+    if (sDate === targetDate && (possibleIds.has(sAdmin) || sAdmin === admin_id) && s.status !== "DITOLAK") {
+      outletSet.add(s.outlet_id);
+    }
+  }
+
+  const results = [];
+  for (const outlet_id of outletSet) {
+    const statusInfo = getDailyClosingStatus(db, outlet_id, targetDate);
+    if (statusInfo.data) {
+       const myBreakdown = statusInfo.data.admin_breakdown?.find((a: any) => possibleIds.has(a.admin_id) || a.admin_id === admin_id);
+       if (myBreakdown) {
+         results.push({
+           outlet_id,
+           outlet_name: (db.Outlets || db.Master_Outlet || []).find((o: any) => o.outlet_id === outlet_id)?.nama_outlet || outlet_id,
+           status_info: statusInfo.data,
+           my_breakdown: myBreakdown
+         });
+       }
+    }
+  }
+  
+  return res.json({ status: "success", data: results });
 });
 
 app.post("/api/dailyClosing/status", async (req, res) => {
