@@ -177,9 +177,9 @@ export default function AdminDailySettlementView({
       if (res.ok && (json.status === "success" || json.status === "blocked")) {
         setActiveOutletClosingStatus(json.data || json);
         if (json.status === "success") {
-          toast.success(json.message || `Status gerai '${selectedName}' SIAP TUTUP BUKU.`);
+          toast.success(json.message || `Status outlet '${selectedName}' SIAP TUTUP BUKU.`);
         } else {
-          toast.error(json.message || `Gerai '${selectedName}' belum memenuhi syarat tutup buku.`);
+          toast.error(json.message || `Outlet '${selectedName}' belum memenuhi syarat tutup buku.`);
         }
       } else {
         toast.error(json.message || "Gagal memeriksa kelayakan tutup buku.");
@@ -211,7 +211,7 @@ export default function AdminDailySettlementView({
 
       const json = await res.json();
       if (res.ok && json.status === "success") {
-        toast.success(json.message || `Tutup buku berhasil diselesaikan untuk gerai '${selectedName}'.`);
+        toast.success(json.message || `Tutup buku berhasil diselesaikan untuk outlet '${selectedName}'.`);
         setShowCloseModal(false);
         setCloseNotes("");
         await fetchData();
@@ -258,7 +258,7 @@ export default function AdminDailySettlementView({
             <h1 className="text-2xl font-black text-gray-900 tracking-tight">SETORAN SAYA</h1>
           </div>
           <p className="text-xs text-gray-500 font-semibold">
-            Tanggung jawab kas fisik dari transaksi yang Anda tangani ({currentUserName}).
+            Tanggung jawab setoran harian dari transaksi yang Anda tangani ({currentUserName}).
           </p>
         </div>
 
@@ -289,7 +289,7 @@ export default function AdminDailySettlementView({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
-              <span>TANGGUNG JAWAB KAS FISIK PER OUTLET</span>
+              <span>TANGGUNG JAWAB SETORAN HARIAN PER OUTLET</span>
               <span className="text-xs font-extrabold px-2.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-full border border-emerald-200">
                 {adminSettlementData.length} Outlet
               </span>
@@ -303,7 +303,7 @@ export default function AdminDailySettlementView({
         {loading ? (
           <div className="bg-white rounded-2xl p-10 border border-gray-150 text-center text-gray-400 space-y-3">
             <Loader2 className="w-8 h-8 mx-auto animate-spin text-emerald-600" />
-            <p className="text-xs font-bold">Memeriksa tanggung jawab setoran kas Anda...</p>
+            <p className="text-xs font-bold">Memeriksa tanggung jawab setoran harian Anda...</p>
           </div>
         ) : adminSettlementData.length === 0 ? (
           <div className="bg-white rounded-2xl p-8 border border-gray-150 text-center text-gray-400 space-y-2 shadow-sm">
@@ -355,7 +355,7 @@ export default function AdminDailySettlementView({
                     {/* Card Body Numbers */}
                     <div className="mt-4 space-y-2.5 text-xs">
                       <div className="flex justify-between items-center p-2.5 bg-gray-50 rounded-xl">
-                        <span className="text-gray-600 font-bold">Wajib Setor Kas:</span>
+                        <span className="text-gray-600 font-bold">Wajib Setor Harian:</span>
                         <span className="font-black text-sm text-gray-900">
                           Rp {reqCash.toLocaleString("id-ID")}
                         </span>
@@ -431,7 +431,7 @@ export default function AdminDailySettlementView({
               REKAPITULASI TOTAL SETORAN SAYA
             </h3>
             <p className="text-xs text-slate-300">
-              Total kewajiban kas fisik Anda di seluruh outlet pada {closingDate}
+              Total kewajiban setoran harian Anda di seluruh outlet pada {closingDate}
             </p>
           </div>
           <span className="text-xs font-bold px-3 py-1 bg-slate-700/80 rounded-full border border-slate-600 text-slate-200">
@@ -473,17 +473,17 @@ export default function AdminDailySettlementView({
                   <Lock className="w-4 h-4" />
                 </div>
                 <h3 className="text-base font-black text-gray-900 tracking-tight">
-                  TUTUP BUKU OPERASIONAL GERAI (OUTLET AKTIF)
+                  TUTUP BUKU OPERASIONAL (OUTLET AKTIF)
                 </h3>
               </div>
               <p className="text-xs text-gray-500 font-medium mt-1">
-                Tutup Buku adalah penutupan operasional gerai fisik, terpisah dari kewajiban setoran kas kasir.
+                Tutup Buku adalah penutupan operasional outlet, terpisah dari kewajiban setoran harian admin.
               </p>
             </div>
 
             {/* Dropdown to switch active outlet for closing */}
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-gray-500">Pilih Gerai:</span>
+              <span className="text-xs font-bold text-gray-500">Pilih Outlet:</span>
               <select
                 value={selectedClosingOutlet}
                 onChange={(e) => handleSelectClosingOutlet(e.target.value)}
@@ -525,7 +525,7 @@ export default function AdminDailySettlementView({
               </span>
             </div>
             <p className="text-[11px] text-gray-500">
-              Total Transaksi Gerai: <strong className="text-gray-800">{activeOutletClosingStatus?.transaction_count || 0} resi</strong>
+              Total Transaksi Outlet: <strong className="text-gray-800">{activeOutletClosingStatus?.transaction_count || 0} resi</strong>
             </p>
           </div>
 
@@ -547,7 +547,7 @@ export default function AdminDailySettlementView({
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all shadow-md shadow-blue-600/20 disabled:bg-gray-300 disabled:cursor-not-allowed cursor-pointer"
               >
                 <Lock className="w-3.5 h-3.5 inline mr-1.5" />
-                Tutup Buku Gerai
+                Tutup Buku Outlet
               </button>
             )}
           </div>
@@ -664,7 +664,7 @@ export default function AdminDailySettlementView({
                 <div className="p-1.5 bg-blue-100 rounded-lg text-blue-700">
                   <Lock className="w-4 h-4" />
                 </div>
-                <h3 className="font-bold text-gray-800 text-sm">Konfirmasi Tutup Buku Gerai</h3>
+                <h3 className="font-bold text-gray-800 text-sm">Konfirmasi Tutup Buku Outlet</h3>
               </div>
               <button
                 onClick={() => setShowCloseModal(false)}
@@ -676,7 +676,7 @@ export default function AdminDailySettlementView({
 
             <div className="p-5 space-y-4">
               <p className="text-xs text-gray-600 leading-relaxed">
-                Anda akan menutup buku harian untuk gerai <strong className="text-gray-900">{selectedOutletDisplayName}</strong> tanggal <strong className="text-gray-900">{closingDate}</strong>.
+                Anda akan menutup buku harian untuk outlet <strong className="text-gray-900">{selectedOutletDisplayName}</strong> tanggal <strong className="text-gray-900">{closingDate}</strong>.
               </p>
 
               <div>
@@ -687,7 +687,7 @@ export default function AdminDailySettlementView({
                   value={closeNotes}
                   onChange={(e) => setCloseNotes(e.target.value)}
                   rows={3}
-                  placeholder="Tambahkan catatan serah terima atau kondisi operasional gerai..."
+                  placeholder="Tambahkan catatan serah terima atau kondisi operasional outlet..."
                   className="w-full border border-gray-200 rounded-xl p-3 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-gray-50"
                 />
               </div>

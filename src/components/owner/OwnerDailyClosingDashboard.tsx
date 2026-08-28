@@ -207,7 +207,7 @@ export default function OwnerDailyClosingDashboard({
         outlet_name: r.outlet_name,
         admin_name: r.admin_nama,
         nominal: Number(r.expected_cash),
-        description: `Kasir ${r.admin_nama} belum menyerahkan setoran kas wajib Rp ${Number(r.expected_cash).toLocaleString("id-ID")}.`,
+        description: `Admin ${r.admin_nama} belum menyerahkan setoran kas wajib Rp ${Number(r.expected_cash).toLocaleString("id-ID")}.`,
         aging_label: ag.status_label
       });
     } else if (ag.is_late) {
@@ -259,12 +259,12 @@ export default function OwnerDailyClosingDashboard({
           [outletId]: json.data || json
         }));
         if (json.status === "success") {
-          toast.success(json.message || `Status gerai '${outletName}' SIAP TUTUP BUKU.`);
+          toast.success(json.message || `Status outlet '${outletName}' SIAP TUTUP BUKU.`);
         } else {
-          toast.error(json.message || `Gerai '${outletName}' terkendala tutup buku.`);
+          toast.error(json.message || `Outlet '${outletName}' terkendala tutup buku.`);
         }
       } else {
-        toast.error(json.message || "Gagal memvalidasi gerai.");
+        toast.error(json.message || "Gagal memvalidasi outlet.");
       }
       await fetchData();
     } catch (err: any) {
@@ -300,7 +300,7 @@ export default function OwnerDailyClosingDashboard({
 
       const json = await res.json();
       if (res.ok && json.status === "success") {
-        toast.success(json.message || `Tutup buku berhasil untuk gerai '${closeTargetOutlet.name}'.`);
+        toast.success(json.message || `Tutup buku berhasil untuk outlet '${closeTargetOutlet.name}'.`);
         setShowCloseModal(false);
         setCloseNotes("");
         await fetchData();
@@ -345,7 +345,7 @@ export default function OwnerDailyClosingDashboard({
 
       const json = await res.json();
       if (res.ok && json.status === "success") {
-        toast.success(json.message || `Buku harian gerai '${reopenTargetOutlet.name}' berhasil dibuka kembali (REOPENED).`);
+        toast.success(json.message || `Buku harian outlet '${reopenTargetOutlet.name}' berhasil dibuka kembali (REOPENED).`);
         setShowReopenModal(false);
         setReopenReason("");
         await fetchData();
@@ -434,7 +434,7 @@ export default function OwnerDailyClosingDashboard({
             </h1>
           </div>
           <p className="text-xs text-gray-500 font-semibold">
-            Monitoring konsolidasi kas dan kepatuhan setoran seluruh gerai ({outlets.length} Cabang Terdaftar).
+            Monitoring konsolidasi kas dan kepatuhan setoran seluruh outlet ({outlets.length} Cabang Terdaftar).
           </p>
         </div>
 
@@ -482,7 +482,7 @@ export default function OwnerDailyClosingDashboard({
       <div className="space-y-3">
         <h2 className="text-xs font-black uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
           <Store className="w-4 h-4 text-indigo-600" />
-          <span>RINGKASAN PORTFOLIO KONSOLIDASI (SEMUA GERAI)</span>
+          <span>RINGKASAN PORTFOLIO KONSOLIDASI (SEMUA OUTLET)</span>
         </h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -492,7 +492,7 @@ export default function OwnerDailyClosingDashboard({
               Rp {totalExpectedAll.toLocaleString("id-ID")}
             </div>
             <p className="text-[10px] text-gray-400 font-medium">
-              Akumulasi kas fisik seluruh kasir & outlet
+              Akumulasi kas fisik seluruh admin & outlet
             </p>
           </div>
 
@@ -512,7 +512,7 @@ export default function OwnerDailyClosingDashboard({
               Rp {totalOutstandingAll.toLocaleString("id-ID")}
             </div>
             <p className="text-[10px] text-amber-700 font-medium">
-              Sisa kewajiban kasir yang belum disetor
+              Sisa kewajiban admin yang belum disetor
             </p>
           </div>
 
@@ -524,7 +524,7 @@ export default function OwnerDailyClosingDashboard({
               <span className="text-amber-600">{pendingCount} Menunggu</span>
             </div>
             <p className="text-[10px] text-gray-400 font-medium">
-              {rows.length} entri kasir terdeteksi hari ini
+              {rows.length} entri admin terdeteksi hari ini
             </p>
           </div>
         </div>
@@ -550,7 +550,7 @@ export default function OwnerDailyClosingDashboard({
           <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-800 flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
             <div>
-              <p className="text-xs font-black">Semua Gerai & Setoran Berjalan Tertib</p>
+              <p className="text-xs font-black">Semua Outlet & Setoran Berjalan Tertib</p>
               <p className="text-[11px] text-emerald-700 font-medium">
                 Tidak ada setoran yang belum dibuat, tidak ada selisih, dan seluruh setoran tepat waktu untuk tanggal ini.
               </p>
@@ -574,7 +574,7 @@ export default function OwnerDailyClosingDashboard({
                   </div>
 
                   <p className="text-xs font-bold text-amber-950 mt-1">
-                    {item.admin_name ? `Kasir: ${item.admin_name}` : item.title}
+                    {item.admin_name ? `Admin: ${item.admin_name}` : item.title}
                   </p>
 
                   <p className="text-[11px] text-gray-600 mt-1 leading-relaxed">
@@ -592,7 +592,7 @@ export default function OwnerDailyClosingDashboard({
                     }}
                     className="text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer"
                   >
-                    <span>Tinjau Gerai</span>
+                    <span>Tinjau Outlet</span>
                     <ArrowUpRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -607,13 +607,13 @@ export default function OwnerDailyClosingDashboard({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
-              <span>SETTLEMENT KAS PER GERAI & ADMIN</span>
+              <span>SETTLEMENT KAS PER OUTLET & ADMIN</span>
               <span className="text-xs font-extrabold px-2.5 py-0.5 bg-gray-200 text-gray-800 rounded-full">
-                {Object.keys(outletGroups).length} Gerai
+                {Object.keys(outletGroups).length} Outlet
               </span>
             </h2>
             <p className="text-xs text-gray-500 font-medium">
-              Rincian kewajiban kas fisik dan drill-down kasir per cabang untuk tanggal {closingDate}.
+              Rincian kewajiban kas fisik dan drill-down admin per cabang untuk tanggal {closingDate}.
             </p>
           </div>
         </div>
@@ -701,14 +701,14 @@ export default function OwnerDailyClosingDashboard({
                   <div className="p-5 bg-gray-50/50 space-y-4">
                     {group.admins.length === 0 ? (
                       <div className="p-4 bg-white rounded-xl border border-gray-200 text-center text-gray-400 text-xs font-semibold">
-                        Tidak ada transaksi atau setoran kasir tercatat di gerai ini pada tanggal {closingDate}.
+                        Tidak ada transaksi atau setoran admin tercatat di outlet ini pada tanggal {closingDate}.
                       </div>
                     ) : (
                       <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
                         <table className="w-full text-left text-xs border-collapse">
                           <thead>
                             <tr className="bg-gray-100/75 border-b border-gray-200 text-gray-600 font-black uppercase text-[10px]">
-                              <th className="p-3">Kasir (Admin)</th>
+                              <th className="p-3">Admin</th>
                               <th className="p-3 text-center">Resi Tunai</th>
                               <th className="p-3 text-right">Wajib Setor Kas</th>
                               <th className="p-3 text-right">Disetor</th>
@@ -816,7 +816,7 @@ export default function OwnerDailyClosingDashboard({
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-gray-100 text-gray-600 font-black uppercase text-[10px]">
-                  <th className="p-3">Gerai</th>
+                  <th className="p-3">Outlet</th>
                   <th className="p-3">Tipe Kendala</th>
                   <th className="p-3">Tingkat</th>
                   <th className="p-3">Deskripsi</th>
@@ -871,7 +871,7 @@ export default function OwnerDailyClosingDashboard({
         )}
       </div>
 
-      {/* 6. SECTION 5 — DAILY CLOSING STATUS & CONTROL (TUTUP BUKU PER GERAI) */}
+      {/* 6. SECTION 5 — DAILY CLOSING STATUS & CONTROL (TUTUP BUKU PER OUTLET) */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-150 p-6 space-y-4">
         <div className="flex items-center justify-between border-b border-gray-100 pb-3">
           <div className="flex items-center gap-2">
@@ -879,7 +879,7 @@ export default function OwnerDailyClosingDashboard({
               <Lock className="w-4 h-4" />
             </div>
             <h2 className="text-base font-black text-gray-900 tracking-tight">
-              STATUS TUTUP BUKU & KONTROL OTORISASI PER GERAI
+              STATUS TUTUP BUKU & KONTROL OTORISASI PER OUTLET
             </h2>
           </div>
           <span className="text-xs text-gray-500 font-medium">
@@ -1014,7 +1014,7 @@ export default function OwnerDailyClosingDashboard({
             <div className="p-5 space-y-4">
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
                 <div className="flex justify-between">
-                  <span className="font-medium text-amber-700">Gerai:</span>
+                  <span className="font-medium text-amber-700">Outlet:</span>
                   <span className="font-bold">{reopenTargetOutlet.name} ({reopenTargetOutlet.id})</span>
                 </div>
                 <div className="flex justify-between">
@@ -1067,7 +1067,7 @@ export default function OwnerDailyClosingDashboard({
                 <div className="p-1.5 bg-blue-100 rounded-lg text-blue-700">
                   <Lock className="w-4 h-4" />
                 </div>
-                <h3 className="font-bold text-gray-800 text-sm">Tutup Buku Gerai (Owner)</h3>
+                <h3 className="font-bold text-gray-800 text-sm">Tutup Buku Outlet (Owner)</h3>
               </div>
               <button
                 onClick={() => setShowCloseModal(false)}
@@ -1079,7 +1079,7 @@ export default function OwnerDailyClosingDashboard({
 
             <div className="p-5 space-y-4">
               <p className="text-xs text-gray-600 leading-relaxed">
-                Anda akan menutup operasional gerai <strong className="text-gray-900">{closeTargetOutlet.name}</strong> untuk tanggal <strong className="text-gray-900">{closingDate}</strong>.
+                Anda akan menutup operasional outlet <strong className="text-gray-900">{closeTargetOutlet.name}</strong> untuk tanggal <strong className="text-gray-900">{closingDate}</strong>.
               </p>
 
               <div>
@@ -1215,7 +1215,7 @@ export default function OwnerDailyClosingDashboard({
                     Rincian Transaksi: {selectedAdminTransactions.admin_nama}
                   </h3>
                   <p className="text-[10px] text-gray-500">
-                    Gerai: {selectedAdminTransactions.outlet_name} ({selectedAdminTransactions.outlet_id}) • Tanggal: {selectedAdminTransactions.tanggal}
+                    Outlet: {selectedAdminTransactions.outlet_name} ({selectedAdminTransactions.outlet_id}) • Tanggal: {selectedAdminTransactions.tanggal}
                   </p>
                 </div>
               </div>
