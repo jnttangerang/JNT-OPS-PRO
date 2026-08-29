@@ -162,24 +162,26 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         
         const sumber = getColValue(row, ["Sumber", "Source"]);
         const status = getColValue(row, ["Status", "Status Paket"]);
-        const pengirim = getColValue(row, ["Nama Pengirim", "Pengirim", "Sender"]);
-        const hpPengirim = getColValue(row, ["No. HP Pengirim", "Telp Pengirim", "No HP Pengirim"]);
-        const alamatPengirim = getColValue(row, ["Alamat Pengirim", "Alamat"]);
-        const penerima = getColValue(row, ["Nama Penerima", "Penerima", "Receiver"]);
-        const hpPenerima = getColValue(row, ["No. HP Penerima", "Telp Penerima", "No HP Penerima"]);
-        const alamatPenerima = getColValue(row, ["Alamat Penerima"]);
+        const pengirim = getColValue(row, ["Nama Pengirim", "Pengirim", "Sender", "Nama"]);
+        const hpPengirim = getColValue(row, ["No. HP Pengirim", "Telp Pengirim", "No HP Pengirim", "HP Pengirim", "Telepon Pengirim", "Phone Pengirim", "Sender Phone", "Sender Contact", "No. Telepon Pengirim", "No. HP", "No HP"]);
+        const alamatPengirim = getColValue(row, ["Alamat Pengirim", "Alamat", "Alamat Asal"]);
+        const penerima = getColValue(row, ["Nama Penerima", "Penerima", "Receiver", "Nama Tujuan"]);
+        const hpPenerima = getColValue(row, ["No. HP Penerima", "Telp Penerima", "No HP Penerima", "HP Penerima", "Telepon Penerima", "Phone Penerima", "Receiver Phone", "Receiver Contact", "No. Telepon Penerima"]);
+        const alamatPenerima = getColValue(row, ["Alamat Penerima", "Alamat Tujuan", "Destinasi"]);
         
-        const ongkir = parseCurrency(getColValue(row, ["Biaya Pengiriman", "Ongkir", "Biaya"]));
+        const ongkir = parseCurrency(getColValue(row, ["Biaya Pengiriman", "Ongkir", "Biaya", "Perhitungan Biaya pengiriman", "Ongkir Dasar"]));
         const asuransi = parseCurrency(getColValue(row, ["Asuransi", "Biaya Asuransi"]));
-        const total = parseCurrency(getColValue(row, ["Total", "Grand Total", "Total Tagihan"]));
+        const total = parseCurrency(getColValue(row, ["Total", "Grand Total", "Total Tagihan", "Perhitungan Biaya pengiriman"]));
         const biayaLain = total > 0 ? (total - (ongkir + asuransi)) : 0;
         
         const operator = getColValue(row, ["Operator", "Admin", "Nama Operator"]);
         const jenisBarang = getColValue(row, ["Jenis Barang", "Tipe Barang", "Kategori Barang", "Jenis Paket"]);
         const namaBarang = getColValue(row, ["Nama Barang", "Isi Paket", "Deskripsi", "Deskripsi Barang", "Barang", "Nama Paket", "Komoditi"]);
         const tipeAsuransi = getColValue(row, ["Tipe Asuransi", "Asuransi Tipe", "Jenis Asuransi"]);
-        const metodeBayar = getColValue(row, ["Metode Pembayaran", "Pembayaran"]);
         const tipeProduk = getColValue(row, ["Tipe Produk", "Tipe", "Layanan", "Jenis Layanan"]);
+        const rawMetode = getColValue(row, ["Metode Pembayaran", "Pembayaran", "Metode Bayar", "Payment Method", "Tipe Pembayaran", "Cara Bayar"]);
+        const isDfodDetected = String(rawMetode).toUpperCase().includes("DFOD") || String(tipeProduk).toUpperCase().includes("DFOD") || String(sumber).toUpperCase().includes("DFOD");
+        const metodeBayar = isDfodDetected ? "DFOD" : (rawMetode || "Tunai");
         
         const kodeOutletRaw = getColValue(row, ["Outlet", "Kode Outlet", "Nama Outlet", "Kode Tempat"]);
         

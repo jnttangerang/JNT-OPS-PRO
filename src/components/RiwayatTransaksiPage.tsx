@@ -42,9 +42,14 @@ interface TransaksiItem {
   admin: string;
   outlet: string;
   tipe: "Express" | "Cargo";
+  tipe_produk?: string;
+  jenis_barang?: string;
+  metode_bayar?: string;
   grand_total: number;
   pengirim: string;
   penerima: string;
+  hp_pengirim?: string;
+  hp_penerima?: string;
   nama_barang: string;
   status_resi: string;
 }
@@ -55,6 +60,7 @@ interface TransaksiDetail {
   timestamp: string;
   tipe: "Express" | "Cargo";
   tipe_produk: string;
+  jenis_barang?: string;
   admin_id: string;
   admin_name: string;
   outlet_id: string;
@@ -584,6 +590,31 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                           }`}>
                             {item.tipe}
                           </span>
+                          {item.tipe_produk && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider bg-violet-50 text-violet-700 border border-violet-100">
+                              {item.tipe_produk}
+                            </span>
+                          )}
+                          {item.jenis_barang && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
+                              item.jenis_barang === "DOKUMEN" ? "bg-amber-50 text-amber-700 border border-amber-200 font-extrabold" : "bg-slate-50 text-slate-700 border border-slate-200"
+                            }`}>
+                              {item.jenis_barang}
+                            </span>
+                          )}
+                          {item.metode_bayar && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
+                              item.metode_bayar === "DFOD"
+                                ? "bg-amber-100 text-amber-900 border border-amber-300 font-black shadow-xs"
+                                : item.metode_bayar === "Transfer"
+                                ? "bg-indigo-50 text-indigo-700 border border-indigo-100"
+                                : item.metode_bayar === "QRIS"
+                                ? "bg-teal-50 text-teal-700 border border-teal-100"
+                                : "bg-gray-100 text-gray-700 border border-gray-200"
+                            }`}>
+                              {item.metode_bayar}
+                            </span>
+                          )}
                           {item.status_resi === "BATAL" ? (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-100">
                               BATAL
@@ -599,8 +630,16 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                           <p><span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: {new Date(item.timestamp).toLocaleString("id-ID")}</p>
                           <p><span className="font-medium text-gray-400 w-16 inline-block">Admin</span>: <span className="font-semibold text-gray-700">{highlightText(getAdminName(item.admin), searchTerm)}</span></p>
                           <p><span className="font-medium text-gray-400 w-16 inline-block">Outlet</span>: {item.outlet}</p>
-                          <p className="mt-1 text-gray-500 font-medium">
-                            {highlightText(item.pengirim || "Umum", searchTerm)} ➔ {highlightText(item.penerima || "Umum", searchTerm)}
+                          <p className="mt-1 text-gray-600 font-medium flex items-center gap-1.5 flex-wrap">
+                            <span>
+                              {highlightText(item.pengirim || "Umum", searchTerm)}
+                              {item.hp_pengirim ? <span className="text-gray-400 font-mono text-[11px] ml-1">({item.hp_pengirim})</span> : null}
+                            </span>
+                            <span className="text-gray-400">➔</span>
+                            <span>
+                              {highlightText(item.penerima || "Umum", searchTerm)}
+                              {item.hp_penerima ? <span className="text-gray-400 font-mono text-[11px] ml-1">({item.hp_penerima})</span> : null}
+                            </span>
                             {item.nama_barang && item.nama_barang !== "-" && (
                               <span className="text-gray-400 ml-1 italic font-normal">
                                 ({highlightText(item.nama_barang, searchTerm)})
@@ -775,10 +814,14 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
             </div>
 
             {/* Info Badge */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-gray-50 p-3 rounded-xl text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 bg-gray-50 p-3 rounded-xl text-xs">
               <div>
                 <span className="text-gray-400 block text-[10px] uppercase font-bold">Layanan</span>
                 <span className="font-bold text-gray-800">{selectedDetail.tipe} ({selectedDetail.tipe_produk})</span>
+              </div>
+              <div>
+                <span className="text-gray-400 block text-[10px] uppercase font-bold">Metode Bayar</span>
+                <span className={`font-bold ${selectedDetail.metode_bayar === 'DFOD' ? 'text-amber-700 font-black' : 'text-gray-800'}`}>{selectedDetail.metode_bayar}</span>
               </div>
               <div>
                 <span className="text-gray-400 block text-[10px] uppercase font-bold">Status</span>
@@ -804,7 +847,10 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                   Pengirim
                 </div>
                 <p className="text-sm font-semibold text-gray-800">{selectedDetail.nama_pengirim || "Umum"}</p>
-                <p className="text-xs text-gray-500">{selectedDetail.hp_pengirim || "-"}</p>
+                <p className="text-xs text-gray-700 font-mono font-medium flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5 text-gray-400" />
+                  {selectedDetail.hp_pengirim && selectedDetail.hp_pengirim !== "-" ? selectedDetail.hp_pengirim : <span className="text-gray-400 italic">No HP tidak tersedia</span>}
+                </p>
                 <p className="text-xs text-gray-600 leading-relaxed">{selectedDetail.alamat_pengirim || "-"}</p>
               </div>
 
@@ -814,7 +860,10 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                   Penerima
                 </div>
                 <p className="text-sm font-semibold text-gray-800">{selectedDetail.nama_penerima || "Umum"}</p>
-                <p className="text-xs text-gray-500">{selectedDetail.hp_penerima || "-"}</p>
+                <p className="text-xs text-gray-700 font-mono font-medium flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5 text-gray-400" />
+                  {selectedDetail.hp_penerima && selectedDetail.hp_penerima !== "-" ? selectedDetail.hp_penerima : <span className="text-gray-400 italic">No HP tidak tersedia</span>}
+                </p>
                 <p className="text-xs text-gray-600 leading-relaxed">{selectedDetail.alamat_penerima || "-"}</p>
               </div>
             </div>

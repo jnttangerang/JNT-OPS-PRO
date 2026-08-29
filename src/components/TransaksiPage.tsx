@@ -104,11 +104,19 @@ export default function TransaksiPage({
     }
 
     // 4. Set metode bayar (DFOD detection)
-    if (parsed.metode_perhitungan && parsed.metode_perhitungan.toUpperCase().includes("DFOD")) {
+    const isDfod = 
+      (parsed.metode_pembayaran && parsed.metode_pembayaran.toUpperCase().includes("DFOD")) ||
+      (parsed.metode_perhitungan && parsed.metode_perhitungan.toUpperCase().includes("DFOD")) ||
+      (parsed.tipe_produk && parsed.tipe_produk.toUpperCase().includes("DFOD")) ||
+      (Boolean((parsed as any).metode_bayar) && String((parsed as any).metode_bayar).toUpperCase().includes("DFOD")) ||
+      (Boolean(parsed.raw_text) && /\bDFOD\b/i.test(parsed.raw_text || ""));
+
+    if (isDfod) {
       setMetodeBayar("DFOD");
       setTotalUangDibayarInput("0");
     } else {
-      setMetodeBayar("Tunai");
+      const explicitMethod = parsed.metode_pembayaran || (parsed as any).metode_bayar || "Tunai";
+      setMetodeBayar(explicitMethod);
       const calculatedBiayaLain = baseBiayaLain;
       const calculatedAmplop = isDoc ? 2000 : 0;
       const totalCost = (Number(parsed.ongkir_dasar) || 0) + (Number(parsed.asuransi) || 0) + calculatedBiayaLain + calculatedAmplop;

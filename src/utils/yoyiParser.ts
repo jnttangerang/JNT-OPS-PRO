@@ -19,6 +19,9 @@ export interface YoYiParsedData {
   biaya_amplop?: number;
   total_yoyi: number;
   metode_perhitungan: string;
+  metode_pembayaran?: string;
+  metode_bayar?: string;
+  raw_text?: string;
   source_order?: string;
   nama_barang: string;
   berat_kg: number;
@@ -90,32 +93,45 @@ export function parseYoYiText(text: string): YoYiParsedData {
     }
   }
 
-  // Helper to check if a line looks like a known header or label
+  // Helper to check if a line looks like a known header or section label
   const isHeaderLine = (lineStr: string) => {
-    const l = lineStr.toLowerCase();
+    const l = lineStr.toLowerCase().trim();
+    if (
+      l.includes("telepon") ||
+      l.includes("no. hp") ||
+      l.includes("no hp") ||
+      l.includes("no. telp") ||
+      l.includes("no telp")
+    ) {
+      return false;
+    }
     return (
       l.startsWith("informasi") ||
-      l.startsWith("pengirim") ||
-      l.startsWith("penerima") ||
+      l.startsWith("pengirim:") ||
+      l.startsWith("penerima:") ||
       l.startsWith("kode pos") ||
       l.startsWith("wilayah") ||
       l.startsWith("detail alamat") ||
       l.startsWith("alamat") ||
-      l.startsWith("no.") ||
+      l.startsWith("no. pesanan") ||
+      l.startsWith("no. resi") ||
+      l.startsWith("no resi") ||
       l.startsWith("jenis barang") ||
       l.startsWith("nama barang") ||
       l.startsWith("berat") ||
       l.startsWith("ongkir") ||
       l.startsWith("biaya") ||
       l.startsWith("riwayat") ||
-      l.startsWith("buat pesanan")
+      l.startsWith("buat pesanan") ||
+      l.startsWith("metode perhitungan") ||
+      l.startsWith("metode pembayaran")
     );
   };
 
   // 3. Line by Line Scan for Financials, Addresses, & Items
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
-    const lower = line.toLowerCase();
+    const lower = line.toLowerCase().trim();
 
     // Context tracking for sections
     if (lower === "informasi pengirim" || lower.startsWith("informasi pengirim") || lower === "data pengirim") {
@@ -128,6 +144,23 @@ export function parseYoYiText(text: string): YoYiParsedData {
       currentSection = "biaya";
     } else if (lower.includes("riwayat operasi")) {
       currentSection = "operasi";
+    }
+
+    // Metode Perhitungan / Pembayaran
+    if (
+      lower.includes("metode perhitungan") ||
+      lower.includes("metode pembayaran") ||
+      lower.includes("tipe pembayaran") ||
+      lower.startsWith("pembayaran:")
+    ) {
+      const payMatch = line.match(/(?:Metode\s*perhitungan|Metode\s*pembayaran|Tipe\s*pembayaran|Pembayaran)[:\s]*([^\n\r]*)/i);
+      let val = payMatch ? payMatch[1].replace(/^[:\s-]+/, "").trim() : "";
+      if (!val && i + 1 < rawLines.length && !isHeaderLine(rawLines[i + 1])) {
+        val = rawLines[i + 1].replace(/^[:\s-]+/, "").trim();
+      }
+      if (val && val !== "--" && val !== "-") {
+        result.metode_perhitungan = val;
+      }
     }
 
     // Asuransi
@@ -176,8 +209,8 @@ export function parseYoYiText(text: string): YoYiParsedData {
     }
 
     // Tipe Layanan / Produk
-    if (lower.includes("layanan") || lower.includes("produk") || lower.includes("service")) {
-      const prodMatch = line.match(/(?:Layanan|Produk|Service)[:\s]*([A-Z0-9_]+)/i);
+    if (lower.includes("tipe produk") || lower.startsWith("layanan") || lower.startsWith("produk") || lower.startsWith("service")) {
+      const prodMatch = line.match(/(?:Tipe\s*Produk|Layanan|Produk|Service)[:\s]*([A-Z0-9_]+)/i);
       if (prodMatch) {
         result.tipe_produk = prodMatch[1].toUpperCase();
       } else if (i + 1 < rawLines.length && /^[A-Z0-9_]{2,10}$/i.test(rawLines[i + 1])) {
@@ -251,6 +284,33 @@ export function parseYoYiText(text: string): YoYiParsedData {
       }
     }
 
+    // Phone Pengirim
+    if (
+      lower.includes("telepon pengirim") ||
+      lower.includes("hp pengirim") ||
+      lower.includes("telp pengirim") ||
+      lower.includes("no. hp pengirim") ||
+      lower.includes("no. telp pengirim") ||
+      lower.includes("no hp pengirim") ||
+      lower.includes("no telepon pengirim") ||
+      ((lower.startsWith("no. telepon") || lower.startsWith("no telepon") || lower.startsWith("no. hp") || lower.startsWith("no hp") || lower.startsWith("telepon") || lower.startsWith("telp")) && currentSection === "pengirim")
+    ) {
+      const inlineMatch = line.match(/(?:\+?62[\d\s-]{8,15}|08[\d\s-]{8,13}|\b\d{9,15}\b)/);
+      if (inlineMatch) {
+        result.no_hp_pengirim = inlineMatch[0].replace(/[\s-]/g, "");
+      } else if (i + 1 < rawLines.length) {
+        const nextClean = rawLines[i + 1].replace(/[\s-]/g, "");
+        if (/^(?:\+?62|08|\d{9,15})\d+$/.test(nextClean)) {
+          result.no_hp_pengirim = nextClean;
+        }
+      }
+    } else if (currentSection === "pengirim" && !result.no_hp_pengirim) {
+      const clean = line.replace(/[\s-]/g, "");
+      if (/^(?:\+?62|08)\d{8,13}$/.test(clean)) {
+        result.no_hp_pengirim = clean;
+      }
+    }
+
     // Detail Alamat Pengirim
     if (
       lower.includes("detail alamat pengirim") ||
@@ -274,6 +334,33 @@ export function parseYoYiText(text: string): YoYiParsedData {
         result.nama_penerima = cleanLine.replace(/\([^\)]*\)/g, "").trim();
       } else if (i + 1 < rawLines.length && !isHeaderLine(rawLines[i + 1])) {
         result.nama_penerima = rawLines[i + 1].trim();
+      }
+    }
+
+    // Phone Penerima
+    if (
+      lower.includes("telepon penerima") ||
+      lower.includes("hp penerima") ||
+      lower.includes("telp penerima") ||
+      lower.includes("no. hp penerima") ||
+      lower.includes("no. telp penerima") ||
+      lower.includes("no hp penerima") ||
+      lower.includes("no telepon penerima") ||
+      ((lower.startsWith("no. telepon") || lower.startsWith("no telepon") || lower.startsWith("no. hp") || lower.startsWith("no hp") || lower.startsWith("telepon") || lower.startsWith("telp")) && currentSection === "penerima")
+    ) {
+      const inlineMatch = line.match(/(?:\+?62[\d\s-]{8,15}|08[\d\s-]{8,13}|\b\d{9,15}\b)/);
+      if (inlineMatch) {
+        result.no_hp_penerima = inlineMatch[0].replace(/[\s-]/g, "");
+      } else if (i + 1 < rawLines.length) {
+        const nextClean = rawLines[i + 1].replace(/[\s-]/g, "");
+        if (/^(?:\+?62|08|\d{9,15})\d+$/.test(nextClean)) {
+          result.no_hp_penerima = nextClean;
+        }
+      }
+    } else if (currentSection === "penerima" && !result.no_hp_penerima) {
+      const clean = line.replace(/[\s-]/g, "");
+      if (/^(?:\+?62|08)\d{8,13}$/.test(clean)) {
+        result.no_hp_penerima = clean;
       }
     }
 
@@ -313,14 +400,19 @@ export function parseYoYiText(text: string): YoYiParsedData {
     }
   }
 
-  // 4. Fallbacks and Phone numbers
+  // 4. Fallbacks and Phone numbers with robust multi-line patterns
   if (!result.no_hp_pengirim) {
-    const hpPengirim = text.match(/(?:(?:Telp|HP|No\.?\s*HP|No\.?\s*Telepon)\s*(?:Pengirim)?|Pengirim[^\n\r]*?)[:\s]*(\+?62[\d\s-]{8,15}|08[\d\s-]{8,13})/i);
+    const hpPengirim = text.match(/(?:(?:Telp|HP|No\.?\s*HP|No\.?\s*Telepon|Telepon)\s*(?:Pengirim)?|Pengirim[^\n\r]*?)[\s:]*[\r\n\s]*(\+?62[\d\s-]{8,15}|08[\d\s-]{8,13})/i);
     if (hpPengirim) result.no_hp_pengirim = hpPengirim[1].replace(/[\s-]/g, "");
   }
   if (!result.no_hp_penerima) {
-    const hpPenerima = text.match(/(?:(?:Telp|HP|No\.?\s*HP|No\.?\s*Telepon)\s*(?:Penerima)?|Penerima[^\n\r]*?)[:\s]*(\+?62[\d\s-]{8,15}|08[\d\s-]{8,13})/i);
+    const hpPenerima = text.match(/(?:(?:Telp|HP|No\.?\s*HP|No\.?\s*Telepon|Telepon)\s*(?:Penerima)?|Penerima[^\n\r]*?)[\s:]*[\r\n\s]*(\+?62[\d\s-]{8,15}|08[\d\s-]{8,13})/i);
     if (hpPenerima) result.no_hp_penerima = hpPenerima[1].replace(/[\s-]/g, "");
+  }
+
+  // DFOD detection in text
+  if (/\b(DFOD|Biaya oleh penerima)\b/i.test(text) || (result.metode_perhitungan && /dfod|penerima/i.test(result.metode_perhitungan))) {
+    result.metode_perhitungan = "Biaya oleh penerima (DFOD)";
   }
 
   // 5. Document Transaction Fee Enforcement

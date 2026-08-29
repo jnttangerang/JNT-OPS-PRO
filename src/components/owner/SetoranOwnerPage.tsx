@@ -301,7 +301,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                     placeholder="Masukkan alasan mengapa setoran ini ditolak..."
                     className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-gray-50"
                   />
-                  <p className="text-[10px] text-gray-500 mt-1">Transaksi akan otomatis menjadi UNLOCKED dan dapat diperbaiki oleh Kasir.</p>
+                  <p className="text-[10px] text-gray-500 mt-1">Transaksi akan otomatis menjadi UNLOCKED dan dapat diperbaiki oleh Admin.</p>
                 </div>
               </div>
               <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/50">
@@ -331,7 +331,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-black text-gray-900 tracking-tight">Persetujuan Setoran</h1>
-          <p className="text-sm text-gray-500 font-medium mt-1">Kelola dan setujui setoran harian dari Kasir Outlet</p>
+          <p className="text-sm text-gray-500 font-medium mt-1">Kelola dan setujui setoran harian dari Admin Outlet</p>
         </div>
         <button 
           onClick={fetchList}

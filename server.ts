@@ -4309,6 +4309,10 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     if (resiId) seenKeys.add(resiId.toUpperCase());
     if (txId) seenKeys.add(txId.toUpperCase());
 
+    const tipeProduk = tx.tipe_produk || p?.tipe_produk || ((tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "EZ");
+    const jenisBarang = tx.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
+    const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || p?.metode_bayar || "Tunai";
+
     return {
       resi_id: resiId,
       transaksi_id: txId,
@@ -4316,9 +4320,14 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
       admin: userMap[tx.admin_id] || tx.admin_id,
       outlet: outletMap[tx.outlet_id] || tx.outlet_id,
       tipe: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express",
+      tipe_produk: tipeProduk,
+      jenis_barang: jenisBarang,
+      metode_bayar: metodeBayar,
       grand_total: sum.customer_payment || Number(tx.total_customer) || Number(tx.grand_total) || 0,
       pengirim: tx.snapshot_nama_pengirim || p?.nama_pengirim || "",
       penerima: tx.snapshot_nama_penerima || p?.nama_penerima || "",
+      hp_pengirim: tx.snapshot_hp_pengirim || p?.hp_pengirim || "",
+      hp_penerima: tx.snapshot_hp_penerima || p?.hp_penerima || "",
       nama_barang: tx.nama_barang || p?.nama_barang || "-",
       status_resi: tx.status_resi || tx.status_transaksi || tx.status || "AKTIF"
     };
@@ -4334,6 +4343,10 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[r.transaksi_id];
+        const tipeProduk = r.tipe_produk || p?.tipe_produk || "EZ";
+        const jenisBarang = r.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
+        const metodeBayar = r.metode_bayar || p?.metode_bayar || "Tunai";
+
         transaksiList.push({
           resi_id: r.resi_id,
           transaksi_id: r.transaksi_id || "",
@@ -4341,10 +4354,15 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
           admin: userMap[r.admin_id_pencatat] || r.admin_id_pencatat,
           outlet: outletMap[r.outlet_id_input] || r.outlet_id_input,
           tipe: "Express",
+          tipe_produk: tipeProduk,
+          jenis_barang: jenisBarang,
+          metode_bayar: metodeBayar,
           grand_total: Number(r.grand_total) || 0,
-          pengirim: p?.nama_pengirim || "",
-          penerima: p?.nama_penerima || "",
-          nama_barang: p?.nama_barang || "-",
+          pengirim: r.nama_pengirim || p?.nama_pengirim || "",
+          penerima: r.nama_penerima || p?.nama_penerima || "",
+          hp_pengirim: r.hp_pengirim || p?.hp_pengirim || "",
+          hp_penerima: r.hp_penerima || p?.hp_penerima || "",
+          nama_barang: r.nama_barang || p?.nama_barang || "-",
           status_resi: r.status_resi || r.status || "AKTIF"
         });
       }
@@ -4361,6 +4379,10 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[c.transaksi_id];
+        const tipeProduk = c.tipe_produk || p?.tipe_produk || "Cargo";
+        const jenisBarang = c.jenis_barang || p?.jenis_barang || "BARANG";
+        const metodeBayar = c.metode_bayar || p?.metode_bayar || "Tunai";
+
         transaksiList.push({
           resi_id: c.resi_id,
           transaksi_id: c.transaksi_id || "",
@@ -4368,10 +4390,15 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
           admin: userMap[c.admin_id_pencatat] || c.admin_id_pencatat,
           outlet: outletMap[c.outlet_id_input] || c.outlet_id_input,
           tipe: "Cargo",
+          tipe_produk: tipeProduk,
+          jenis_barang: jenisBarang,
+          metode_bayar: metodeBayar,
           grand_total: Number(c.grand_total) || 0,
-          pengirim: p?.nama_pengirim || "",
-          penerima: p?.nama_penerima || "",
-          nama_barang: p?.nama_barang || "-",
+          pengirim: c.nama_pengirim || p?.nama_pengirim || "",
+          penerima: c.nama_penerima || p?.nama_penerima || "",
+          hp_pengirim: c.hp_pengirim || p?.hp_pengirim || "",
+          hp_penerima: c.hp_penerima || p?.hp_penerima || "",
+          nama_barang: c.nama_barang || p?.nama_barang || "-",
           status_resi: c.status_resi || c.status || "AKTIF"
         });
       }
@@ -4499,11 +4526,12 @@ app.post("/api/getDetailTransaksi", (req, res) => {
     outlet_id: resiObj?.outlet_id_input || masterTx?.outlet_id || pre?.outlet_id_tugas || "",
     outlet_name: outlet?.nama_outlet || resiObj?.outlet_id_input || "",
     nama_pengirim: (masterTx?.snapshot_nama_pengirim && masterTx.snapshot_nama_pengirim !== "Umum" ? masterTx.snapshot_nama_pengirim : (pre?.nama_pengirim || masterTx?.snapshot_nama_pengirim || "")),
-    hp_pengirim: masterTx?.snapshot_hp_pengirim || pre?.hp_pengirim || "",
-    alamat_pengirim: masterTx?.snapshot_alamat_pengirim || pre?.alamat_pengirim || "",
+    hp_pengirim: masterTx?.snapshot_hp_pengirim || pre?.hp_pengirim || (resiObj as any)?.hp_pengirim || (db.Customers || []).find((c: any) => c.customer_id === masterTx?.pengirim_id)?.no_hp || "",
+    alamat_pengirim: masterTx?.snapshot_alamat_pengirim || pre?.alamat_pengirim || (resiObj as any)?.alamat_pengirim || "",
     nama_penerima: (masterTx?.snapshot_nama_penerima && masterTx.snapshot_nama_penerima !== "Umum" ? masterTx.snapshot_nama_penerima : (pre?.nama_penerima || masterTx?.snapshot_nama_penerima || "")),
-    hp_penerima: masterTx?.snapshot_hp_penerima || pre?.hp_penerima || "",
-    alamat_penerima: masterTx?.snapshot_alamat_penerima || pre?.alamat_penerima || "",
+    hp_penerima: masterTx?.snapshot_hp_penerima || pre?.hp_penerima || (resiObj as any)?.hp_penerima || (db.Customers || []).find((c: any) => c.customer_id === masterTx?.penerima_id)?.no_hp || "",
+    alamat_penerima: masterTx?.snapshot_alamat_penerima || pre?.alamat_penerima || (resiObj as any)?.alamat_penerima || "",
+    jenis_barang: masterTx?.jenis_barang || pre?.jenis_barang || (resiObj as any)?.jenis_barang || (masterTx?.tipe_produk === "DOC" || resiObj?.tipe_produk === "DOC" ? "DOKUMEN" : "BARANG"),
     nama_barang: (masterTx?.nama_barang && masterTx.nama_barang !== "Paket" && masterTx.nama_barang !== "Paket Standard" ? masterTx.nama_barang : (pre?.nama_barang || masterTx?.nama_barang || "")),
     berat_kg: Number(resiObj?.berat_kg ?? pre?.berat_kg ?? masterTx?.berat_barang ?? 1),
     ongkir_dasar: Number(resiObj?.ongkir_dasar ?? masterTx?.ongkir_customer ?? 0),
@@ -6179,10 +6207,10 @@ const handleDetectAnomaliesRequest = async (req: any, res: any) => {
       type: "SETORAN_DITOLAK",
       severity: "HIGH",
       title: `${context.settlements.rejected} Setoran Ditolak Owner`,
-      description: `Terdapat setoran outlet yang telah ditolak oleh owner dan membutuhkan revisi ulang oleh kasir outlet.`,
+      description: `Terdapat setoran outlet yang telah ditolak oleh owner dan membutuhkan revisi ulang oleh admin outlet.`,
       items: context.settlements.rejected_list
     });
-    recommendations.push("Instruksikan kasir outlet terkait untuk melakukan perbaikan dan mengajukan ulang setoran yang ditolak.");
+    recommendations.push("Instruksikan admin outlet terkait untuk melakukan perbaikan dan mengajukan ulang setoran yang ditolak.");
   }
 
   // Rule 2: Pending settlements
