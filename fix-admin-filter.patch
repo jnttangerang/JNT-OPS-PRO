@@ -1,0 +1,20 @@
+--- src/lib/dailyClosingEngine.ts
++++ src/lib/dailyClosingEngine.ts
+@@ -698,6 +698,16 @@
+   const userMap: Record<string, string> = {};
+   (db.Users || []).forEach((u: any) => {
+     userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
+   });
++
++  const possibleIds = new Set<string>();
++  if (admin_id && admin_id !== "ALL") {
++    possibleIds.add(admin_id);
++    const user = (db.Users || []).find((u: any) => u.user_id === admin_id || u.username === admin_id || (u.nama_lengkap && u.nama_lengkap.toUpperCase() === String(admin_id).toUpperCase()));
++    if (user) {
++      if (user.user_id) possibleIds.add(user.user_id);
++      if (user.username) possibleIds.add(user.username);
++      if (user.nama_lengkap) possibleIds.add(user.nama_lengkap);
++    }
++  }
+ 
+   const outletMap: Record<string, string> = {};

@@ -694,6 +694,19 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
     outletMap[o.outlet_id] = o.nama_outlet || o.nama || o.outlet_id;
   });
 
+  const possibleIds = new Set<string>();
+  if (admin_id && admin_id !== "ALL") {
+    possibleIds.add(admin_id);
+    const user = (db.Users || []).find((u: any) => 
+      u.user_id === admin_id || u.username === admin_id || (u.nama_lengkap && u.nama_lengkap.toUpperCase() === String(admin_id).toUpperCase())
+    );
+    if (user) {
+      if (user.user_id) possibleIds.add(user.user_id);
+      if (user.username) possibleIds.add(user.username);
+      if (user.nama_lengkap) possibleIds.add(user.nama_lengkap);
+    }
+  }
+
   const allTx = db.MASTER_TRANSAKSI || [];
   const allSetoran = db.Master_Setoran || db.SetoranData || db.Setoran || [];
 
@@ -728,8 +741,8 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
     if (date_start && txDate < date_start) return;
     if (date_end && txDate > date_end) return;
     if (outlet_id && outlet_id !== "ALL" && tx.outlet_id !== outlet_id) return;
-    const txAdmin = tx.admin_id || "UNKNOWN";
-    if (admin_id && admin_id !== "ALL" && txAdmin !== admin_id) return;
+    const txAdmin = tx.admin_pembuat || tx.admin_id || tx.user_id || tx.created_by || "UNKNOWN";
+    if (admin_id && admin_id !== "ALL" && !possibleIds.has(txAdmin)) return;
 
     const groupKey = `${txAdmin}_${tx.outlet_id}_${txDate}`;
     if (!groupMap[groupKey]) {
@@ -784,7 +797,7 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
     if (date_end && sDate > date_end) return;
     if (outlet_id && outlet_id !== "ALL" && s.outlet_id !== outlet_id) return;
     const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "UNKNOWN";
-    if (admin_id && admin_id !== "ALL" && sAdmin !== admin_id) return;
+    if (admin_id && admin_id !== "ALL" && !possibleIds.has(sAdmin)) return;
 
     const groupKey = `${sAdmin}_${s.outlet_id}_${sDate}`;
     if (!groupMap[groupKey]) {
