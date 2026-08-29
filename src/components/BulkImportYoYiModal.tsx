@@ -347,7 +347,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         biaya_amplop: biayaAmplop,
         biaya_packing: biayaPacking,
         metode_bayar_ongkir: isDfod ? "DFOD" : (row.metode_bayar || "Tunai"),
-        jumlah_dibayar_customer: summary.customer_payment,
+        jumlah_dibayar_customer: isDfod ? 0 : (Number(row.ongkir || 0) + Number(row.asuransi || 0) + biayaLain),
         grand_total: summary.customer_payment,
         setoran_ke_owner: summary.owner_deposit,
         kas_operasional: summary.outlet_cash,

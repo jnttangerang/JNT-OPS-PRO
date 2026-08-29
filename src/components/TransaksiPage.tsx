@@ -118,8 +118,7 @@ export default function TransaksiPage({
       const explicitMethod = parsed.metode_pembayaran || (parsed as any).metode_bayar || "Tunai";
       setMetodeBayar(explicitMethod);
       const calculatedBiayaLain = baseBiayaLain;
-      const calculatedAmplop = isDoc ? 2000 : 0;
-      const totalCost = (Number(parsed.ongkir_dasar) || 0) + (Number(parsed.asuransi) || 0) + calculatedBiayaLain + calculatedAmplop;
+      const totalCost = (Number(parsed.ongkir_dasar) || 0) + (Number(parsed.asuransi) || 0) + calculatedBiayaLain;
       setTotalUangDibayarInput(totalCost > 0 ? totalCost.toString() : "");
     }
 
