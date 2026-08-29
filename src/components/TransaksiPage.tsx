@@ -14,6 +14,7 @@ import { calculateWeight } from "../utils/weightCalculator";
 import { getDisplayImageUrl } from "../utils/image";
 import { compressImage } from "../utils/imageCompressor";
 import { getTodayWIB } from "../utils/dateUtils";
+import { isDocumentTransaction } from "../lib/financialEngine";
 import AddressBookDrawer from "./AddressBookDrawer";
 import ImportYoYiModal, { YoYiImportQueueItem, YoYiParsedData } from "./ImportYoYiModal";
 
@@ -77,9 +78,11 @@ export default function TransaksiPage({
   };
 
   const handleApplyYoYiToForm = async (parsed: YoYiParsedData) => {
+    const isDoc = isDocumentTransaction(parsed);
+
     // 1. Set layanan & tipe produk
     setJenisLayanan("Express");
-    setTipeProdukExp(parsed.tipe_produk || "EZ");
+    setTipeProdukExp(isDoc ? "DOC" : (parsed.tipe_produk || "EZ"));
 
     // 2. Set resi & berat & dimensi
     const resiNum = (parsed.nomor_resi || "").trim().toUpperCase();
@@ -90,9 +93,15 @@ export default function TransaksiPage({
     setVolT("");
 
     // 3. Set biaya
+    const baseBiayaLain = isDoc ? (parsed.biaya_lain && parsed.biaya_lain > 0 ? parsed.biaya_lain : 1000) : (parsed.biaya_lain || 0);
     setOngkirDasarInput(parsed.ongkir_dasar ? parsed.ongkir_dasar.toString() : "0");
     setBiayaAsuransiInput(parsed.asuransi ? parsed.asuransi.toString() : "0");
-    setBiayaLainInput(parsed.biaya_lain ? parsed.biaya_lain.toString() : "0");
+    setBiayaLainInput(baseBiayaLain > 0 ? baseBiayaLain.toString() : "");
+
+    if (isDoc) {
+      setAktifkanBiayaTambahan(true);
+      setBiayaAmplopInput("2000");
+    }
 
     // 4. Set metode bayar (DFOD detection)
     if (parsed.metode_perhitungan && parsed.metode_perhitungan.toUpperCase().includes("DFOD")) {
@@ -100,7 +109,9 @@ export default function TransaksiPage({
       setTotalUangDibayarInput("0");
     } else {
       setMetodeBayar("Tunai");
-      const totalCost = Number(parsed.total_yoyi) || (Number(parsed.ongkir_dasar) + Number(parsed.asuransi) + Number(parsed.biaya_lain));
+      const calculatedBiayaLain = baseBiayaLain;
+      const calculatedAmplop = isDoc ? 2000 : 0;
+      const totalCost = (Number(parsed.ongkir_dasar) || 0) + (Number(parsed.asuransi) || 0) + calculatedBiayaLain + calculatedAmplop;
       setTotalUangDibayarInput(totalCost > 0 ? totalCost.toString() : "");
     }
 

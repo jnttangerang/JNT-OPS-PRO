@@ -2548,6 +2548,25 @@ app.post(["/api/getPreInput", "/api/getPreInputDetails"], (req, res) => {
   return res.json({ status: "success", data: pre });
 });
 
+function isDocumentTransaction(tx: any): boolean {
+  if (!tx) return false;
+  const normalize = (v?: any) => String(v || "").trim().toUpperCase();
+
+  const tp = normalize(tx.tipe_produk);
+  if (tp === "DOC" || tp === "DOKUMEN") return true;
+
+  const jb = normalize(tx.jenis_barang);
+  if (jb === "DOC" || jb === "DOKUMEN" || jb.includes("DOKUMEN")) return true;
+
+  const ta = normalize(tx.tipe_asuransi);
+  if (ta.includes("DOC") || ta.includes("DOKUMEN")) return true;
+
+  const nb = normalize(tx.nama_barang);
+  if (nb === "DOC" || nb === "DOKUMEN" || nb.startsWith("DOKUMEN ") || nb.endsWith(" DOKUMEN") || nb.includes("DOKUMEN")) return true;
+
+  return false;
+}
+
 // 9. SAVE TRANSAKSI (EXP_Resi or CRG_Resi) - apiSaveTransaksi handler
 const handleSaveTransaksiRequest = async (req: any, res: any) => {
   try {
@@ -2596,9 +2615,17 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       timestamp = `${data.tanggal_transaksi}T00:00:00`;
     }
 
+    const isDoc = isDocumentTransaction(data);
     const metodeBayarOngkir = data.metode_pembayaran_ongkir || data.metode_bayar || data.metode_bayar_ongkir || "Tunai";
     const metodeBayarTambahan = data.metode_pembayaran_tambahan || data.metode_bayar_tambahan || "";
-    const biayaAmplop = Number(data.biaya_amplop ?? data.biayaAmplop ?? data.amplop) || 0;
+    let biayaAmplop = Number(data.biaya_amplop ?? data.biayaAmplop ?? data.amplop) || 0;
+    if (isDoc && biayaAmplop === 0) {
+      biayaAmplop = 2000;
+    }
+    let biayaLain = Number(data.biaya_lain) || 0;
+    if (isDoc && biayaLain === 0) {
+      biayaLain = 1000;
+    }
     const biayaPacking = Number(data.biaya_packing ?? data.biayaPacking ?? data.packing) || 0;
     const jumlahDibayarCustomer = Number(data.jumlah_dibayar_customer ?? data.total_dibayar_customer ?? data.jumlah_dibayar ?? data.grand_total) || 0;
     const grandTotal = Number(data.grand_total ?? data.total_dibayar_customer ?? data.jumlah_dibayar_customer) || 0;
@@ -2963,16 +2990,23 @@ app.post("/api/importYoYi", async (req, res) => {
   const transId = "TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5);
 
   // Financial calculations
+  const isDoc = isDocumentTransaction({ ...parsed, ...input });
   const ongkirDasar = Number(parsed.ongkir_dasar) || 0;
   const biayaAsuransi = Number(parsed.asuransi) || 0;
-  const biayaLain = Number(parsed.biaya_lain) || 0;
+  let biayaLain = Number(parsed.biaya_lain) || 0;
+  if (isDoc && biayaLain === 0) {
+    biayaLain = 1000;
+  }
   const metodeBayarOngkir = input.metode_bayar_ongkir || "Tunai";
   
   const biayaDasarLayanan = ongkirDasar + biayaAsuransi + biayaLain;
   const biayaDitagihkan = metodeBayarOngkir === "DFOD" ? 0 : biayaDasarLayanan;
   const jumlahDibayar = Number(input.jumlah_dibayar) || 0;
   const pembulatan = jumlahDibayar > 0 ? (jumlahDibayar - biayaDitagihkan) : 0;
-  const biayaAmplop = Number(input.biaya_amplop) || 0;
+  let biayaAmplop = Number(input.biaya_amplop) || 0;
+  if (isDoc && biayaAmplop === 0) {
+    biayaAmplop = 2000;
+  }
   const biayaPacking = Number(input.biaya_packing) || 0;
   const biayaTambahan = biayaAmplop + biayaPacking;
   
@@ -3118,9 +3152,12 @@ function extractYoYiDataWithRegex(text: string): any {
     no_hp_penerima: "",
     alamat_penerima: "",
     tipe_produk: "EZ",
+    jenis_barang: "",
+    tipe_asuransi: "",
     ongkir_dasar: 0,
     asuransi: 0,
     biaya_lain: 0,
+    biaya_amplop: 0,
     total_yoyi: 0,
     metode_perhitungan: "Normal",
     nama_barang: "Paket",
@@ -3166,6 +3203,14 @@ function extractYoYiDataWithRegex(text: string): any {
       }
       if (i > 0 && result.ongkir_dasar === 0 && /^[\d.,]+$/.test(rawLines[i - 1])) {
         result.ongkir_dasar = parseCurrency(rawLines[i - 1]);
+      }
+    }
+
+    // Tipe Asuransi
+    if (lower.includes("tipe asuransi") || lower.includes("jenis asuransi") || lower.includes("asuransi tipe")) {
+      const asuransiMatch = line.match(/(?:Tipe\s*Asuransi|Jenis\s*Asuransi|Asuransi\s*Tipe)[:\s]*([^\n\r]*)/i);
+      if (asuransiMatch && asuransiMatch[1].trim()) {
+        result.tipe_asuransi = asuransiMatch[1].trim().replace(/^[:\s-]+/, "");
       }
     }
 
@@ -3219,9 +3264,19 @@ function extractYoYiDataWithRegex(text: string): any {
       }
     }
 
+    // Jenis Barang
+    if (lower.includes("jenis barang") || lower.includes("kategori barang") || lower.includes("tipe barang") || lower.includes("jenis paket")) {
+      const jbMatch = line.match(/(?:Jenis\s*Barang|Kategori\s*Barang|Tipe\s*Barang|Jenis\s*Paket)[:\s]*([^\n\r]*)/i);
+      if (jbMatch && jbMatch[1].trim()) {
+        result.jenis_barang = jbMatch[1].trim().replace(/^[:\s-]+/, "");
+      } else if (i + 1 < rawLines.length && rawLines[i + 1].length > 1) {
+        result.jenis_barang = rawLines[i + 1].replace(/^[:\s-]+/, "");
+      }
+    }
+
     // Nama Barang
-    if (lower.includes("nama barang") || lower.includes("deskripsi barang") || lower.includes("isi paket") || lower.includes("nama paket")) {
-      const itemMatch = line.match(/(?:Nama\s*Barang|Deskripsi\s*Barang|Jenis\s*Barang|Isi\s*Paket|Nama\s*Paket)[:\s]*([^\n\r]+)/i);
+    if (lower.includes("nama barang") || lower.includes("deskripsi barang") || lower.includes("isi paket") || lower.includes("nama paket") || lower.includes("komoditi")) {
+      const itemMatch = line.match(/(?:Nama\s*Barang|Deskripsi\s*Barang|Isi\s*Paket|Nama\s*Paket|Komoditi)[:\s]*([^\n\r]+)/i);
       if (itemMatch && itemMatch[1].trim()) {
         result.nama_barang = itemMatch[1].trim().replace(/^[:\s-]+/, "");
       } else if (i + 1 < rawLines.length && rawLines[i + 1].length > 1) {
@@ -3260,7 +3315,14 @@ function extractYoYiDataWithRegex(text: string): any {
     if (hpPenerima) result.no_hp_penerima = hpPenerima[1].replace(/[\s-]/g, "");
   }
 
-  // 4. Calculate total if needed
+  // 4. Document fee calculation & total
+  if (isDocumentTransaction(result)) {
+    result.biaya_amplop = 2000;
+    if (result.biaya_lain === 0) {
+      result.biaya_lain = 1000;
+    }
+  }
+
   if (result.total_yoyi <= 0) {
     if (result.ongkir_dasar > 0) {
       result.total_yoyi = result.ongkir_dasar + result.asuransi + result.biaya_lain;
@@ -3307,6 +3369,8 @@ Schema JSON:
   "no_hp_penerima": "string",
   "alamat_penerima": "string",
   "tipe_produk": "string",
+  "jenis_barang": "string",
+  "tipe_asuransi": "string",
   "ongkir_dasar": number,
   "asuransi": number,
   "biaya_lain": number,
@@ -3330,6 +3394,12 @@ ${text}`;
     const resultText = response.text || "";
     const parsedData = JSON.parse(resultText);
 
+    const isDoc = isDocumentTransaction({ ...regexData, ...parsedData });
+    let docBiayaLain = Number(parsedData.biaya_lain) || regexData.biaya_lain || 0;
+    if (isDoc && docBiayaLain === 0) {
+      docBiayaLain = 1000;
+    }
+
     const finalData = {
       nomor_resi: String(parsedData.nomor_resi || regexData.nomor_resi || "").trim().toUpperCase(),
       nama_pengirim: parsedData.nama_pengirim || regexData.nama_pengirim || "",
@@ -3339,9 +3409,12 @@ ${text}`;
       no_hp_penerima: parsedData.no_hp_penerima || regexData.no_hp_penerima || "",
       alamat_penerima: parsedData.alamat_penerima || regexData.alamat_penerima || "",
       tipe_produk: parsedData.tipe_produk || regexData.tipe_produk || "EZ",
+      jenis_barang: parsedData.jenis_barang || regexData.jenis_barang || "",
+      tipe_asuransi: parsedData.tipe_asuransi || regexData.tipe_asuransi || "",
       ongkir_dasar: Number(parsedData.ongkir_dasar) || regexData.ongkir_dasar || 0,
       asuransi: Number(parsedData.asuransi) || regexData.asuransi || 0,
-      biaya_lain: Number(parsedData.biaya_lain) || regexData.biaya_lain || 0,
+      biaya_lain: docBiayaLain,
+      biaya_amplop: isDoc ? 2000 : 0,
       total_yoyi: Number(parsedData.total_yoyi) || regexData.total_yoyi || 0,
       metode_perhitungan: parsedData.metode_perhitungan || regexData.metode_perhitungan || "Normal",
       nama_barang: parsedData.nama_barang || parsedData.barang || parsedData.item_name || regexData.nama_barang || "Paket",
@@ -3400,16 +3473,17 @@ app.post("/api/parseYoYiScreenshot", async (req, res) => {
       "2. 'nama_pengirim', 'no_hp_pengirim', 'alamat_pengirim': Cari bagian pengirim (ikon hijau/panah). Ekstrak nama, nomor HP (contoh '085814200293'), dan alamat lengkap pengirim.\n" +
       "3. 'nama_penerima', 'no_hp_penerima', 'alamat_penerima': Cari bagian penerima (ikon dompet/biru). Ekstrak nama, nomor HP (contoh '083147587120'), dan alamat lengkap penerima.\n" +
       "4. 'nama_barang': Dari label 'Nama barang' (misal: 'SEPATU', 'BAJU', dll). Jika tidak ada isi 'Paket'.\n" +
-      "5. 'berat_kg': Dari label 'Berat' (misal: '1.00KG' -> 1, '2.50KG' -> 2.5). Nilai desimal number.\n" +
-      "6. 'ongkir_dasar': Dari label 'Biaya kirim' (misal: 'IDR 9.000' -> 9000). Konversi ke number murni.\n" +
-      "7. 'asuransi': Dari label 'Biaya Asuransi' (misal: 'IDR 160' -> 160). Konversi ke number murni.\n" +
-      "8. 'biaya_lain': Dari label 'Biaya lain-lain' (misal: 'IDR 0' -> 0). Konversi ke number murni.\n" +
-      "9. 'total_yoyi': Dari label 'Total biaya' (misal: 'IDR 9.160' -> 9160). Konversi ke number murni.\n" +
-      "10. 'tipe_produk': Dari label 'Tipe Produk' (misal: 'EZ', 'DOC', 'SUPER', dll). Default 'EZ'.\n" +
-      "11. 'metode_perhitungan': Dari label 'Metode perhitungan' (misal: 'Biaya oleh pengirim', 'DFOD', dll).\n" +
-      "12. 'status_paket': Dari status pesanan (misal: 'Untuk diserahkan', dll).\n" +
-      "13. 'ekspedisi': Default 'JT_EXPRESS'.\n" +
-      "14. 'sumber': Dari label 'Sumber' (misal 'YoYi-WEB' atau 'YoYi-APP').\n" +
+      "5. 'jenis_barang': Dari label 'Jenis Barang' (misal: 'DOKUMEN', 'PAKET', dll).\n" +
+      "6. 'berat_kg': Dari label 'Berat' (misal: '1.00KG' -> 1, '2.50KG' -> 2.5). Nilai desimal number.\n" +
+      "7. 'ongkir_dasar': Dari label 'Biaya kirim' (misal: 'IDR 9.000' -> 9000). Konversi ke number murni.\n" +
+      "8. 'asuransi': Dari label 'Biaya Asuransi' (misal: 'IDR 160' -> 160). Konversi ke number murni.\n" +
+      "9. 'biaya_lain': Dari label 'Biaya lain-lain' (misal: 'IDR 0' -> 0). Konversi ke number murni.\n" +
+      "10. 'total_yoyi': Dari label 'Total biaya' (misal: 'IDR 9.160' -> 9160). Konversi ke number murni.\n" +
+      "11. 'tipe_produk': Dari label 'Tipe Produk' (misal: 'EZ', 'DOC', 'JND', dll). Default 'EZ'.\n" +
+      "12. 'metode_perhitungan': Dari label 'Metode perhitungan' (misal: 'Biaya oleh pengirim', 'DFOD', dll).\n" +
+      "13. 'status_paket': Dari status pesanan (misal: 'Untuk diserahkan', dll).\n" +
+      "14. 'ekspedisi': Default 'JT_EXPRESS'.\n" +
+      "15. 'sumber': Dari label 'Sumber' (misal 'YoYi-WEB' atau 'YoYi-APP').\n" +
       "PENTING: Jangan mengada-ada informasi. Jika gambar blur, tidak terbaca, atau bukan screenshot YoYi, kosongkan field string dan set angka ke 0.";
 
     const imagePart = {
@@ -3443,6 +3517,12 @@ app.post("/api/parseYoYiScreenshot", async (req, res) => {
       });
     }
 
+    const isDoc = isDocumentTransaction(parsedData);
+    let docBiayaLain = Number(parsedData.biaya_lain) || 0;
+    if (isDoc && docBiayaLain === 0) {
+      docBiayaLain = 1000;
+    }
+
     const finalData = {
       nomor_resi: String(parsedData.nomor_resi || "").trim().toUpperCase(),
       nama_pengirim: String(parsedData.nama_pengirim || "").trim(),
@@ -3452,10 +3532,13 @@ app.post("/api/parseYoYiScreenshot", async (req, res) => {
       no_hp_penerima: String(parsedData.no_hp_penerima || "").trim(),
       alamat_penerima: String(parsedData.alamat_penerima || "").trim(),
       tipe_produk: String(parsedData.tipe_produk || "EZ").trim().toUpperCase(),
+      jenis_barang: String(parsedData.jenis_barang || "").trim(),
+      tipe_asuransi: String(parsedData.tipe_asuransi || "").trim(),
       ongkir_dasar: Number(parsedData.ongkir_dasar) || 0,
       asuransi: Number(parsedData.asuransi) || 0,
-      biaya_lain: Number(parsedData.biaya_lain) || 0,
-      total_yoyi: Number(parsedData.total_yoyi) || (Number(parsedData.ongkir_dasar || 0) + Number(parsedData.asuransi || 0) + Number(parsedData.biaya_lain || 0)),
+      biaya_lain: docBiayaLain,
+      biaya_amplop: isDoc ? 2000 : 0,
+      total_yoyi: Number(parsedData.total_yoyi) || (Number(parsedData.ongkir_dasar || 0) + Number(parsedData.asuransi || 0) + docBiayaLain),
       metode_perhitungan: String(parsedData.metode_perhitungan || "Biaya oleh pengirim").trim(),
       nama_barang: String(parsedData.nama_barang || "Paket").trim(),
       berat_kg: Number(parsedData.berat_kg) || 1

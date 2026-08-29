@@ -1,3 +1,5 @@
+import { isDocumentTransaction } from "../lib/financialEngine";
+
 export interface YoYiParsedData {
   nomor_resi: string;
   nama_pengirim: string;
@@ -9,9 +11,12 @@ export interface YoYiParsedData {
   alamat_penerima?: string;
   kode_pos_penerima?: string;
   tipe_produk?: string;
+  jenis_barang?: string;
+  tipe_asuransi?: string;
   ongkir_dasar: number;
   asuransi: number;
   biaya_lain: number;
+  biaya_amplop?: number;
   total_yoyi: number;
   metode_perhitungan: string;
   source_order?: string;
@@ -192,16 +197,29 @@ export function parseYoYiText(text: string): YoYiParsedData {
       }
     }
 
-    // Nama Barang / Jenis Barang / Isi Paket / Komoditi
+    // Jenis Barang
+    if (lower.includes("jenis barang") || lower.includes("kategori barang") || lower.includes("tipe barang") || lower.includes("jenis paket")) {
+      const jbMatch = line.match(/(?:Jenis\s*Barang|Kategori\s*Barang|Tipe\s*Barang|Jenis\s*Paket)[:\s]*([^\n\r]*)/i);
+      let val = jbMatch ? jbMatch[1].replace(/^[:\s-]+/, "").trim() : "";
+      if (val && val !== "--" && val !== "-") {
+        result.jenis_barang = val;
+      } else if (i + 1 < rawLines.length && rawLines[i + 1].length > 1 && !isHeaderLine(rawLines[i + 1])) {
+        const nextVal = rawLines[i + 1].replace(/^[:\s-]+/, "").trim();
+        if (nextVal && nextVal !== "--" && nextVal !== "-") {
+          result.jenis_barang = nextVal;
+        }
+      }
+    }
+
+    // Nama Barang / Isi Paket / Komoditi
     if (
       lower.includes("nama barang") ||
       lower.includes("deskripsi barang") ||
       lower.includes("isi paket") ||
       lower.includes("nama paket") ||
-      lower.includes("jenis barang") ||
       lower.includes("komoditi")
     ) {
-      const itemMatch = line.match(/(?:Nama\s*Barang|Deskripsi\s*Barang|Jenis\s*Barang|Isi\s*Paket|Nama\s*Paket|Komoditi)[:\s]*([^\n\r]*)/i);
+      const itemMatch = line.match(/(?:Nama\s*Barang|Deskripsi\s*Barang|Isi\s*Paket|Nama\s*Paket|Komoditi)[:\s]*([^\n\r]*)/i);
       let val = itemMatch ? itemMatch[1].replace(/^[:\s-]+/, "").trim() : "";
       if (val && val !== "--" && val !== "-") {
         result.nama_barang = val;
@@ -210,6 +228,15 @@ export function parseYoYiText(text: string): YoYiParsedData {
         if (nextVal && nextVal !== "--" && nextVal !== "-") {
           result.nama_barang = nextVal;
         }
+      }
+    }
+
+    // Tipe Asuransi
+    if (lower.includes("tipe asuransi") || lower.includes("jenis asuransi") || lower.includes("asuransi tipe")) {
+      const asuransiMatch = line.match(/(?:Tipe\s*Asuransi|Jenis\s*Asuransi|Asuransi\s*Tipe)[:\s]*([^\n\r]*)/i);
+      let val = asuransiMatch ? asuransiMatch[1].replace(/^[:\s-]+/, "").trim() : "";
+      if (val && val !== "--" && val !== "-") {
+        result.tipe_asuransi = val;
       }
     }
 
@@ -296,7 +323,15 @@ export function parseYoYiText(text: string): YoYiParsedData {
     if (hpPenerima) result.no_hp_penerima = hpPenerima[1].replace(/[\s-]/g, "");
   }
 
-  // 5. Calculate total if not explicit
+  // 5. Document Transaction Fee Enforcement
+  if (isDocumentTransaction(result)) {
+    result.biaya_amplop = 2000;
+    if (result.biaya_lain === 0) {
+      result.biaya_lain = 1000;
+    }
+  }
+
+  // 6. Calculate total if not explicit
   if (result.total_yoyi <= 0) {
     if (result.ongkir_dasar > 0) {
       result.total_yoyi = result.ongkir_dasar + result.asuransi + result.biaya_lain;
@@ -305,10 +340,10 @@ export function parseYoYiText(text: string): YoYiParsedData {
     result.ongkir_dasar = Math.max(0, result.total_yoyi - result.asuransi - result.biaya_lain);
   }
 
-  // 6. Detect Layanan from keywords if still default
+  // 7. Detect Layanan from keywords if still default
   if (result.tipe_produk === "EZ") {
     if (/\b(CARGO|JTC|TRUCKING)\b/i.test(text)) result.tipe_produk = "Cargo";
-    else if (/\b(DOC|DOKUMEN)\b/i.test(text)) result.tipe_produk = "DOC";
+    else if (/\b(?:Tipe\s*Produk|Layanan)\s*:\s*(?:DOC|DOKUMEN)\b/i.test(text)) result.tipe_produk = "DOC";
     else if (/\b(DFOD)\b/i.test(text)) result.tipe_produk = "DFOD";
     else if (/\b(SUPER|FASTTRACK|FAST)\b/i.test(text)) result.tipe_produk = "Super";
   }

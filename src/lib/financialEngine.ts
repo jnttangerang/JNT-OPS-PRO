@@ -5,6 +5,25 @@ export function safeNum(val: any): number {
   return parsed;
 }
 
+export function isDocumentTransaction(tx: any): boolean {
+  if (!tx) return false;
+  const normalize = (v?: any) => String(v || "").trim().toUpperCase();
+
+  const tp = normalize(tx.tipe_produk);
+  if (tp === "DOC" || tp === "DOKUMEN") return true;
+
+  const jb = normalize(tx.jenis_barang);
+  if (jb === "DOC" || jb === "DOKUMEN" || jb.includes("DOKUMEN")) return true;
+
+  const ta = normalize(tx.tipe_asuransi);
+  if (ta.includes("DOC") || ta.includes("DOKUMEN")) return true;
+
+  const nb = normalize(tx.nama_barang);
+  if (nb === "DOC" || nb === "DOKUMEN" || nb.startsWith("DOKUMEN ") || nb.endsWith(" DOKUMEN") || nb.includes("DOKUMEN")) return true;
+
+  return false;
+}
+
 export function isTransactionValidForFinance(tx: any): boolean {
   const status = (tx.status_transaksi || tx.status || "").toUpperCase();
   if (status === "CANCELLED" || status === "BATAL" || status === "REVISED" || status === "FAILED" || status === "DRAFT") {
@@ -93,12 +112,15 @@ export function calculateFinancialSummary(tx: any): any {
   }
 
   const paymentMethod = tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "";
+  const isDoc = isDocumentTransaction(tx);
 
   // Pure inputs
   const ongkir_customer = safeNum(tx.ongkir_customer ?? tx.ongkir_dasar ?? tx.biaya_kirim ?? tx.ongkir_yoyi ?? tx.biaya_ongkir ?? tx.ongkir);
   const asuransi = safeNum(tx.asuransi ?? tx.biaya_asuransi);
-  const biaya_lain = safeNum(tx.biaya_lain ?? tx.biaya_lain_yoyi);
-  const amplop = safeNum(tx.amplop ?? tx.biaya_amplop);
+  const rawBiayaLain = safeNum(tx.biaya_lain ?? tx.biaya_lain_yoyi);
+  const biaya_lain = (isDoc && rawBiayaLain === 0) ? 1000 : rawBiayaLain;
+  const rawAmplop = safeNum(tx.amplop ?? tx.biaya_amplop);
+  const amplop = (isDoc && rawAmplop === 0) ? 2000 : rawAmplop;
   const packing = safeNum(tx.packing ?? tx.biaya_packing);
   const biaya_tambahan_direct = safeNum(tx.biaya_tambahan ?? tx.surcharge);
   

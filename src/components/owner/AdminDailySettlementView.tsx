@@ -491,7 +491,7 @@ export default function AdminDailySettlementView({
               >
                 {outlets.map((o) => (
                   <option key={o.outlet_id} value={o.outlet_id}>
-                    {o.nama_outlet} ({o.outlet_id})
+                    {o.nama_outlet}
                   </option>
                 ))}
               </select>

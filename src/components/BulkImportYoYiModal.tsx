@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import useAppsScript from "../hooks/useAppsScript";
 import { toast } from "../utils/toast";
 import { getTodayWIB, getWIBDate, getWIBTime } from "../utils/dateUtils";
+import { isDocumentTransaction, calculateFinancialSummary } from "../lib/financialEngine";
 
 interface BulkImportYoYiModalProps {
   isOpen: boolean;
@@ -34,6 +35,8 @@ interface ParsedRow {
   status: string;
   operator: string;
   nama_barang: string;
+  jenis_barang?: string;
+  tipe_asuransi?: string;
   kode_outlet: string;
   tipe_produk: string;
   metode_bayar: string;
@@ -172,7 +175,9 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         const biayaLain = total > 0 ? (total - (ongkir + asuransi)) : 0;
         
         const operator = getColValue(row, ["Operator", "Admin", "Nama Operator"]);
-        const namaBarang = getColValue(row, ["Isi Paket", "Deskripsi", "Barang", "Nama Barang"]);
+        const jenisBarang = getColValue(row, ["Jenis Barang", "Tipe Barang", "Kategori Barang", "Jenis Paket"]);
+        const namaBarang = getColValue(row, ["Nama Barang", "Isi Paket", "Deskripsi", "Deskripsi Barang", "Barang", "Nama Paket", "Komoditi"]);
+        const tipeAsuransi = getColValue(row, ["Tipe Asuransi", "Asuransi Tipe", "Jenis Asuransi"]);
         const metodeBayar = getColValue(row, ["Metode Pembayaran", "Pembayaran"]);
         const tipeProduk = getColValue(row, ["Tipe Produk", "Tipe", "Layanan", "Jenis Layanan"]);
         
@@ -227,6 +232,8 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
           status: String(status).trim(),
           operator: String(operator).trim(),
           nama_barang: String(namaBarang).trim() || "Paket",
+          jenis_barang: String(jenisBarang).trim(),
+          tipe_asuransi: String(tipeAsuransi).trim(),
           kode_outlet: String(kodeOutletRaw).trim(),
           mapped_outlet_id,
           tipe_produk: String(tipeProduk).trim() || "EZ",
@@ -297,19 +304,22 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
       const row = rowsToImport[i];
       
       // Calculate Financials according to SSOT (DFOD and DOKUMEN rules)
-      const isDoc = (row.nama_barang.toUpperCase().includes("DOKUMEN") || row.nama_barang.toUpperCase().includes("DOC") || row.tipe_produk === "DOC");
-      const isDfod = (row.metode_bayar.toUpperCase().includes("DFOD"));
+      const isDoc = isDocumentTransaction(row);
+      const isDfod = String(row.metode_bayar || "").toUpperCase().includes("DFOD");
       
       const biayaAmplop = isDoc ? 2000 : 0;
-      const biayaPacking = 0; // Not extracted automatically
-      const biayaTambahan = biayaAmplop + biayaPacking;
-      
-      const biayaDasarLayanan = row.ongkir + row.asuransi + row.biaya_lain;
-      const biayaDitagihkanLayanan = isDfod ? 0 : biayaDasarLayanan;
-      
-      const setoranKeOwner = biayaDitagihkanLayanan; // Assuming no rounding in YoYi imports
-      const kasOperasional = biayaTambahan;
-      const grandTotal = setoranKeOwner + kasOperasional;
+      const biayaPacking = 0;
+      const biayaLain = (isDoc && row.biaya_lain === 0) ? 1000 : row.biaya_lain;
+
+      const summary = calculateFinancialSummary({
+        ...row,
+        ongkir_dasar: row.ongkir,
+        biaya_asuransi: row.asuransi,
+        biaya_lain: biayaLain,
+        biaya_amplop: biayaAmplop,
+        biaya_packing: biayaPacking,
+        metode_bayar: isDfod ? "DFOD" : (row.metode_bayar || "Tunai")
+      });
       
       let resolvedAdminId = adminId;
       if (row.operator && users && users.length > 0) {
@@ -326,19 +336,20 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
       const transactionData = {
         resi_id: row.resi_id,
         ekspedisi: "Express",
-        tipe_produk: isDoc ? "DOC" : row.tipe_produk,
-        berat_kg: 1, // Default, YoYi XLSX doesn't always have weight. Wait, if it does, it's mapped, but we omitted weight. We can default to 1.
+        tipe_produk: (row.tipe_produk === "DOC" || row.tipe_produk === "DOKUMEN") ? "DOC" : (row.tipe_produk || "EZ"),
+        jenis_barang: row.jenis_barang || "",
+        berat_kg: 1,
         ongkir_dasar: row.ongkir,
         biaya_asuransi: row.asuransi,
-        biaya_lain: row.biaya_lain,
+        biaya_lain: biayaLain,
         biaya_amplop: biayaAmplop,
         biaya_packing: biayaPacking,
         metode_bayar_ongkir: isDfod ? "DFOD" : (row.metode_bayar || "Tunai"),
-        jumlah_dibayar_customer: grandTotal,
-        grand_total: grandTotal,
-        setoran_ke_owner: setoranKeOwner,
-        kas_operasional: kasOperasional,
-        kas_outlet: kasOperasional,
+        jumlah_dibayar_customer: summary.customer_payment,
+        grand_total: summary.customer_payment,
+        setoran_ke_owner: summary.owner_deposit,
+        kas_operasional: summary.outlet_cash,
+        kas_outlet: summary.outlet_cash,
         nama_pengirim: row.pengirim,
         hp_pengirim: row.hp_pengirim,
         alamat_pengirim: row.alamat_pengirim,
