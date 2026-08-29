@@ -3,7 +3,7 @@ import { Upload, X, CheckCircle, AlertCircle, RefreshCw, Save, Search, Table as 
 import * as XLSX from "xlsx";
 import useAppsScript from "../hooks/useAppsScript";
 import { toast } from "../utils/toast";
-import { getTodayWIB, getWIBDate, getWIBTime } from "../utils/dateUtils";
+import { getTodayWIB, getWIBDate, getWIBTime, normalizeYoYiTimestampToWIB } from "../utils/dateUtils";
 import { isDocumentTransaction, calculateFinancialSummary } from "../lib/financialEngine";
 
 interface BulkImportYoYiModalProps {
@@ -110,21 +110,23 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
     
     const str = String(val).trim();
     const parts = str.split(" ");
-    let tanggal = parts[0] || getTodayWIB();
-    let jam = parts[1] || "00:00:00";
+    let tanggalRaw = parts[0] || getTodayWIB();
+    let jamRaw = parts[1] || "00:00:00";
     
     // Normalize YYYY-MM-DD
-    if (tanggal.includes("/")) {
-      const p = tanggal.split("/");
+    if (tanggalRaw.includes("/")) {
+      const p = tanggalRaw.split("/");
       if (p.length === 3) {
         // Assume DD/MM/YYYY
         if (p[0].length === 2 && p[2].length === 4) {
-          tanggal = `${p[2]}-${p[1].padStart(2, "0")}-${p[0].padStart(2, "0")}`;
+          tanggalRaw = `${p[2]}-${p[1].padStart(2, "0")}-${p[0].padStart(2, "0")}`;
         }
       }
     }
     
-    return { tanggal, jam };
+    const normalized = normalizeYoYiTimestampToWIB(tanggalRaw, jamRaw);
+    
+    return { tanggal: normalized.tanggal_transaksi, jam: normalized.jam_transaksi };
   };
 
   const getColValue = (row: any, aliases: string[]) => {

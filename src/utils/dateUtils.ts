@@ -206,3 +206,19 @@ export function calculateSettlementAging(
   }
 }
 
+
+/**
+ * Normalize YoYi UTC timestamp to Asia/Jakarta (WIB) business date.
+ * YoYi exports use UTC, so we append "Z" to enforce proper timezone shift.
+ */
+export function normalizeYoYiTimestampToWIB(yoyiDate: string, yoyiTime: string = "00:00:00") {
+  if (!yoyiDate) return { tanggal_transaksi: getTodayWIB(), jam_transaksi: "00:00:00" };
+  // Clean potentially malformed spaces
+  const cleanDate = yoyiDate.trim();
+  const cleanTime = yoyiTime.trim();
+  const timestamp = `${cleanDate}T${cleanTime}Z`; // Force UTC
+  return {
+    tanggal_transaksi: getWIBDate(timestamp),
+    jam_transaksi: getWIBTime(timestamp)
+  };
+}

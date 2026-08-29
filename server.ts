@@ -50,7 +50,7 @@ import {
 } from "./src/lib/financialCloseEvidenceEngine";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
-import { getWIBDate, getWIBTime, getTodayWIB, shiftWIBDays, formatWIBDisplay, extractBusinessDate } from "./src/utils/dateUtils";
+import { getWIBDate, getWIBTime, getTodayWIB, shiftWIBDays, formatWIBDisplay, extractBusinessDate, normalizeYoYiTimestampToWIB } from "./src/utils/dateUtils";
 
 import {
   calculateFinancialSummary,
@@ -2977,16 +2977,23 @@ app.post("/api/importYoYi", async (req, res) => {
   if (!adminId) {
     return res.status(400).json({ status: "error", message: "admin_id wajib diisi untuk import YoYi" });
   }
+  let txDate = getTodayWIB();
+  let txTime = "00:00:00";
   let timestamp = new Date().toISOString();
-  if (input.tanggal_transaksi && input.jam_transaksi) {
-    timestamp = `${input.tanggal_transaksi}T${input.jam_transaksi}`;
-  } else if (parsed.tanggal_transaksi && parsed.jam_transaksi) {
-    timestamp = `${parsed.tanggal_transaksi}T${parsed.jam_transaksi}`;
-  } else if (input.tanggal_transaksi) {
-    timestamp = `${input.tanggal_transaksi}T00:00:00`;
+
+  // 1. Manual Override from UI (User intentional input)
+  if (input.tanggal_transaksi) {
+    txDate = input.tanggal_transaksi;
+    txTime = input.jam_transaksi || "00:00:00";
+    timestamp = `${txDate}T${txTime}`;
+  } 
+  // 2. Parsed from YoYi (Convert UTC to WIB)
+  else if (parsed.tanggal_transaksi) {
+    const normalized = normalizeYoYiTimestampToWIB(parsed.tanggal_transaksi, parsed.jam_transaksi);
+    txDate = normalized.tanggal_transaksi;
+    txTime = normalized.jam_transaksi;
+    timestamp = `${txDate}T${txTime}`;
   }
-  const txDate = input.tanggal_transaksi || parsed.tanggal_transaksi || getWIBDate(timestamp);
-  const txTime = input.jam_transaksi || parsed.jam_transaksi || getWIBTime(timestamp);
   const transId = "TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5);
 
   // Financial calculations
