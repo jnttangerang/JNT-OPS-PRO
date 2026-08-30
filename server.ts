@@ -3765,18 +3765,22 @@ function getCombinedTransactions(db: any) {
 function filterTransactions(combined: any[], filterOutlet: string, dateStart?: string, dateEnd?: string, filterTipeLayanan?: string) {
   let filtered = combined;
   if (filterOutlet && filterOutlet !== "ALL") {
-    filtered = filtered.filter((r: any) => r.outlet_id === filterOutlet);
+    filtered = filtered.filter((r: any) => (r.outlet_id || r.outlet_id_input) === filterOutlet);
   }
   if (filterTipeLayanan && filterTipeLayanan !== "ALL") {
-    filtered = filtered.filter((r: any) => (r.ekspedisi || "").toUpperCase() === filterTipeLayanan.toUpperCase());
+    filtered = filtered.filter((r: any) => (r.ekspedisi || r.tipe_layanan || "").toUpperCase() === filterTipeLayanan.toUpperCase());
   }
   if (dateStart) {
-    const start = new Date(dateStart).getTime();
-    filtered = filtered.filter((r: any) => new Date(r.tanggal_transaksi || r.created_at).getTime() >= start);
+    filtered = filtered.filter((r: any) => {
+      const txDate = extractBusinessDate(r);
+      return !txDate || txDate >= dateStart;
+    });
   }
   if (dateEnd) {
-    const end = new Date(dateEnd).getTime() + 86400000;
-    filtered = filtered.filter((r: any) => new Date(r.tanggal_transaksi || r.created_at).getTime() <= end);
+    filtered = filtered.filter((r: any) => {
+      const txDate = extractBusinessDate(r);
+      return !txDate || txDate <= dateEnd;
+    });
   }
   return filtered;
 }
@@ -4036,7 +4040,7 @@ function getPembatalanLogs(db: any, filterOutlet?: string, dateStart?: string, d
 }
 // --- END DASHBOARD HELPERS ---
 
-app.post("/api/getAdminDashboardData", (req, res) => {
+app.post("/api/getAdminDashboardData", async (req, res) => {
   try {
     const { user_id, role, filterOutlet, dateStart, dateEnd } = req.body;
 
@@ -4044,7 +4048,7 @@ app.post("/api/getAdminDashboardData", (req, res) => {
       return res.status(403).json({ status: "error", message: "Akses ditolak." });
     }
 
-    const db = readDb();
+    const db = await syncDbWithAppsScript(readDb());
     
     // Safely fallback undefined arrays to empty arrays to prevent crashes on Vercel old db.json cache
     db.EXP_Resi = db.EXP_Resi || [];
@@ -4118,14 +4122,14 @@ app.post("/api/getAdminDashboardData", (req, res) => {
 });
 
 // 12. GET DASHBOARD DATA (OWNER EXCLUSIVE)
-app.post("/api/getDashboardData", (req, res) => {
+app.post("/api/getDashboardData", async (req, res) => {
   const { user_id, role, filterOutlet, filterTipeLayanan, dateStart, dateEnd } = req.body;
 
   if ((role || "").toString().toUpperCase() !== "OWNER") {
     return res.status(403).json({ status: "error", message: "Akses ditolak. Hanya untuk OWNER." });
   }
 
-  const db = readDb();
+  const db = await syncDbWithAppsScript(readDb());
   const combined = getCombinedTransactions(db);
   const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd, filterTipeLayanan);
   
