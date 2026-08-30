@@ -684,6 +684,8 @@ function apiImportYoYi(params) {
       transaksi_id: txId,
       resi_id: resiNum,
       nomor_resi: resiNum,
+      tanggal_transaksi: (parsed && parsed.tanggal_transaksi) || (input && input.tanggal_transaksi) || null,
+      jam_transaksi: (parsed && parsed.jam_transaksi) || (input && input.jam_transaksi) || null,
       nama_pengirim: parsed.nama_pengirim || "",
       hp_pengirim: parsed.no_hp_pengirim || "",
       alamat_pengirim: parsed.alamat_pengirim || "",
@@ -710,7 +712,7 @@ function apiImportYoYi(params) {
       ekspedisi: "Express"
     };
     
-    Logger.log("[apiImportYoYi] Saving transaction for resi " + resiNum + " with txId " + txId);
+    Logger.log("[apiImportYoYi] Saving transaction for resi " + resiNum + " with txId " + txId + " | tanggal: " + transactionData.tanggal_transaksi + " | jam: " + transactionData.jam_transaksi);
     const saveResult = apiSaveTransaksi({ jenis_layanan: "Express", data: transactionData });
     Logger.log("[apiImportYoYi] Save result: " + JSON.stringify(saveResult));
     return saveResult;
@@ -3512,7 +3514,30 @@ var TransactionService = {
     }
     
     var timestamp = new Date().toISOString();
-    var txDate = timestamp.split("T")[0];
+    
+    // Business Date: Priority 1 = payload tanggal_transaksi (YYYY-MM-DD), Priority 2 = fallback current Asia/Jakarta (WIB) date
+    var txDate = "";
+    if (data && data.tanggal_transaksi && /^\d{4}-\d{2}-\d{2}$/.test(String(data.tanggal_transaksi).trim())) {
+      txDate = String(data.tanggal_transaksi).trim();
+    } else {
+      try {
+        txDate = Utilities.formatDate(new Date(), "Asia/Jakarta", "yyyy-MM-dd");
+      } catch (e) {
+        txDate = new Date(Date.now() + 7 * 3600 * 1000).toISOString().split("T")[0];
+      }
+    }
+
+    var txTime = "";
+    if (data && data.jam_transaksi && /^\d{1,2}:\d{2}(:\d{2})?$/.test(String(data.jam_transaksi).trim())) {
+      var rawTime = String(data.jam_transaksi).trim();
+      txTime = rawTime.length === 5 ? rawTime + ":00" : rawTime;
+    } else {
+      try {
+        txTime = Utilities.formatDate(new Date(), "Asia/Jakarta", "HH:mm:ss");
+      } catch (e) {
+        txTime = new Date(Date.now() + 7 * 3600 * 1000).toISOString().split("T")[1].slice(0, 8);
+      }
+    }
     
     if (this.checkTransactionLock(txDate, data.outlet_id_input)) {
       throw new Error("Setoran harian untuk tanggal ini sudah dibuat. Hubungi Owner apabila transaksi tersebut memang harus dimasukkan ke dalam setoran.");
@@ -3674,7 +3699,7 @@ var TransactionService = {
       outlet_id: data.outlet_id_input,
       admin_id: data.admin_id_pencatat,
       tanggal_transaksi: txDate,
-      jam_transaksi: timestamp.split("T")[1] ? timestamp.split("T")[1].slice(0, 8) : "00:00:00",
+      jam_transaksi: txTime,
       no_resi: resiId,
       ekspedisi: data.ekspedisi || jenisLayanan,
       tipe_produk: data.tipe_produk,
