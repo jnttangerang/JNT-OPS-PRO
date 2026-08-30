@@ -1252,10 +1252,21 @@ function apiGetRiwayatTransaksi(params) {
   var dbOutlets = DatabaseService.getSheetData("Outlets");
   var dbUsers = DatabaseService.getSheetData("Users");
 
-  var expStatusCol = (dbExp && dbExp[0]) ? dbExp[0].indexOf("status_resi") : -1;
-  var expTotalCol = (dbExp && dbExp[0]) ? dbExp[0].indexOf("grand_total") : -1;
-  var crgStatusCol = (dbCrg && dbCrg[0]) ? dbCrg[0].indexOf("status_resi") : -1;
-  var crgTotalCol = (dbCrg && dbCrg[0]) ? dbCrg[0].indexOf("grand_total") : -1;
+  var expHeader = (dbExp && dbExp[0]) ? dbExp[0] : [];
+  var crgHeader = (dbCrg && dbCrg[0]) ? dbCrg[0] : [];
+
+  var getVal = function(header, row, colName, fallbackIdx) {
+    var idx = header ? header.indexOf(colName) : -1;
+    if (idx !== -1 && row[idx] !== undefined) return row[idx];
+    if (fallbackIdx !== undefined && row[fallbackIdx] !== undefined) return row[fallbackIdx];
+    return "";
+  };
+
+  var getNum = function(header, row, colName, fallbackIdx) {
+    var val = getVal(header, row, colName, fallbackIdx);
+    var num = parseFloat(val);
+    return isNaN(num) ? 0 : num;
+  };
 
   var backupMap = {};
   for (var k = 1; k < dbBackup.length; k++) {
@@ -1281,12 +1292,26 @@ function apiGetRiwayatTransaksi(params) {
       transaksi_id: txId,
       timestamp: r[2].toString(),
       admin: userMap[r[3].toString()] || r[3].toString(),
+      admin_id: r[3].toString(),
       outlet: outletMap[outId] || outId,
+      outlet_id: outId,
       tipe: "Express",
-      grand_total: parseFloat((expTotalCol !== -1 && r[expTotalCol] !== undefined) ? r[expTotalCol] : (r[8] || 0)) || 0,
+      tipe_produk: getVal(expHeader, r, "tipe_produk", 5).toString(),
+      metode_bayar: getVal(expHeader, r, "metode_bayar", 12).toString() || "Tunai",
+      ongkir_dasar: getNum(expHeader, r, "ongkir_dasar", 8),
+      biaya_asuransi: getNum(expHeader, r, "biaya_asuransi", 7),
+      biaya_yoyi: getNum(expHeader, r, "biaya_yoyi", 9),
+      total_dibayar_customer: getNum(expHeader, r, "total_dibayar_customer", 10),
+      pembulatan: getNum(expHeader, r, "pembulatan", 11),
+      biaya_packing: getNum(expHeader, r, "biaya_packing", 15),
+      biaya_amplop: getNum(expHeader, r, "biaya_amplop", 14),
+      biaya_lain: getNum(expHeader, r, "biaya_lain", 6),
+      grand_total: getNum(expHeader, r, "grand_total", 18),
+      setoran_ke_owner: getNum(expHeader, r, "setoran_ke_owner", 19),
+      kas_operasional: getNum(expHeader, r, "kas_operasional", 20),
       pengirim: p.pengirim,
       penerima: p.penerima,
-      status_resi: (expStatusCol !== -1 && r[expStatusCol]) ? r[expStatusCol].toString() : "AKTIF"
+      status_resi: (getVal(expHeader, r, "status_resi", 21) || "AKTIF").toString()
     });
   }
 
@@ -1301,12 +1326,26 @@ function apiGetRiwayatTransaksi(params) {
       transaksi_id: txIdC,
       timestamp: c[2].toString(),
       admin: userMap[c[3].toString()] || c[3].toString(),
+      admin_id: c[3].toString(),
       outlet: outletMap[outIdC] || outIdC,
+      outlet_id: outIdC,
       tipe: "Cargo",
-      grand_total: parseFloat((crgTotalCol !== -1 && c[crgTotalCol] !== undefined) ? c[crgTotalCol] : (c[8] || 0)) || 0,
+      tipe_produk: getVal(crgHeader, c, "tipe_produk", 5).toString(),
+      metode_bayar: getVal(crgHeader, c, "metode_bayar", 15).toString() || "Tunai",
+      ongkir_dasar: getNum(crgHeader, c, "ongkir_dasar", 11),
+      biaya_asuransi: getNum(crgHeader, c, "biaya_asuransi", 10),
+      biaya_yoyi: getNum(crgHeader, c, "biaya_jtc", 12),
+      total_dibayar_customer: getNum(crgHeader, c, "total_dibayar_customer", 13),
+      pembulatan: getNum(crgHeader, c, "pembulatan", 14),
+      biaya_packing: getNum(crgHeader, c, "biaya_packing", 18),
+      biaya_amplop: getNum(crgHeader, c, "biaya_amplop", 17),
+      biaya_lain: 0,
+      grand_total: getNum(crgHeader, c, "grand_total", 21),
+      setoran_ke_owner: getNum(crgHeader, c, "setoran_ke_owner", 22),
+      kas_operasional: getNum(crgHeader, c, "kas_operasional", 23),
       pengirim: pC.pengirim,
       penerima: pC.penerima,
-      status_resi: (crgStatusCol !== -1 && c[crgStatusCol]) ? c[crgStatusCol].toString() : "AKTIF"
+      status_resi: (getVal(crgHeader, c, "status_resi", 24) || "AKTIF").toString()
     });
   }
 
