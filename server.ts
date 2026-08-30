@@ -7072,19 +7072,19 @@ async function syncDbWithAppsScript(db: any) {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: "getRiwayatTransaksi", data: { filterOutlet: "ALL" } }),
-        signal: AbortSignal.timeout(2500)
+        signal: AbortSignal.timeout(8000)
       }).then(r => r.json()).catch(() => null),
       fetch(appsScriptUrl.trim(), {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: "getSetoranList", data: {} }),
-        signal: AbortSignal.timeout(2500)
+        signal: AbortSignal.timeout(8000)
       }).then(r => r.json()).catch(() => null),
       fetch(appsScriptUrl.trim(), {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: "getKeuanganOutlet", data: {} }),
-        signal: AbortSignal.timeout(2500)
+        signal: AbortSignal.timeout(8000)
       }).then(r => r.json()).catch(() => null)
     ]);
 
@@ -7098,10 +7098,39 @@ async function syncDbWithAppsScript(db: any) {
           (tx.no_resi && (l.no_resi === tx.no_resi || l.resi_id === tx.no_resi))
         );
         
-        let remoteAdminId = tx.admin_id_pencatat || tx.admin_id;
-        let finalAdminId = remoteAdminId;
-        if (!remoteAdminId || remoteAdminId === "SYSTEM") {
+        // Resolve Admin identity with priority fallback and user resolution
+        const rawAdmin = tx.admin_id_pencatat || tx.admin_id || tx.admin || tx.user_id || tx.dibuat_oleh || tx.admin_pembuat || tx.created_by;
+        let finalAdminId = rawAdmin;
+        
+        if (rawAdmin && String(rawAdmin).trim() !== "" && rawAdmin !== "SYSTEM") {
+          const cleanAdmin = String(rawAdmin).trim();
+          const matchedUser = (db.Users || []).find((u: any) => 
+            u.user_id === cleanAdmin || 
+            u.username === cleanAdmin || 
+            (u.nama_lengkap && u.nama_lengkap.trim().toUpperCase() === cleanAdmin.toUpperCase())
+          );
+          if (matchedUser) {
+            finalAdminId = matchedUser.user_id;
+          }
+        }
+        
+        if (!finalAdminId || finalAdminId === "SYSTEM") {
           finalAdminId = (localTx && localTx.admin_id && localTx.admin_id !== "SYSTEM") ? localTx.admin_id : "SYSTEM";
+        }
+
+        // Resolve Outlet identity with code / name mapping fallback
+        const rawOutlet = tx.outlet_id_input || tx.outlet_id || tx.outlet || tx.nama_outlet || localTx?.outlet_id;
+        let finalOutletId = rawOutlet || "OUT-001";
+        if (rawOutlet && String(rawOutlet).trim() !== "") {
+          const cleanOutlet = String(rawOutlet).trim();
+          const matchedOutlet = (db.Outlets || []).find((o: any) =>
+            o.outlet_id === cleanOutlet ||
+            (o.nama_outlet && o.nama_outlet.trim().toUpperCase() === cleanOutlet.toUpperCase()) ||
+            (o.kode_outlet && o.kode_outlet.trim().toUpperCase() === cleanOutlet.toUpperCase())
+          );
+          if (matchedOutlet) {
+            finalOutletId = matchedOutlet.outlet_id;
+          }
         }
 
         // Helper to pick financial field: remote valid (>0 or authoritative) > local valid > fallback 0
@@ -7127,8 +7156,10 @@ async function syncDbWithAppsScript(db: any) {
           id: id,
           transaksi_id: tx.transaksi_id || tx.id || localTx?.transaksi_id || id,
           no_resi: tx.resi_id || tx.no_resi || localTx?.no_resi || "",
-          outlet_id: tx.outlet_id_input || tx.outlet_id || localTx?.outlet_id || "OUT-001",
+          outlet_id: finalOutletId,
           admin_id: finalAdminId,
+          admin_pembuat: finalAdminId,
+          user_id: finalAdminId,
           tanggal_transaksi: extractBusinessDate(tx) || (tx.timestamp || tx.tanggal_transaksi || localTx?.tanggal_transaksi || "").slice(0, 10),
           jam_transaksi: (tx.timestamp || "").includes("T") ? tx.timestamp.split("T")[1].slice(0, 8) : (tx.jam_transaksi || localTx?.jam_transaksi || "00:00:00"),
           created_at: tx.timestamp || tx.created_at || localTx?.created_at || new Date().toISOString(),
