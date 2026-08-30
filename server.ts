@@ -6486,39 +6486,12 @@ app.post("/api/setKategoriAktif", handleSetKategoriAktif);
 
 function toIsoDateString(val: any, fallback?: any): string {
   if (val) {
-    const str = String(val).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
-    if (/^\d{4}-\d{2}-\d{2}/.test(str)) return str.slice(0, 10);
-    if (/\b\d{4}\b/.test(str)) {
-      const parsed = new Date(str);
-      if (!isNaN(parsed.getTime())) {
-        const y = parsed.getFullYear();
-        const m = String(parsed.getMonth() + 1).padStart(2, "0");
-        const d = String(parsed.getDate()).padStart(2, "0");
-        return `${y}-${m}-${d}`;
-      }
-    }
+    const res = getWIBDate(val);
+    if (res) return res;
   }
   if (fallback) {
-    const fbStr = String(fallback).trim();
-    if (/^\d{4}-\d{2}-\d{2}/.test(fbStr)) return fbStr.slice(0, 10);
-    const parsedFb = new Date(fbStr);
-    if (!isNaN(parsedFb.getTime())) {
-      const y = parsedFb.getFullYear();
-      const m = String(parsedFb.getMonth() + 1).padStart(2, "0");
-      const d = String(parsedFb.getDate()).padStart(2, "0");
-      return `${y}-${m}-${d}`;
-    }
-  }
-  if (val) {
-    const currentYear = new Date().getFullYear();
-    const parsedWithYear = new Date(`${val} ${currentYear}`);
-    if (!isNaN(parsedWithYear.getTime())) {
-      const y = parsedWithYear.getFullYear();
-      const m = String(parsedWithYear.getMonth() + 1).padStart(2, "0");
-      const d = String(parsedWithYear.getDate()).padStart(2, "0");
-      return `${y}-${m}-${d}`;
-    }
+    const resFb = getWIBDate(fallback);
+    if (resFb) return resFb;
   }
   return getTodayWIB();
 }
