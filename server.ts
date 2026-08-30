@@ -2838,7 +2838,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
 
     // Auto-record to KeuanganOutlet for Packing and Amplop
     if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
-    const txDateStr = (data.tanggal_transaksi || timestamp).slice(0, 10);
+    const txDateStr = data.tanggal_transaksi || getWIBDate(timestamp);
     if (biayaPacking > 0) {
       const hasPacking = db.KeuanganOutlet.some((k: any) =>
         ((k.resi_id && k.resi_id.toUpperCase() === rid) || (k.deskripsi && k.deskripsi.includes(rid))) &&
@@ -3945,7 +3945,7 @@ function getPembatalanLogs(db: any, filterOutlet?: string, dateStart?: string, d
   const allTxs = [...(db.MASTER_TRANSAKSI || []), ...(db.EXP_Resi || []), ...(db.CRG_Resi || [])];
   
   // Default to today in WIB if date filter is not supplied
-  const nowWIB = new Date(Date.now() + 7 * 3600 * 1000).toISOString().split("T")[0];
+  const nowWIB = getTodayWIB();
   const effectiveDateStart = dateStart || nowWIB;
   const effectiveDateEnd = dateEnd || nowWIB;
 
@@ -7160,8 +7160,8 @@ async function syncDbWithAppsScript(db: any) {
           admin_id: finalAdminId,
           admin_pembuat: finalAdminId,
           user_id: finalAdminId,
-          tanggal_transaksi: extractBusinessDate(tx) || (tx.timestamp || tx.tanggal_transaksi || localTx?.tanggal_transaksi || "").slice(0, 10),
-          jam_transaksi: (tx.timestamp || "").includes("T") ? tx.timestamp.split("T")[1].slice(0, 8) : (tx.jam_transaksi || localTx?.jam_transaksi || "00:00:00"),
+          tanggal_transaksi: extractBusinessDate(tx) || getWIBDate(tx.timestamp || tx.tanggal_transaksi || localTx?.tanggal_transaksi || localTx?.created_at),
+          jam_transaksi: getWIBTime(tx.timestamp || tx.created_at || tx.jam_transaksi || localTx?.jam_transaksi || "00:00:00"),
           created_at: tx.timestamp || tx.created_at || localTx?.created_at || new Date().toISOString(),
           ekspedisi: tx.tipe_layanan || tx.ekspedisi || localTx?.ekspedisi || "Express",
           tipe_produk: tx.tipe_produk || localTx?.tipe_produk || "",

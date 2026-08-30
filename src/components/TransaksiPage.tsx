@@ -13,7 +13,7 @@ import { toast } from "../utils/toast";
 import { calculateWeight } from "../utils/weightCalculator";
 import { getDisplayImageUrl } from "../utils/image";
 import { compressImage } from "../utils/imageCompressor";
-import { getTodayWIB } from "../utils/dateUtils";
+import { getTodayWIB, getWIBTime } from "../utils/dateUtils";
 import { isDocumentTransaction } from "../lib/financialEngine";
 import AddressBookDrawer from "./AddressBookDrawer";
 import ImportYoYiModal, { YoYiImportQueueItem, YoYiParsedData } from "./ImportYoYiModal";
@@ -1136,10 +1136,9 @@ export default function TransaksiPage({
 
     const activeItem = String(preInputData?.nama_barang || matchingYoyi?.parsed_data?.nama_barang || "").trim();
 
-    const now = new Date();
     const transactionData = {
-      tanggal_transaksi: format(now, "yyyy-MM-dd"),
-      jam_transaksi: format(now, "HH:mm"),
+      tanggal_transaksi: getTodayWIB(),
+      jam_transaksi: getWIBTime(),
       resi_id: (resiId || "").trim().toUpperCase(),
       transaksi_id: pendingTxId || preInputData?.transaksi_id || ("TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5)),
       admin_id_pencatat: preInputData?.admin_id || session.user_id,

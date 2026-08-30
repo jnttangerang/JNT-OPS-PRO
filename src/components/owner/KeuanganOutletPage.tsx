@@ -7,6 +7,7 @@ import {
 import { useAppsScript } from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
 import { highlightText } from "../../utils/highlight";
+import { getTodayWIB, getWIBDate } from "../../utils/dateUtils";
 import { SessionData, Outlet, KeuanganOutlet, KategoriKeuangan, User } from "../../types";
 
 interface KeuanganOutletPageProps {
@@ -23,9 +24,9 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
   const [categories, setCategories] = useState<KategoriKeuangan[]>([]);
   const [users, setUsers] = useState<User[]>([]);
 
-  // Date defaults (current month or last 30 days)
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+  // Date defaults (current month in Asia/Jakarta WIB)
+  const todayStr = getTodayWIB();
+  const firstDayOfMonth = `${todayStr.slice(0, 7)}-01`;
 
   const isAdmin = session.role === "ADMIN";
 
