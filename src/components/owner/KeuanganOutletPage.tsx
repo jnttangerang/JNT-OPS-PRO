@@ -49,13 +49,14 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
   // Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<KeuanganOutlet | null>(null);
-  const [formJenis, setFormJenis] = useState<"PEMASUKAN" | "PENGELUARAN">("PENGELUARAN");
+  const [formJenis, setFormJenis] = useState<"PEMASUKAN" | "PENGELUARAN" | "TRANSFER_INTERNAL">("PENGELUARAN");
   const [formTanggal, setFormTanggal] = useState(todayStr);
   const [formOutletId, setFormOutletId] = useState(activeOutletId === "ALL" ? "" : activeOutletId);
   const [formKategoriId, setFormKategoriId] = useState("");
   const [formNominal, setFormNominal] = useState<number | "">("");
   const [formDeskripsi, setFormDeskripsi] = useState("");
   const [formBuktiUrl, setFormBuktiUrl] = useState("");
+  const [formLokasiUang, setFormLokasiUang] = useState<"ADMIN" | "OWNER">("ADMIN");
   const [submitting, setSubmitting] = useState(false);
 
   // Modal View Bukti State
@@ -159,6 +160,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
 
   // Active categories for forms
   const activeCategoriesForJenis = useMemo(() => {
+    if (formJenis === "TRANSFER_INTERNAL") return [{ id: "KAT-TRANSFER", nama: "Transfer Internal Owner ke Admin", jenis: "TRANSFER_INTERNAL", aktif: true }];
     return categories.filter(c => c.aktif && c.jenis === formJenis);
   }, [categories, formJenis]);
 
@@ -205,6 +207,31 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
     return totalPemasukan - totalPengeluaran;
   }, [totalPemasukan, totalPengeluaran]);
 
+  const totalAdmin = useMemo(() => {
+    let sum = 0;
+    ledgerList.forEach(x => {
+      const isOwner = x.lokasi_uang === "OWNER";
+      const isAdmin = x.lokasi_uang === "ADMIN" || (!isOwner && x.jenis === "PEMASUKAN"); // Default tunai is admin
+      
+      if (x.jenis === "PEMASUKAN" && !isOwner) sum += (x.nominal || 0);
+      else if (x.jenis === "PENGELUARAN" && isAdmin) sum -= (x.nominal || 0);
+      else if (x.jenis === "TRANSFER_INTERNAL") sum += (x.nominal || 0); // TRANSFER_INTERNAL goes to Admin
+    });
+    return sum;
+  }, [ledgerList]);
+
+  const totalOwner = useMemo(() => {
+    let sum = 0;
+    ledgerList.forEach(x => {
+      const isOwner = x.lokasi_uang === "OWNER";
+      
+      if (x.jenis === "PEMASUKAN" && isOwner) sum += (x.nominal || 0);
+      else if (x.jenis === "PENGELUARAN" && isOwner) sum -= (x.nominal || 0);
+      else if (x.jenis === "TRANSFER_INTERNAL") sum -= (x.nominal || 0); // TRANSFER_INTERNAL deducted from Owner
+    });
+    return sum;
+  }, [ledgerList]);
+
   // Open Add Modal
   const handleOpenAdd = (jenis: "PEMASUKAN" | "PENGELUARAN") => {
     setEditingItem(null);
@@ -232,6 +259,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
     setFormNominal(item.nominal);
     setFormDeskripsi(item.deskripsi || "");
     setFormBuktiUrl(item.bukti_url || "");
+    setFormLokasiUang(item.lokasi_uang || "ADMIN");
     setModalOpen(true);
   };
 
@@ -417,6 +445,13 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
           >
             <Plus className="h-4 w-4 stroke-[2.5]" />
             <span>+ Pengeluaran</span>
+          </button>
+          <button
+            onClick={() => handleOpenAdd("TRANSFER_INTERNAL")}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/10 transition-all cursor-pointer"
+          >
+            <Plus className="h-4 w-4 stroke-[2.5]" />
+            <span>Transfer ke Admin</span>
           </button>
         </div>
       </div>
@@ -624,13 +659,24 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
 
                       {/* Jenis */}
                       <td className="py-3.5 px-4">
-                        <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold font-mono uppercase tracking-wider ${
-                          item.jenis === "PEMASUKAN"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                            : "bg-red-50 text-red-700 border border-red-100"
-                        }`}>
-                          {item.jenis === "PEMASUKAN" ? "+ Pemasukan" : "- Pengeluaran"}
-                        </span>
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-block w-fit px-2.5 py-0.5 rounded text-[10px] font-bold font-mono uppercase tracking-wider ${
+                            item.jenis === "PEMASUKAN"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                              : item.jenis === "TRANSFER_INTERNAL"
+                              ? "bg-blue-50 text-blue-700 border border-blue-100"
+                              : "bg-red-50 text-red-700 border border-red-100"
+                          }`}>
+                            {item.jenis === "PEMASUKAN" ? "+ Pemasukan" : item.jenis === "TRANSFER_INTERNAL" ? "⟲ Transfer" : "- Pengeluaran"}
+                          </span>
+                          <span className={`inline-block w-fit px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                            (item.lokasi_uang === "OWNER" || (item.jenis === "TRANSFER_INTERNAL" && !item.lokasi_uang)) 
+                              ? "bg-purple-50 text-purple-700 border border-purple-100" 
+                              : "bg-gray-100 text-gray-700 border border-gray-200"
+                          }`}>
+                            {(item.lokasi_uang === "OWNER" || (item.jenis === "TRANSFER_INTERNAL" && !item.lokasi_uang)) ? "Di Owner" : "Di Admin"}
+                          </span>
+                        </div>
                       </td>
 
                       {/* Kategori */}
@@ -823,7 +869,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
               {/* Kategori Dropdown */}
               <div>
                 <label className="block text-[11px] font-extrabold text-gray-700 mb-1">
-                  Kategori {formJenis === "PEMASUKAN" ? "Pemasukan" : "Pengeluaran"} <span className="text-red-500">*</span>
+                  Kategori {formJenis === "PEMASUKAN" ? "Pemasukan" : formJenis === "TRANSFER_INTERNAL" ? "Transfer" : "Pengeluaran"} <span className="text-red-500">*</span>
                 </label>
                 {activeCategoriesForJenis.length === 0 ? (
                   <p className="text-xs text-red-500 bg-red-50 p-2.5 rounded-xl border border-red-100">
@@ -859,6 +905,26 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
                   onChange={(e) => setFormNominal(e.target.value ? Number(e.target.value) : "")}
                   className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-mono font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600"
                 />
+              </div>
+
+              {/* Lokasi Uang */}
+              <div>
+                <label className="block text-[11px] font-extrabold text-gray-700 mb-1">
+                  Lokasi Uang <span className="text-red-500">*</span>
+                </label>
+                <select
+                  required
+                  disabled={formJenis === "TRANSFER_INTERNAL"}
+                  value={formLokasiUang}
+                  onChange={(e) => setFormLokasiUang(e.target.value as "ADMIN" | "OWNER")}
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 cursor-pointer disabled:bg-gray-100 disabled:text-gray-400"
+                >
+                  <option value="ADMIN">Di Admin (Kas Fisik Laci)</option>
+                  <option value="OWNER">Di Owner (Rekening Digital)</option>
+                </select>
+                {formJenis === "TRANSFER_INTERNAL" && (
+                  <p className="text-[10px] text-gray-500 mt-1">Transfer Internal default dipindah dari Owner ke Admin.</p>
+                )}
               </div>
 
               {/* Deskripsi */}
@@ -923,6 +989,8 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
                   className={`px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all cursor-pointer disabled:opacity-50 ${
                     formJenis === "PEMASUKAN"
                       ? "bg-emerald-600 hover:bg-emerald-700"
+                      : formJenis === "TRANSFER_INTERNAL"
+                      ? "bg-blue-600 hover:bg-blue-700"
                       : "bg-[#E4002B] hover:bg-red-700"
                   }`}
                 >

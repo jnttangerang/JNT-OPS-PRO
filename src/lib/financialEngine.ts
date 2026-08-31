@@ -32,7 +32,7 @@ export function isTransactionValidForFinance(tx: any): boolean {
   return true;
 }
 
-function classifyPayment(owner_deposit: number, rawMethodInput?: string, dfodNominal: number = 0) {
+function classifyPayment(owner_deposit: number, outlet_cash: number, rawMethodInput?: string, dfodNominal: number = 0) {
   const rawMethod = String(rawMethodInput || "").trim().toUpperCase();
   const isDigital = rawMethod === "QRIS" || rawMethod === "TRANSFER" || rawMethod === "ORDER BY APP" || rawMethod === "ORDER_BY_APP" || rawMethod === "APP";
   const isDfod = rawMethod === "DFOD" || rawMethod.includes("DFOD");
@@ -41,20 +41,28 @@ function classifyPayment(owner_deposit: number, rawMethodInput?: string, dfodNom
     return {
       cash_payment: 0,
       digital_payment: 0,
-      dfod_outstanding: dfodNominal > 0 ? dfodNominal : owner_deposit
+      dfod_outstanding: dfodNominal > 0 ? dfodNominal : owner_deposit,
+      outlet_right_admin: outlet_cash,
+      outlet_right_owner: 0
     };
   }
+
   if (isDigital) {
     return {
       cash_payment: 0,
       digital_payment: owner_deposit,
-      dfod_outstanding: 0
+      dfod_outstanding: 0,
+      outlet_right_admin: 0,
+      outlet_right_owner: outlet_cash
     };
   }
+
   return {
     cash_payment: owner_deposit,
     digital_payment: 0,
-    dfod_outstanding: 0
+    dfod_outstanding: 0,
+    outlet_right_admin: outlet_cash,
+    outlet_right_owner: 0
   };
 }
 
@@ -66,6 +74,8 @@ export interface SingleFinancialSummary {
   cash_payment: number;
   digital_payment: number;
   dfod_outstanding: number;
+  outlet_right_admin: number;
+  outlet_right_owner: number;
 }
 
 export interface DailyFinancialSummary {
@@ -78,6 +88,8 @@ export interface DailyFinancialSummary {
   jumlah_transaksi: number;
   jumlah_express: number;
   jumlah_cargo: number;
+  total_outlet_admin: number;
+  total_outlet_owner: number;
 }
 
 export function calculateFinancialSummary(tx: any[]): DailyFinancialSummary;
@@ -91,7 +103,9 @@ export function calculateFinancialSummary(tx: any): any {
       rounding: 0,
       cash_payment: 0,
       digital_payment: 0,
-      dfod_outstanding: 0
+      dfod_outstanding: 0,
+      outlet_right_admin: 0,
+      outlet_right_owner: 0
     };
   }
 
@@ -107,7 +121,9 @@ export function calculateFinancialSummary(tx: any): any {
       rounding: 0,
       cash_payment: 0,
       digital_payment: 0,
-      dfod_outstanding: 0
+      dfod_outstanding: 0,
+      outlet_right_admin: 0,
+      outlet_right_owner: 0
     };
   }
 
@@ -180,7 +196,7 @@ export function calculateFinancialSummary(tx: any): any {
   const outlet_cash = biayaTambahan;
   const customer_payment = isDfod ? outlet_cash : (owner_deposit + outlet_cash);
   
-  const classification = classifyPayment(owner_deposit, paymentMethod, isDfod ? (biayaDasarLayanan + rounding) : 0);
+  const classification = classifyPayment(owner_deposit, outlet_cash, paymentMethod, isDfod ? (biayaDasarLayanan + rounding) : 0);
   
   return {
     customer_payment: customer_payment,
@@ -189,7 +205,9 @@ export function calculateFinancialSummary(tx: any): any {
     rounding: rounding,
     cash_payment: classification.cash_payment,
     digital_payment: classification.digital_payment,
-    dfod_outstanding: classification.dfod_outstanding
+    dfod_outstanding: classification.dfod_outstanding,
+    outlet_right_admin: classification.outlet_right_admin,
+    outlet_right_owner: classification.outlet_right_owner
   };
 }
 
@@ -200,6 +218,8 @@ export function calculateDailyFinancial(transactions: any[]) {
   let total_cash_payment = 0;
   let total_digital_payment = 0;
   let total_dfod_outstanding = 0;
+  let total_outlet_admin = 0;
+  let total_outlet_owner = 0;
   let jumlah_transaksi = 0;
   let jumlah_express = 0;
   let jumlah_cargo = 0;
@@ -214,6 +234,8 @@ export function calculateDailyFinancial(transactions: any[]) {
     total_cash_payment += summary.cash_payment;
     total_digital_payment += summary.digital_payment;
     total_dfod_outstanding += summary.dfod_outstanding;
+    total_outlet_admin += summary.outlet_right_admin;
+    total_outlet_owner += summary.outlet_right_owner;
     jumlah_transaksi++;
 
     const eks = (tx.ekspedisi || "").toUpperCase();
@@ -228,6 +250,8 @@ export function calculateDailyFinancial(transactions: any[]) {
     total_cash_payment,
     total_digital_payment,
     total_dfod_outstanding,
+    total_outlet_admin,
+    total_outlet_owner,
     jumlah_transaksi,
     jumlah_express,
     jumlah_cargo

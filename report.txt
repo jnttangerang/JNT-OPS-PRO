@@ -1,0 +1,64 @@
+A. EXECUTIVE VERDICT
+Apakah arsitektur Kas Outlet saat ini sudah mampu membedakan:
+HAK UANG vs LOKASI UANG
+Jawab: NO
+
+B. CURRENT BUSINESS MODEL
+Tunai:
+OWNER = Rp 12.000 (Hak Owner)
+OUTLET = Rp 15.000 (Hak Outlet)
+ADMIN HOLDS = Rp 27.000 (Keseluruhan uang dari customer)
+ADMIN SETTLEMENT = Rp 12.000 (Admin wajib setor ke Owner)
+
+QRIS/Transfer:
+OWNER = Rp 12.000 (Hak Owner)
+OUTLET = Rp 15.000 (Hak Outlet)
+ADMIN HOLDS = Rp 0 (Semua uang langsung masuk ke rekening Owner)
+ADMIN SETTLEMENT = Rp 0 (Sistem saat ini menghitung Wajib Setor = 0 untuk metode digital)
+
+C. TRANSACTION TRACE
+EXP_Resi -> MASTER_TRANSAKSI -> Financial Engine -> Kas Outlet -> Daily Closing
+
+Pada Financial Engine (`src/lib/financialEngine.ts`), nilai `cash_payment` (Wajib Setor) dihitung hanya dari porsi Hak Owner (`owner_deposit`). Jika transaksi digital, `cash_payment` menjadi 0. 
+
+NAMUN, pada integrasi Kas Outlet (`server.ts` line ~6800), sistem selalu melakukan `db.KeuanganOutlet.unshift({ jenis: "PEMASUKAN" })` untuk nilai Packing dan Amplop (Hak Outlet). Sistem TIDAK memeriksa `metode_bayar`. Akibatnya, uang QRIS yang masuk ke rekening Owner tetap dianggap sebagai "Pemasukan Kas Outlet di tangan Admin".
+
+D. PAYMENT EVIDENCE
+Terdapat field `bukti_bayar_url` dan `bukti_tambahan_url` pada transaksi, dan dapat diunggah melalui Pre-Input/Transaksi. Namun, tidak ada proses verifikasi ketat (blocking) di Daily Closing terhadap keabsahan bukti ini. Karena Wajib Setor menjadi 0, uang dianggap sudah "aman" masuk ke Owner secara asumtif.
+
+E. CURRENT PROBLEM
+FIRST DIVERGENCE POINT:
+FILE: src/lib/financialEngine.ts & server.ts
+FUNCTION: `classifyPayment()` & `handleSaveTransaksi()` (bagian mutasi KeuanganOutlet)
+LINE: ~180-190 (financialEngine.ts) & ~6800 (server.ts)
+
+ACTUAL VALUE: Kas Outlet otomatis menerima `PEMASUKAN` tunai tanpa melihat metode bayar customer.
+EXPECTED VALUE: Kas Outlet harus mencatat lokasi uang (di Admin atau di Owner).
+BUSINESS MEANING: Saat ini, jika customer membayar Packing via QRIS, uangnya masuk ke rekening Owner, namun pembukuannya masuk ke Kas Laci Admin.
+WHY THIS IS WRONG: Admin akan selalu mengalami "Selisih Kurang" (Shortage) pada laci Kas Outlet secara fisik, karena sistem menganggap Admin memegang uang Packing/Amplop yang sebenarnya ditransfer ke Owner.
+
+F. RECOMMENDED CONCEPT
+Sangat direkomendasikan untuk menerapkan struktur:
+TOTAL HAK KAS OUTLET
+├── Kas Outlet di ADMIN
+└── Kas Outlet di OWNER
+
+Konsep ini aman untuk diterapkan dengan menambahkan metadata `lokasi_uang` (ADMIN / OWNER) pada tabel `KEUANGAN_OUTLET`, tanpa merusak struktur saldo total.
+
+G. IMPACT ON DAILY CLOSING
+Tunai: Wajib Setor Harian = Hak Owner.
+QRIS/Transfer: Wajib Setor Harian = Rp 0. 
+Namun, Owner memiliki hutang "Kas Outlet di OWNER" yang harus dikembalikan ke Outlet. Skema yang umum adalah memotong "Kas Outlet di OWNER" dari "Wajib Setor Harian Tunai" milik Admin sebagai bentuk reimbursement otomatis.
+
+H. MINIMAL FUTURE CHANGE
+FILE: src/lib/financialEngine.ts
+FUNCTION: calculateFinancialSummary & classifyPayment
+DATA FIELD: Pemisahan `outlet_cash` menjadi `outlet_cash_admin` dan `outlet_cash_owner`.
+
+FILE: server.ts
+FUNCTION: Insert mutasi KeuanganOutlet pada saat simpan transaksi.
+DATA FIELD: Tambahan field `lokasi_uang` pada `KEUANGAN_OUTLET`.
+
+I. CONFIDENCE
+AUDIT CONFIDENCE: 100%
+(Berdasarkan trace struktur source code `financialEngine.ts`, aggregasi `expected_cash` di `dailyClosingEngine.ts`, dan unconditional unshift pada `KEUANGAN_OUTLET` di `server.ts`).

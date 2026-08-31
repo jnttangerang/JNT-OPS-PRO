@@ -1,0 +1,90 @@
+## A. EXECUTIVE VERDICT
+
+Apakah sistem saat ini sudah membedakan:
+HAK UANG vs LOKASI UANG
+
+Jawab: **PARTIAL**
+Sistem sudah membedakan Hak Uang vs Lokasi Uang HANYA untuk "Hak Owner" (dipisah menjadi `cash_payment` vs `digital_payment`). Namun, untuk "Hak Outlet" (`outlet_cash`), sistem gagal membedakan lokasi uang dan selalu berasumsi lokasinya berada di Admin, apa pun metode pembayarannya.
+
+## B. CURRENT CONTRACT
+
+Kontrak finansial aktual di `src/lib/financialEngine.ts`:
+- `owner_deposit` = Hak Owner
+- `outlet_cash` = Hak Outlet
+- `cash_payment` = Hak Owner di Admin (Wajib Setor)
+- `digital_payment` = Hak Owner di Owner
+- **Hak Outlet di Admin** = Tidak ada field terpisah (Semua `outlet_cash` dianggap di Admin)
+- **Hak Outlet di Owner** = Tidak ada field
+
+## C. LOCATION OF MONEY CONTRACT
+
+Apakah sudah ada?
+**NO**. Tidak ada field `lokasi_uang`, `money_location`, atau sejenisnya di `KEUANGAN_OUTLET`.
+
+## D. PAYMENT MATRIX
+
+| Payment  | Owner Right | Outlet Right | Admin Holds (System) | Owner Holds (System) | Admin Settlement |
+| -------- | ----------: | -----------: | -------------------: | -------------------: | ---------------: |
+| Tunai    |      12.000 |       15.000 |               27.000 |                    0 |           12.000 |
+| QRIS     |      12.000 |       15.000 |               15.000 |               12.000 |                0 |
+| Transfer |      12.000 |       15.000 |               15.000 |               12.000 |                0 |
+
+*(Catatan: Untuk QRIS/Transfer, Admin Holds seharusnya 0, namun secara sistem tercatat 15.000 di Kas Outlet Admin karena pencatatan otomatis di `server.ts` tidak memeriksa metode pembayaran).*
+
+## E. PAYMENT EVIDENCE
+
+Status:
+Field `bukti_bayar_url` dan `bukti_tambahan_url` tersedia di database dan UI, namun **tidak divalidasi oleh logic finansial manapun**. Daily Closing dan Financial Engine mengklasifikasikan pembayaran sebagai digital hanya dari string teks `metode_bayar` ("QRIS", "Transfer") tanpa mewajibkan atau memverifikasi keberadaan bukti tersebut.
+
+## F. TRANSACTION TRACE
+
+Contoh Transaksi QRIS:
+- **Transaction**: Rp 27.000 (Ongkir 12.000, Packing 15.000), dibayar QRIS.
+- **Payment**: Sistem mendeteksi `isDigital = true`.
+- **Financial Engine**: `owner_deposit`=12.000, `outlet_cash`=15.000. `cash_payment`=0, `digital_payment`=12.000.
+- **Kas Outlet**: `server.ts` melakukan `db.KeuanganOutlet.unshift` Pemasukan 15.000 ke Kas Admin tanpa melihat status digital.
+- **Daily Closing**: Wajib Setor Admin menjadi Rp 0 (berdasarkan `cash_payment`).
+- **Owner**: Melihat Wajib Setor Rp 0, namun saldo Kas Outlet Admin bertambah 15.000.
+
+## G. FIRST DIVERGENCE
+
+```text
+FILE: src/lib/financialEngine.ts
+FUNCTION: calculateFinancialSummary
+LINE: ~178
+ACTUAL: const outlet_cash = biayaTambahan;
+EXPECTED: Perlu memecah `biayaTambahan` menjadi `outlet_cash_admin` dan `outlet_cash_owner` berdasarkan `paymentMethod`.
+```
+*(Efek dominonya ada di `server.ts` saat memasukkan data ke `KEUANGAN_OUTLET` secara buta).*
+
+## H. BUSINESS RISK
+
+Risiko sistem digunakan untuk rekonsiliasi kas outlet adalah **Defisit Laci Admin Semu**.
+Admin akan selalu mengalami "Selisih Kurang" fisik uang pada Daily Closing. Setiap ada penjualan Packing/Amplop via QRIS/Transfer, uang masuk ke rekening Owner, tetapi sistem menambah saldo laci kas Admin. Admin akan ditagih pertanggungjawaban uang yang tidak pernah mereka pegang.
+
+## I. TARGET ARCHITECTURE
+
+Konsep:
+```text
+Kas Outlet
+├── Di Admin
+└── Di Owner
+```
+**SANGAT AMAN DAN TEPAT**. Arsitektur ini merefleksikan realitas fisik, kompatibel dengan konsep "Financial SSOT", dan memudahkan Daily Closing. Jika "Kas Outlet di Owner" ada, sistem dapat melakukan rekonsiliasi otomatis (misalnya, memotong setoran tunai Admin untuk mengganti uang Kas Outlet yang nyangkut di rekening Owner).
+
+## J. MINIMAL IMPLEMENTATION SURFACE
+
+FILE: `src/types.ts`
+PURPOSE: Tambahkan tipe/metadata lokasi uang (misal `lokasi_uang?: "ADMIN" | "OWNER"`) pada `KeuanganOutlet` dan pecah interface `outlet_cash`.
+
+FILE: `src/lib/financialEngine.ts`
+FUNCTION: `calculateFinancialSummary` & `classifyPayment`
+PURPOSE: Memisahkan output `outlet_cash` menjadi porsi Admin dan porsi Owner berdasarkan metode bayar.
+
+FILE: `server.ts`
+FUNCTION: Bagian sync/save transaksi (`handleSaveTransaksi` / auto-insert KeuanganOutlet).
+PURPOSE: Memberikan label `lokasi_uang` yang sesuai (Admin atau Owner) ke setiap entri Pemasukan Packing/Amplop yang di-generate.
+
+## K. CONFIDENCE
+
+AUDIT CONFIDENCE: 100%

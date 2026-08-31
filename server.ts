@@ -2845,6 +2845,8 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-207" || k.kategori_id === "KAT-102" || k.deskripsi?.includes("Packing"))
       );
       if (!hasPacking) {
+        const mBayar = (data.metode_bayar || "").toUpperCase();
+        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now()}-P`,
           tanggal: txDateStr,
@@ -2857,7 +2859,8 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
           dibuat_oleh: adminId,
           created_at: timestamp,
           aktif: true,
-          resi_id: rid
+          resi_id: rid,
+          lokasi_uang: isDigital ? "OWNER" : "ADMIN"
         });
       }
     }
@@ -2867,6 +2870,8 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-208" || k.kategori_id === "KAT-103" || k.deskripsi?.includes("Amplop"))
       );
       if (!hasAmplop) {
+        const mBayar = (data.metode_bayar || "").toUpperCase();
+        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now() + 1}-A`,
           tanggal: txDateStr,
@@ -2879,7 +2884,8 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
           dibuat_oleh: adminId,
           created_at: timestamp,
           aktif: true,
-          resi_id: rid
+          resi_id: rid,
+          lokasi_uang: isDigital ? "OWNER" : "ADMIN"
         });
       }
     }
@@ -6577,7 +6583,7 @@ function isOutletDateClosed(db: any, outletId: string, tanggal: string): boolean
 
 const handleSaveKeuanganOutlet = (req: any, res: any) => {
   const db = readDb();
-  const { kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, dibuat_oleh, user_id, user_role, role } = req.body || {};
+  const { kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, dibuat_oleh, user_id, user_role, role, lokasi_uang } = req.body || {};
 
   const currentRole = (user_role || role || "").toUpperCase();
   if (currentRole && currentRole !== "OWNER" && currentRole !== "ADMIN") {
@@ -6589,7 +6595,7 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
   const trimmedTanggal = String(tanggal || "").trim().slice(0, 10);
   const trimmedOutletId = String(outlet_id || "").trim();
 
-  if (!trimmedKategoriId) return res.json({ status: "error", message: "Kategori wajib dipilih." });
+  if (!trimmedKategoriId && req.body.jenis !== "TRANSFER_INTERNAL") return res.json({ status: "error", message: "Kategori wajib dipilih." });
   if (!trimmedTanggal) return res.json({ status: "error", message: "Tanggal wajib diisi (YYYY-MM-DD)." });
   if (!trimmedOutletId) return res.json({ status: "error", message: "Outlet wajib dipilih." });
   if (numNominal <= 0) return res.json({ status: "error", message: "Nominal harus lebih besar dari 0." });
@@ -6620,7 +6626,8 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
     bukti_url: String(bukti_url || "").trim(),
     dibuat_oleh: dibuat_oleh || user_id || currentRole || "SYSTEM",
     created_at: nowStr,
-    aktif: true
+    aktif: true,
+    lokasi_uang: lokasi_uang || "ADMIN"
   };
 
   if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
@@ -6632,7 +6639,7 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
 
 const handleUpdateKeuanganOutlet = (req: any, res: any) => {
   const db = readDb();
-  const { id, kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, user_role, role } = req.body || {};
+  const { id, kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, user_role, role, lokasi_uang } = req.body || {};
 
   const currentRole = (user_role || role || "").toUpperCase();
   if (currentRole && currentRole !== "OWNER" && currentRole !== "ADMIN") {
@@ -6799,6 +6806,8 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
     if (tx.packing > 0) {
       const descP = `Biaya Packing untuk resi ${resiId}`;
       if (!existingEntries[`${resiId}_KAT-207`] && !existingEntries[`${resiId}_KAT-102`] && !existingEntries[descP]) {
+        const mBayar = (tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "").toUpperCase();
+        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now()}-${idx}-P`,
           tanggal: txDate,
@@ -6811,7 +6820,8 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
           dibuat_oleh: adminId,
           created_at: tx.created_at || new Date().toISOString(),
           aktif: true,
-          resi_id: resiId
+          resi_id: resiId,
+          lokasi_uang: isDigital ? "OWNER" : "ADMIN"
         });
         existingEntries[`${resiId}_KAT-207`] = true;
         existingEntries[descP] = true;
@@ -6822,6 +6832,8 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
     if (tx.amplop > 0) {
       const descA = `Biaya Amplop untuk resi ${resiId}`;
       if (!existingEntries[`${resiId}_KAT-208`] && !existingEntries[`${resiId}_KAT-103`] && !existingEntries[descA]) {
+        const mBayar = (tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "").toUpperCase();
+        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now() + 1}-${idx}-A`,
           tanggal: txDate,
@@ -6834,7 +6846,8 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
           dibuat_oleh: adminId,
           created_at: tx.created_at || new Date().toISOString(),
           aktif: true,
-          resi_id: resiId
+          resi_id: resiId,
+          lokasi_uang: isDigital ? "OWNER" : "ADMIN"
         });
         existingEntries[`${resiId}_KAT-208`] = true;
         existingEntries[descA] = true;

@@ -383,7 +383,7 @@ export interface KeuanganOutlet {
   id: string;
   tanggal: string;
   outlet_id: string;
-  jenis: "PEMASUKAN" | "PENGELUARAN";
+  jenis: "PEMASUKAN" | "PENGELUARAN" | "TRANSFER_INTERNAL";
   kategori_id: string;
   nominal: number;
   deskripsi?: string;
@@ -393,4 +393,5 @@ export interface KeuanganOutlet {
   aktif: boolean;
   kategori_nama?: string;
   nama_outlet?: string;
+  lokasi_uang?: "ADMIN" | "OWNER" | "SYSTEM";
 }
