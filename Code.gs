@@ -3252,7 +3252,7 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
       sumber_data: params.sumber_data || "Pre Input",
       catatan: params.catatan || ""
     };
-    DatabaseService.appendRow("MASTER_TRANSAKSI", txObj);
+    DatabaseService.insertRow("MASTER_TRANSAKSI", txObj);
   }
 
   var shipStatus = targetStatus;
@@ -3339,7 +3339,7 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
         sumber_data: params.sumber_data || "Pre Input",
         catatan: params.catatan || ""
       };
-      DatabaseService.appendRow("MASTER_PENGIRIMAN", shipObj);
+      DatabaseService.insertRow("MASTER_PENGIRIMAN", shipObj);
     }
   } catch (err) {
     var txRow = DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "id", txId);
@@ -5001,7 +5001,7 @@ function apiSaveKeuanganOutlet(params) {
       aktif: "TRUE"
     };
 
-    DatabaseService.appendRow("KEUANGAN_OUTLET", rowObj);
+    DatabaseService.insertRow("KEUANGAN_OUTLET", rowObj);
     return { status: "success", message: "Catatan keuangan berhasil disimpan.", data: rowObj };
   } catch (err) {
     return { status: "error", message: err.message };
@@ -5530,7 +5530,7 @@ function apiImportCustomerFromSheet(params) {
          logData.created_at = existingLog.created_at;
          DatabaseService.updateRowByColumn("IMPORT_LOG", "id", importSessionId, logData);
       } else {
-         DatabaseService.appendRow("IMPORT_LOG", logData);
+         DatabaseService.insertRow("IMPORT_LOG", logData);
       }
     } catch(logErr) {
       Logger.log("Failed to write IMPORT_LOG: " + logErr);
@@ -5554,7 +5554,7 @@ function apiImportCustomerFromSheet(params) {
            DatabaseService.updateRowByColumn("IMPORT_LOG", "id", importSessionId, failLog);
         } else {
            failLog.created_at = new Date().toISOString();
-           DatabaseService.appendRow("IMPORT_LOG", failLog);
+           DatabaseService.insertRow("IMPORT_LOG", failLog);
         }
       }
     } catch(e2) {}

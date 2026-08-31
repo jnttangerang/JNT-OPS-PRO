@@ -2845,7 +2845,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-207" || k.kategori_id === "KAT-102" || k.deskripsi?.includes("Packing"))
       );
       if (!hasPacking) {
-        db.KeuanganOutlet.push({
+        db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now()}-P`,
           tanggal: txDateStr,
           outlet_id: outletId,
@@ -2867,7 +2867,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-208" || k.kategori_id === "KAT-103" || k.deskripsi?.includes("Amplop"))
       );
       if (!hasAmplop) {
-        db.KeuanganOutlet.push({
+        db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now() + 1}-A`,
           tanggal: txDateStr,
           outlet_id: outletId,
@@ -6624,7 +6624,7 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
   };
 
   if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
-  db.KeuanganOutlet.push(newItem);
+  db.KeuanganOutlet.unshift(newItem);
   writeDb(db);
 
   return res.json({ status: "success", message: "Catatan keuangan berhasil disimpan.", data: newItem });
@@ -6799,7 +6799,7 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
     if (tx.packing > 0) {
       const descP = `Biaya Packing untuk resi ${resiId}`;
       if (!existingEntries[`${resiId}_KAT-207`] && !existingEntries[`${resiId}_KAT-102`] && !existingEntries[descP]) {
-        db.KeuanganOutlet.push({
+        db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now()}-${idx}-P`,
           tanggal: txDate,
           outlet_id: outletId,
@@ -6822,7 +6822,7 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
     if (tx.amplop > 0) {
       const descA = `Biaya Amplop untuk resi ${resiId}`;
       if (!existingEntries[`${resiId}_KAT-208`] && !existingEntries[`${resiId}_KAT-103`] && !existingEntries[descA]) {
-        db.KeuanganOutlet.push({
+        db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now() + 1}-${idx}-A`,
           tanggal: txDate,
           outlet_id: outletId,
@@ -7404,7 +7404,7 @@ app.post("/api/settlement/recordDeposit", (req, res) => {
     const transactions = filterOutletDateTransactions(db, outlet_id, tanggal);
     const created = processCreateSettlement({ outlet_id, tanggal, transactions, actor });
     settlement = created.data;
-    ensureSettlementTable(db).push(settlement);
+    ensureSettlementTable(db).unshift(settlement);
   }
 
   const result = processRecordDeposit({
@@ -7462,7 +7462,7 @@ app.post("/api/settlement/reconcile", (req, res) => {
   if (!settlement) {
     const created = processCreateSettlement({ outlet_id, tanggal, transactions, actor });
     settlement = created.data;
-    ensureSettlementTable(db).push(settlement);
+    ensureSettlementTable(db).unshift(settlement);
   }
 
   const openExceptions = getExceptions(db, { outlet_id });
