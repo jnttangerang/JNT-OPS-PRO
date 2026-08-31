@@ -9,7 +9,7 @@ import {
 } from "recharts";
 import useAppsScript from "../../hooks/useAppsScript";
 import { SessionData, Outlet } from "../../types";
-import { getTodayWIB } from "../../utils/dateUtils";
+import { getTodayWIB, extractBusinessDate, getWIBTime } from "../../utils/dateUtils";
 
 interface AdminDashboardPageProps {
   session: SessionData;
@@ -25,6 +25,22 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
   const [startDate, setStartDate] = useState(() => getTodayWIB());
   const [endDate, setEndDate] = useState(() => getTodayWIB());
   const [data, setData] = useState<any>(null);
+
+  const formatBusinessDate = (r: any) => {
+    const bDate = r.tanggal_transaksi || extractBusinessDate(r);
+    if (bDate && /^\d{4}-\d{2}-\d{2}$/.test(bDate)) {
+      const [y, m, d] = bDate.split("-");
+      return `${d}/${m}/${y}`;
+    }
+    return bDate || "-";
+  };
+
+  const formatBusinessTime = (r: any) => {
+    if (r.jam_transaksi) return r.jam_transaksi.slice(0, 5);
+    if (r.timestamp) return getWIBTime(r.timestamp).slice(0, 5);
+    if (r.created_at) return getWIBTime(r.created_at).slice(0, 5);
+    return "";
+  };
 
   const loadData = async () => {
     try {
@@ -438,7 +454,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
                     </span>
                   </td>
                   <td className="p-3 text-gray-600">
-                    {new Date(r.timestamp).toLocaleDateString("id-ID")} <span className="text-gray-400 text-[10px] ml-1">{new Date(r.timestamp).toLocaleTimeString("id-ID", {hour:'2-digit', minute:'2-digit'})}</span>
+                    {formatBusinessDate(r)} <span className="text-gray-400 text-[10px] ml-1">{formatBusinessTime(r)}</span>
                   </td>
                   <td className="p-3 text-right font-mono text-gray-700">Rp {(r.ongkir_dasar || 0).toLocaleString("id-ID")}</td>
                   <td className="p-3 text-right font-mono text-green-600">Rp {(r.kas_operasional || 0).toLocaleString("id-ID")}</td>
