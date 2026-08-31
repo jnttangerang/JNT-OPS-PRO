@@ -1413,7 +1413,16 @@ const UTILITY_ACTIONS = new Set([
   "analyzeReview",
   "askAssistant",
   "syncGoogleReviews",
-  "testDriveConnection"
+  "testDriveConnection",
+  "getKeuanganOutlet",
+  "saveKeuanganOutlet",
+  "updateKeuanganOutlet",
+  "deleteKeuanganOutlet",
+  "getKategoriKeuangan",
+  "saveKategoriKeuangan",
+  "updateKategoriKeuangan",
+  "deleteKategoriKeuangan",
+  "backfillKeuanganOutlet"
 ]);
 
 app.use("/api/:action", async (req, res, next) => {
@@ -6508,8 +6517,8 @@ function toIsoDateString(val: any, fallback?: any): string {
 
 // === KEUANGAN OUTLET (LEDGER) ENDPOINTS ===
 
-const handleGetKeuanganOutlet = async (req: any, res: any) => {
-  const db = await syncDbWithAppsScript(readDb());
+const handleGetKeuanganOutlet = (req: any, res: any) => {
+  const db = readDb();
   const params = { ...req.query, ...req.body };
   const list = db.KeuanganOutlet || [];
   const catList = db.MasterKategoriKeuangan || [];
@@ -6598,6 +6607,12 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
   const formatted = filtered.map((item: any) => {
     const catObj = catMap[item.kategori_id] || {};
     const adminName = userMap[item.dibuat_oleh] || item.dibuat_oleh || "-";
+    let kategoriNama = catObj.nama;
+    if (!kategoriNama) {
+      if (item.kategori_id === "KAT-TRANSFER-ADMIN-TO-OWNER") kategoriNama = "Transfer Kas Admin ke Owner";
+      else if (item.kategori_id === "KAT-TRANSFER-OWNER-TO-ADMIN" || item.kategori_id === "KAT-TRANSFER") kategoriNama = "Transfer Dana Owner ke Admin";
+      else kategoriNama = item.kategori_id || "-";
+    }
     return {
       id: String(item.id),
       tanggal: toIsoDateString(item.tanggal, item.created_at),
@@ -6605,7 +6620,7 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
       nama_outlet: outletMap[item.outlet_id] || item.outlet_id || "",
       jenis: String(item.jenis || catObj.jenis || "PENGELUARAN").toUpperCase(),
       kategori_id: String(item.kategori_id || ""),
-      kategori_nama: catObj.nama || item.kategori_id || "-",
+      kategori_nama: kategoriNama,
       nominal: Number(item.nominal) || 0,
       deskripsi: String(item.deskripsi || ""),
       bukti_url: String(item.bukti_url || ""),
@@ -6658,7 +6673,7 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
   }
 
   let upperJenis = "PENGELUARAN";
-  if (req.body.jenis === "TRANSFER_INTERNAL" || trimmedKategoriId === "KAT-TRANSFER" || trimmedKategoriId === "KAT-TRANSFER-ADMIN-TO-OWNER") {
+  if (req.body.jenis === "TRANSFER_INTERNAL" || trimmedKategoriId.startsWith("KAT-TRANSFER")) {
     upperJenis = "TRANSFER_INTERNAL";
   } else {
     const catList = db.MasterKategoriKeuangan || [];

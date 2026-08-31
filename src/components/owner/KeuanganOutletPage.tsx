@@ -166,7 +166,12 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
 
   // Active categories for forms
   const activeCategoriesForJenis = useMemo(() => {
-    if (formJenis === "TRANSFER_INTERNAL") return [{ id: "KAT-TRANSFER", nama: "Transfer Internal Owner ke Admin", jenis: "TRANSFER_INTERNAL", aktif: true }];
+    if (formJenis === "TRANSFER_INTERNAL") {
+      return [
+        { id: "KAT-TRANSFER-ADMIN-TO-OWNER", nama: "Transfer Kas Admin ke Owner (Admin -> Owner)", jenis: "TRANSFER_INTERNAL", aktif: true },
+        { id: "KAT-TRANSFER-OWNER-TO-ADMIN", nama: "Transfer Dana Owner ke Admin (Owner -> Admin)", jenis: "TRANSFER_INTERNAL", aktif: true }
+      ];
+    }
     return categories.filter(c => c.aktif && c.jenis === formJenis);
   }, [categories, formJenis]);
 
@@ -278,8 +283,15 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
     
     // Auto select first active category for this jenis
     if (jenis === "TRANSFER_INTERNAL") {
-      setFormKategoriId("KAT-TRANSFER");
-      setFormLokasiUang("ADMIN");
+      if (isAdmin) {
+        // ADMIN -> OWNER
+        setFormKategoriId("KAT-TRANSFER-ADMIN-TO-OWNER");
+        setFormLokasiUang("ADMIN");
+      } else {
+        // OWNER -> ADMIN
+        setFormKategoriId("KAT-TRANSFER-OWNER-TO-ADMIN");
+        setFormLokasiUang("OWNER");
+      }
     } else {
       const matchingCat = categories.find(c => c.aktif && c.jenis === jenis);
       setFormKategoriId(matchingCat ? matchingCat.id : "");
@@ -496,7 +508,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-blue-500/10 transition-all cursor-pointer"
           >
             <Plus className="h-4 w-4 stroke-[2.5]" />
-            <span>Transfer ke Admin</span>
+            <span>{isAdmin ? "Transfer Kas ke Owner" : "Transfer ke Admin"}</span>
           </button>
         </div>
       </div>
@@ -751,11 +763,21 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
                             {item.jenis === "PEMASUKAN" ? "+ Pemasukan" : item.jenis === "TRANSFER_INTERNAL" ? "⟲ Transfer" : "- Pengeluaran"}
                           </span>
                           <span className={`inline-block w-fit px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                            (item.lokasi_uang === "OWNER" || (item.jenis === "TRANSFER_INTERNAL" && !item.lokasi_uang)) 
+                            item.jenis === "TRANSFER_INTERNAL"
+                              ? item.lokasi_uang === "ADMIN"
+                                ? "bg-amber-50 text-amber-800 border border-amber-200"
+                                : "bg-purple-50 text-purple-700 border border-purple-100"
+                              : item.lokasi_uang === "OWNER"
                               ? "bg-purple-50 text-purple-700 border border-purple-100" 
                               : "bg-gray-100 text-gray-700 border border-gray-200"
                           }`}>
-                            {(item.lokasi_uang === "OWNER" || (item.jenis === "TRANSFER_INTERNAL" && !item.lokasi_uang)) ? "Di Owner" : "Di Admin"}
+                            {item.jenis === "TRANSFER_INTERNAL"
+                              ? item.lokasi_uang === "ADMIN"
+                                ? "Admin ➔ Owner"
+                                : "Owner ➔ Admin"
+                              : item.lokasi_uang === "OWNER"
+                              ? "Di Owner"
+                              : "Di Admin"}
                           </span>
                         </div>
                       </td>
@@ -767,9 +789,13 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
 
                       {/* Nominal */}
                       <td className={`py-3.5 px-4 text-right font-mono font-bold whitespace-nowrap ${
-                        item.jenis === "PEMASUKAN" ? "text-emerald-700" : "text-red-600"
+                        item.jenis === "PEMASUKAN" 
+                          ? "text-emerald-700" 
+                          : item.jenis === "TRANSFER_INTERNAL" 
+                          ? "text-blue-700" 
+                          : "text-red-600"
                       }`}>
-                        {item.jenis === "PEMASUKAN" ? "+" : "-"} Rp {item.nominal.toLocaleString("id-ID")}
+                        {item.jenis === "PEMASUKAN" ? "+" : item.jenis === "TRANSFER_INTERNAL" ? "⟲" : "-"} Rp {item.nominal.toLocaleString("id-ID")}
                       </td>
 
                       {/* Deskripsi */}
@@ -960,7 +986,17 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
                   <select
                     required
                     value={formKategoriId}
-                    onChange={(e) => setFormKategoriId(e.target.value)}
+                    onChange={(e) => {
+                      const newCatId = e.target.value;
+                      setFormKategoriId(newCatId);
+                      if (formJenis === "TRANSFER_INTERNAL") {
+                        if (newCatId === "KAT-TRANSFER-ADMIN-TO-OWNER") {
+                          setFormLokasiUang("ADMIN");
+                        } else if (newCatId === "KAT-TRANSFER-OWNER-TO-ADMIN") {
+                          setFormLokasiUang("OWNER");
+                        }
+                      }
+                    }}
                     className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 cursor-pointer"
                   >
                     {activeCategoriesForJenis.map((c, idx) => (
@@ -991,20 +1027,24 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
               {/* Lokasi Uang */}
               <div>
                 <label className="block text-[11px] font-extrabold text-gray-700 mb-1">
-                  Lokasi Uang <span className="text-red-500">*</span>
+                  {formJenis === "TRANSFER_INTERNAL" ? "Sumber Dana / Arah Transfer" : "Lokasi Uang"} <span className="text-red-500">*</span>
                 </label>
                 <select
                   required
                   disabled={formJenis === "TRANSFER_INTERNAL"}
                   value={formLokasiUang}
                   onChange={(e) => setFormLokasiUang(e.target.value as "ADMIN" | "OWNER")}
-                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 cursor-pointer disabled:bg-gray-100 disabled:text-gray-400"
+                  className="w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-bold text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-600 cursor-pointer disabled:bg-gray-100 disabled:text-gray-700"
                 >
-                  <option value="ADMIN">Di Admin (Kas Fisik Laci)</option>
-                  <option value="OWNER">Di Owner (Rekening Digital)</option>
+                  <option value="ADMIN">{formJenis === "TRANSFER_INTERNAL" ? "Dari Kas Fisik Admin -> Disetor ke Rekening Owner" : "Di Admin (Kas Fisik Laci)"}</option>
+                  <option value="OWNER">{formJenis === "TRANSFER_INTERNAL" ? "Dari Rekening Digital Owner -> Ditarik/Diberikan ke Admin" : "Di Owner (Rekening Digital)"}</option>
                 </select>
                 {formJenis === "TRANSFER_INTERNAL" && (
-                  <p className="text-[10px] text-gray-500 mt-1">Transfer Internal default dipindah dari Owner ke Admin.</p>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    {formLokasiUang === "ADMIN" 
+                      ? "Kas Fisik Admin berkurang, Kas Digital Owner bertambah (Total Saldo Kas Outlet tetap)." 
+                      : "Kas Digital Owner berkurang, Kas Fisik Admin bertambah (Total Saldo Kas Outlet tetap)."}
+                  </p>
                 )}
               </div>
 
