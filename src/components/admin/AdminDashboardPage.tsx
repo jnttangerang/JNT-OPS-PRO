@@ -300,7 +300,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 relative overflow-hidden">
           <div className="flex items-center justify-between">
             <p className="text-xs font-bold text-gray-400 uppercase">Grand Total (Cust)</p>
-            <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-mono">Omset Loket</span>
+            <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 px-1.5 py-0.5 rounded font-mono">Total Omset</span>
           </div>
           <p className="text-lg md:text-xl font-black text-emerald-600 mt-1 font-mono">
             Rp {(summary?.grandTotalCustomer || 0).toLocaleString("id-ID")}

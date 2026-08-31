@@ -25,7 +25,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
   const isOwner = session.role === "OWNER";
 
   // Filter States
-  const [selectedOutletFilter, setSelectedOutletFilter] = useState((outlets && outlets.length > 0) ? outlets[0].outlet_id : "");
+  const [selectedOutletFilter, setSelectedOutletFilter] = useState("ALL");
   const [startDate, setStartDate] = useState(() => shiftWIBDays(getTodayWIB(), -15));
   const [endDate, setEndDate] = useState(() => getTodayWIB());
 
@@ -216,6 +216,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
               onChange={(e) => setSelectedOutletFilter(e.target.value)}
               className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-700 focus:outline-none focus:ring-1 focus:ring-[#E4002B]"
             >
+              <option value="ALL">Semua Outlet</option>
               {outlets.map((o) => (
                 <option key={o.outlet_id} value={o.outlet_id}>
                   {o.nama_outlet}

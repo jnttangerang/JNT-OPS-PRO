@@ -109,7 +109,7 @@ function AppContent() {
             if (persistedActiveOutlet) {
               setActiveOutletId(persistedActiveOutlet);
             } else {
-              setActiveOutletId(session.outlet_id_home);
+              setActiveOutletId(session.role === "OWNER" ? "ALL" : session.outlet_id_home);
             }
           } else if (response.data.length > 0) {
             setActiveOutletId(response.data[0].outlet_id);
@@ -127,7 +127,7 @@ function AppContent() {
 
   const handleLoginSuccess = (userSession: SessionData, taskOutletId?: string) => {
     setSession(userSession);
-    const initialOutlet = taskOutletId || userSession.outlet_id_home;
+    const initialOutlet = taskOutletId || (userSession.role === "OWNER" ? "ALL" : userSession.outlet_id_home);
     setActiveOutletId(initialOutlet);
     localStorage.setItem("jnt_session", JSON.stringify(userSession));
     localStorage.setItem("jnt_active_outlet_id", initialOutlet);
@@ -315,13 +315,34 @@ function AppContent() {
 
               {/* Active Task Info */}
               <div className="mt-4 pt-3 border-t border-slate-200/40 space-y-1">
-                <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
-                  <MapPin className="h-3.5 w-3.5 text-gray-400" />
-                  <span>Lokasi Tugas:</span>
-                </div>
-                <p className="text-[11px] font-bold text-gray-700 font-mono pl-5 truncate">
-                  {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
-                </p>
+                {session.role === "OWNER" ? (
+                  <>
+                    <div className="flex items-center gap-1.5 text-[10px] text-gray-400 mb-1">
+                      <MapPin className="h-3.5 w-3.5 text-gray-400" />
+                      <span>Outlet Filter:</span>
+                    </div>
+                    <select
+                      value={activeOutletId}
+                      onChange={(e) => handleActiveOutletChange(e.target.value)}
+                      className="w-full bg-white/50 border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] font-bold text-gray-700 outline-none focus:ring-1 focus:ring-slate-300"
+                    >
+                      <option value="ALL">Semua Outlet</option>
+                      {outlets.map((o) => (
+                        <option key={o.outlet_id} value={o.outlet_id}>{o.nama_outlet}</option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                      <MapPin className="h-3.5 w-3.5 text-gray-400" />
+                      <span>Lokasi Tugas:</span>
+                    </div>
+                    <p className="text-[11px] font-bold text-gray-700 font-mono pl-5 truncate">
+                      {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
@@ -429,10 +450,28 @@ function AppContent() {
                 </div>
               </div>
               <div className="mt-3 pt-2.5 border-t border-slate-200/40 text-[10px] text-gray-500">
-                <span className="font-semibold text-gray-400">Lokasi Tugas:</span>
-                <p className="font-bold text-gray-700 font-mono mt-0.5">
-                  {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
-                </p>
+                {session.role === "OWNER" ? (
+                  <>
+                    <span className="font-semibold text-gray-400 block mb-1">Outlet Filter:</span>
+                    <select
+                      value={activeOutletId}
+                      onChange={(e) => handleActiveOutletChange(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-[11px] font-bold text-gray-700 outline-none"
+                    >
+                      <option value="ALL">Semua Outlet</option>
+                      {outlets.map((o) => (
+                        <option key={o.outlet_id} value={o.outlet_id}>{o.nama_outlet}</option>
+                      ))}
+                    </select>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold text-gray-400">Lokasi Tugas:</span>
+                    <p className="font-bold text-gray-700 font-mono mt-0.5">
+                      {outlets.find((o) => o.outlet_id === activeOutletId)?.nama_outlet || activeOutletId}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 

@@ -123,10 +123,10 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
   const [cancelling, setCancelling] = useState(false);
 
   useEffect(() => {
-    if (session.role !== "OWNER" && activeOutletId) {
+    if (activeOutletId) {
       setFilterOutlet(activeOutletId);
     }
-  }, [activeOutletId, session.role]);
+  }, [activeOutletId]);
 
   const fetchUsers = async () => {
     try {

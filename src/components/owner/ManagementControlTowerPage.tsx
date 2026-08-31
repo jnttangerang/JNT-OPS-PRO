@@ -147,6 +147,7 @@ export default function ManagementControlTowerPage({
               onChange={(e) => onChangeActiveOutlet(e.target.value)}
               className="bg-transparent border-none text-sm font-semibold text-gray-800 focus:ring-0 cursor-pointer pr-8 py-1.5"
             >
+              <option value="ALL">Semua Outlet</option>
               {outlets.map((o) => (
                 <option key={o.outlet_id} value={o.outlet_id}>{o.nama_outlet}</option>
               ))}
