@@ -6529,6 +6529,57 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
     if (u.nama_lengkap) userMap[u.nama_lengkap] = u.nama_lengkap;
   });
 
+  // Calculate opening balance for active items before params.tanggal_awal (matching the outlet filter if any)
+  let openingAdmin = 0;
+  let openingOwner = 0;
+
+  if (params.tanggal_awal) {
+    list.forEach((item: any) => {
+      const isAktif = item.aktif === true || item.aktif === "TRUE" || item.aktif === "true" || item.aktif === undefined;
+      if (!isAktif) return;
+
+      if (params.outlet_id && params.outlet_id !== "ALL" && item.outlet_id !== params.outlet_id) return;
+
+      const itemTanggal = toIsoDateString(item.tanggal, item.created_at);
+      if (itemTanggal < params.tanggal_awal) {
+        const nom = Number(item.nominal) || 0;
+        const j = String(item.jenis || "").toUpperCase();
+        const loc = String(item.lokasi_uang || "").toUpperCase();
+
+        if (j === "PEMASUKAN") {
+          if (loc === "OWNER") {
+            openingOwner += nom;
+          } else {
+            openingAdmin += nom;
+          }
+        } else if (j === "PENGELUARAN") {
+          if (loc === "OWNER") {
+            openingOwner -= nom;
+          } else {
+            openingAdmin -= nom;
+          }
+        } else if (j === "TRANSFER_INTERNAL") {
+          // Default TRANSFER_INTERNAL without explicit reverse is OWNER -> ADMIN
+          // If loc === "ADMIN", it means transfer from Admin -> Owner (Admin berkurang, Owner bertambah)
+          // If loc === "OWNER" or default, it means transfer from Owner -> Admin (Owner berkurang, Admin bertambah)
+          if (loc === "ADMIN") {
+            openingAdmin -= nom;
+            openingOwner += nom;
+          } else {
+            openingOwner -= nom;
+            openingAdmin += nom;
+          }
+        }
+      }
+    });
+  }
+
+  const openingBalance = {
+    total: openingAdmin + openingOwner,
+    admin: openingAdmin,
+    owner: openingOwner
+  };
+
   let filtered = list.filter((item: any) => {
     const isAktif = item.aktif === true || item.aktif === "TRUE" || item.aktif === "true" || item.aktif === undefined;
     if (!isAktif && !params.include_inactive) return false;
@@ -6560,7 +6611,8 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
       bukti_url: String(item.bukti_url || ""),
       dibuat_oleh: String(adminName),
       created_at: String(item.created_at || ""),
-      aktif: item.aktif !== false && item.aktif !== "FALSE"
+      aktif: item.aktif !== false && item.aktif !== "FALSE",
+      lokasi_uang: item.lokasi_uang || (item.jenis === "PEMASUKAN" ? "ADMIN" : "ADMIN")
     };
   });
 
@@ -6571,7 +6623,7 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
     return b.tanggal.localeCompare(a.tanggal);
   });
 
-  return res.json({ status: "success", data: formatted });
+  return res.json({ status: "success", data: formatted, opening_balance: openingBalance });
 };
 
 // Helper to check if an outlet date is closed via Daily Closing
@@ -6605,13 +6657,18 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
     return res.json({ status: "error", message: "Kas outlet hari tersebut sudah ditutup." });
   }
 
-  const catList = db.MasterKategoriKeuangan || [];
-  const catObj = catList.find((c: any) => c.id === trimmedKategoriId);
+  let upperJenis = "PENGELUARAN";
+  if (req.body.jenis === "TRANSFER_INTERNAL" || trimmedKategoriId === "KAT-TRANSFER" || trimmedKategoriId === "KAT-TRANSFER-ADMIN-TO-OWNER") {
+    upperJenis = "TRANSFER_INTERNAL";
+  } else {
+    const catList = db.MasterKategoriKeuangan || [];
+    const catObj = catList.find((c: any) => c.id === trimmedKategoriId);
 
-  if (!catObj) return res.json({ status: "error", message: "Kategori tidak ditemukan." });
-  if (!catObj.aktif) return res.json({ status: "error", message: `Kategori '${catObj.nama}' sedang tidak aktif.` });
+    if (!catObj) return res.json({ status: "error", message: "Kategori tidak ditemukan." });
+    if (!catObj.aktif) return res.json({ status: "error", message: `Kategori '${catObj.nama}' sedang tidak aktif.` });
+    upperJenis = String(catObj.jenis).toUpperCase();
+  }
 
-  const upperJenis = String(catObj.jenis).toUpperCase();
   const newId = `KNG-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
   const nowStr = new Date().toISOString();
 
@@ -6620,7 +6677,7 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
     tanggal: trimmedTanggal,
     outlet_id: trimmedOutletId,
     jenis: upperJenis,
-    kategori_id: trimmedKategoriId,
+    kategori_id: trimmedKategoriId || "KAT-TRANSFER",
     nominal: numNominal,
     deskripsi: String(deskripsi || "").trim(),
     bukti_url: String(bukti_url || "").trim(),

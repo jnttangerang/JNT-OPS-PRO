@@ -379,6 +379,12 @@ export interface KategoriKeuangan {
   created_by?: string;
 }
 
+export interface OpeningBalanceKasOutlet {
+  total: number;
+  admin: number;
+  owner: number;
+}
+
 export interface KeuanganOutlet {
   id: string;
   tanggal: string;

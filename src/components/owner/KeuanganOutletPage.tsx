@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo } from "react";
 import { 
   Wallet, Plus, Search, Filter, RefreshCw, Calendar, AlertCircle, Edit2, Trash2, 
   ArrowUpRight, ArrowDownRight, DollarSign, FileText, ExternalLink, Image, Building2, Eye, X,
-  ChevronLeft, ChevronRight, Database
+  ChevronLeft, ChevronRight, Database, ArrowLeftRight, Landmark
 } from "lucide-react";
 import { useAppsScript } from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
 import { highlightText } from "../../utils/highlight";
 import { getTodayWIB, getWIBDate } from "../../utils/dateUtils";
-import { SessionData, Outlet, KeuanganOutlet, KategoriKeuangan, User } from "../../types";
+import { SessionData, Outlet, KeuanganOutlet, KategoriKeuangan, User, OpeningBalanceKasOutlet } from "../../types";
 
 interface KeuanganOutletPageProps {
   session: SessionData;
@@ -21,6 +21,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
   const { callBackend } = useAppsScript();
   const [loading, setLoading] = useState(false);
   const [ledgerList, setLedgerList] = useState<KeuanganOutlet[]>([]);
+  const [openingBalance, setOpeningBalance] = useState<OpeningBalanceKasOutlet>({ total: 0, admin: 0, owner: 0 });
   const [categories, setCategories] = useState<KategoriKeuangan[]>([]);
   const [users, setUsers] = useState<User[]>([]);
 
@@ -113,17 +114,22 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
   const fetchLedger = async () => {
     setLoading(true);
     try {
-      const res = await callBackend("getKeuanganOutlet", {
+      const res深 = await callBackend("getKeuanganOutlet", {
         tanggal_awal: filterTanggalAwal,
         tanggal_akhir: filterTanggalAkhir,
         outlet_id: filterOutlet,
         jenis: filterJenis,
         kategori_id: filterKategori
       });
-      if (res.status === "success" && Array.isArray(res.data)) {
-        setLedgerList(res.data);
+      if (res深.status === "success" && Array.isArray(res深.data)) {
+        setLedgerList(res深.data);
+        if (res深.opening_balance) {
+          setOpeningBalance(res深.opening_balance);
+        } else {
+          setOpeningBalance({ total: 0, admin: 0, owner: 0 });
+        }
       } else {
-        toast.error(res.message || "Gagal memuat ledger keuangan outlet.");
+        toast.error(res深.message || "Gagal memuat ledger keuangan outlet.");
       }
     } catch (err) {
       console.error("Fetch ledger error", err);
@@ -190,7 +196,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
     return displayedList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   }, [displayedList, currentPage, pageSize]);
 
-  // Calculate Summary Cards
+  // Calculate Summary Cards & Balance Ledger
   const totalPemasukan = useMemo(() => {
     return ledgerList
       .filter((x) => x.jenis === "PEMASUKAN")
@@ -203,11 +209,13 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
       .reduce((sum, x) => sum + (x.nominal || 0), 0);
   }, [ledgerList]);
 
-  const saldoBersih = useMemo(() => {
+  // Mutasi Bersih Periode
+  const mutasiBersihPeriode = useMemo(() => {
     return totalPemasukan - totalPengeluaran;
   }, [totalPemasukan, totalPengeluaran]);
 
-  const totalAdmin = useMemo(() => {
+  // Mutasi Kas Admin & Owner dalam periode filter
+  const mutasiAdminPeriode = useMemo(() => {
     let sum = 0;
     ledgerList.forEach(x => {
       const isOwner = x.lokasi_uang === "OWNER";
@@ -215,33 +223,68 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
       
       if (x.jenis === "PEMASUKAN" && !isOwner) sum += (x.nominal || 0);
       else if (x.jenis === "PENGELUARAN" && isAdmin) sum -= (x.nominal || 0);
-      else if (x.jenis === "TRANSFER_INTERNAL") sum += (x.nominal || 0); // TRANSFER_INTERNAL goes to Admin
+      else if (x.jenis === "TRANSFER_INTERNAL") {
+        if (x.lokasi_uang === "ADMIN") {
+          // Transfer Admin -> Owner (Admin berkurang)
+          sum -= (x.nominal || 0);
+        } else {
+          // Transfer Owner -> Admin (Admin bertambah)
+          sum += (x.nominal || 0);
+        }
+      }
     });
     return sum;
   }, [ledgerList]);
 
-  const totalOwner = useMemo(() => {
+  const mutasiOwnerPeriode = useMemo(() => {
     let sum = 0;
     ledgerList.forEach(x => {
       const isOwner = x.lokasi_uang === "OWNER";
       
       if (x.jenis === "PEMASUKAN" && isOwner) sum += (x.nominal || 0);
       else if (x.jenis === "PENGELUARAN" && isOwner) sum -= (x.nominal || 0);
-      else if (x.jenis === "TRANSFER_INTERNAL") sum -= (x.nominal || 0); // TRANSFER_INTERNAL deducted from Owner
+      else if (x.jenis === "TRANSFER_INTERNAL") {
+        if (x.lokasi_uang === "ADMIN") {
+          // Transfer Admin -> Owner (Owner bertambah)
+          sum += (x.nominal || 0);
+        } else {
+          // Transfer Owner -> Admin (Owner berkurang)
+          sum -= (x.nominal || 0);
+        }
+      }
     });
     return sum;
   }, [ledgerList]);
 
+  // Saldo Akhir Kumulatif = Saldo Awal + Mutasi Periode
+  const saldoAkhirTotal = useMemo(() => {
+    return (openingBalance.total || 0) + mutasiBersihPeriode;
+  }, [openingBalance.total, mutasiBersihPeriode]);
+
+  const saldoAkhirAdmin = useMemo(() => {
+    return (openingBalance.admin || 0) + mutasiAdminPeriode;
+  }, [openingBalance.admin, mutasiAdminPeriode]);
+
+  const saldoAkhirOwner = useMemo(() => {
+    return (openingBalance.owner || 0) + mutasiOwnerPeriode;
+  }, [openingBalance.owner, mutasiOwnerPeriode]);
+
   // Open Add Modal
-  const handleOpenAdd = (jenis: "PEMASUKAN" | "PENGELUARAN") => {
+  const handleOpenAdd = (jenis: "PEMASUKAN" | "PENGELUARAN" | "TRANSFER_INTERNAL") => {
     setEditingItem(null);
     setFormJenis(jenis);
     setFormTanggal(todayStr);
     setFormOutletId(session.outlet_id_home || (outlets[0]?.outlet_id || ""));
     
     // Auto select first active category for this jenis
-    const matchingCat = categories.find(c => c.aktif && c.jenis === jenis);
-    setFormKategoriId(matchingCat ? matchingCat.id : "");
+    if (jenis === "TRANSFER_INTERNAL") {
+      setFormKategoriId("KAT-TRANSFER");
+      setFormLokasiUang("ADMIN");
+    } else {
+      const matchingCat = categories.find(c => c.aktif && c.jenis === jenis);
+      setFormKategoriId(matchingCat ? matchingCat.id : "");
+      setFormLokasiUang("ADMIN");
+    }
     
     setFormNominal("");
     setFormDeskripsi("");
@@ -313,6 +356,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
           nominal: Number(formNominal),
           deskripsi: formDeskripsi.trim(),
           bukti_url: formBuktiUrl,
+          lokasi_uang: formLokasiUang,
           user_role: session.role,
           user_id: session.user_id
         });
@@ -331,6 +375,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
           nominal: Number(formNominal),
           deskripsi: formDeskripsi.trim(),
           bukti_url: formBuktiUrl,
+          lokasi_uang: formLokasiUang,
           dibuat_oleh: session.nama_lengkap || session.username || session.role || "SYSTEM",
           user_role: session.role,
           user_id: session.user_id
@@ -456,59 +501,95 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Total Pemasukan */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider">
-              Total Pemasukan
-            </span>
-            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl">
-              <ArrowDownRight className="h-5 w-5" />
+      {/* Summary Cards: 3-Tier Continuous Ledger System */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Card 1: Saldo Awal (Bawaan Sebelum Filter) */}
+        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
+                Saldo Awal
+              </span>
+              <div className="p-2 bg-slate-100 text-slate-700 rounded-xl">
+                <Landmark className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-2.5">
+              <span className="text-xl md:text-2xl font-black text-slate-800 font-mono">
+                Rp {(openingBalance.total || 0).toLocaleString("id-ID")}
+              </span>
+              <p className="text-[10px] text-gray-400 mt-0.5">Saldo kas kumulatif sebelum {filterTanggalAwal}</p>
             </div>
           </div>
-          <div className="mt-3">
-            <span className="text-xl md:text-2xl font-black text-emerald-700 font-mono">
-              Rp {totalPemasukan.toLocaleString("id-ID")}
-            </span>
-            <p className="text-[10px] text-gray-400 mt-1">Non-Transaction Income dalam periode filter</p>
+          <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-2 gap-2 text-[11px]">
+            <div>
+              <span className="text-gray-400 block text-[10px] font-semibold">Kas Fisik Admin</span>
+              <span className="font-mono font-bold text-gray-700">Rp {(openingBalance.admin || 0).toLocaleString("id-ID")}</span>
+            </div>
+            <div className="text-right">
+              <span className="text-gray-400 block text-[10px] font-semibold">Kas Digital Owner</span>
+              <span className="font-mono font-bold text-purple-700">Rp {(openingBalance.owner || 0).toLocaleString("id-ID")}</span>
+            </div>
           </div>
         </div>
 
-        {/* Total Pengeluaran */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider">
-              Total Pengeluaran
-            </span>
-            <div className="p-2 bg-red-50 text-[#E4002B] rounded-xl">
-              <ArrowUpRight className="h-5 w-5" />
+        {/* Card 2: Mutasi Periode (Pemasukan, Pengeluaran, Mutasi Bersih) */}
+        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
+                Mutasi Periode
+              </span>
+              <div className={`p-2 rounded-xl ${mutasiBersihPeriode >= 0 ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-600"}`}>
+                <ArrowLeftRight className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-2.5">
+              <span className={`text-xl md:text-2xl font-black font-mono ${mutasiBersihPeriode >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                {mutasiBersihPeriode >= 0 ? "+" : ""}Rp {mutasiBersihPeriode.toLocaleString("id-ID")}
+              </span>
+              <p className="text-[10px] text-gray-400 mt-0.5">Pemasukan - Pengeluaran dalam periode filter</p>
             </div>
           </div>
-          <div className="mt-3">
-            <span className="text-xl md:text-2xl font-black text-red-600 font-mono">
-              Rp {totalPengeluaran.toLocaleString("id-ID")}
-            </span>
-            <p className="text-[10px] text-gray-400 mt-1">Operational Expenses dalam periode filter</p>
+          <div className="mt-4 pt-3 border-t border-gray-100 grid grid-cols-2 gap-2 text-[11px]">
+            <div>
+              <span className="text-gray-400 block text-[10px] font-semibold">Pemasukan</span>
+              <span className="font-mono font-bold text-emerald-600">+Rp {totalPemasukan.toLocaleString("id-ID")}</span>
+            </div>
+            <div className="text-right">
+              <span className="text-gray-400 block text-[10px] font-semibold">Pengeluaran</span>
+              <span className="font-mono font-bold text-red-600">-Rp {totalPengeluaran.toLocaleString("id-ID")}</span>
+            </div>
           </div>
         </div>
 
-        {/* Saldo Bersih */}
-        <div className="bg-white p-5 rounded-2xl border border-gray-150 shadow-sm relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-extrabold text-gray-400 uppercase tracking-wider">
-              Saldo Bersih
-            </span>
-            <div className={`p-2 rounded-xl ${saldoBersih >= 0 ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"}`}>
-              <DollarSign className="h-5 w-5" />
+        {/* Card 3: Saldo Akhir (Total Hak Kas Outlet Kumulatif) */}
+        <div className="bg-gradient-to-br from-purple-900 to-indigo-950 p-5 rounded-2xl text-white shadow-md shadow-purple-950/20 relative overflow-hidden flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold text-purple-200 uppercase tracking-wider">
+                Total Saldo Kas Outlet
+              </span>
+              <div className="p-2 bg-white/10 text-white rounded-xl backdrop-blur-sm">
+                <Wallet className="h-4 w-4" />
+              </div>
+            </div>
+            <div className="mt-2.5">
+              <span className="text-xl md:text-2xl font-black text-white font-mono tracking-tight">
+                Rp {saldoAkhirTotal.toLocaleString("id-ID")}
+              </span>
+              <p className="text-[10px] text-purple-200/80 mt-0.5">Saldo Awal + Mutasi Bersih</p>
             </div>
           </div>
-          <div className="mt-3">
-            <span className={`text-xl md:text-2xl font-black font-mono ${saldoBersih >= 0 ? "text-blue-700" : "text-amber-600"}`}>
-              Rp {saldoBersih.toLocaleString("id-ID")}
-            </span>
-            <p className="text-[10px] text-gray-400 mt-1">Total Pemasukan dikurangi Total Pengeluaran</p>
+          <div className="mt-4 pt-3 border-t border-white/10 grid grid-cols-2 gap-2 text-[11px]">
+            <div>
+              <span className="text-purple-300 block text-[10px] font-semibold">Kas Fisik (Admin)</span>
+              <span className="font-mono font-bold text-emerald-300">Rp {saldoAkhirAdmin.toLocaleString("id-ID")}</span>
+            </div>
+            <div className="text-right">
+              <span className="text-purple-300 block text-[10px] font-semibold">Kas Digital (Owner)</span>
+              <span className="font-mono font-bold text-purple-200">Rp {saldoAkhirOwner.toLocaleString("id-ID")}</span>
+            </div>
           </div>
         </div>
       </div>
