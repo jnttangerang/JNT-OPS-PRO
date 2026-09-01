@@ -38,8 +38,11 @@ interface RiwayatTransaksiPageProps {
 interface TransaksiItem {
   resi_id: string;
   transaksi_id: string;
-  timestamp: string;
+  transaction_time?: string;
   imported_at?: string;
+  timestamp: string;
+  tanggal_transaksi?: string;
+  jam_transaksi?: string;
   admin: string;
   outlet: string;
   tipe: "Express" | "Cargo";
@@ -58,8 +61,11 @@ interface TransaksiItem {
 interface TransaksiDetail {
   resi_id: string;
   transaksi_id: string;
-  timestamp: string;
+  transaction_time?: string;
   imported_at?: string;
+  timestamp: string;
+  tanggal_transaksi?: string;
+  jam_transaksi?: string;
   tipe: "Express" | "Cargo";
   tipe_produk: string;
   jenis_barang?: string;
@@ -214,10 +220,25 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
     setCurrentPage(1);
   }, [searchTerm, filterOutlet, filterAdmin, filterEkspedisi]);
 
+  const formatDisplayTime = (timeStr?: string): string => {
+    if (!timeStr) return "-";
+    const match = String(timeStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if (match) {
+      const [, y, m, d, hh, mm, ss = "00"] = match;
+      const pad = (n: string | number) => String(n).padStart(2, "0");
+      return `${parseInt(d, 10)}/${parseInt(m, 10)}/${y}, ${pad(hh)}.${pad(mm)}.${pad(ss)}`;
+    }
+    const date = new Date(timeStr);
+    if (!isNaN(date.getTime())) {
+      return date.toLocaleString("id-ID");
+    }
+    return timeStr;
+  };
+
   const filteredData = data.filter((item) => {
     // 0. Date Range Filter (WIB Date)
     if (filterTanggalAwal || filterTanggalAkhir) {
-      const itemDate = getWIBDate(item.timestamp);
+      const itemDate = item.tanggal_transaksi || (item.transaction_time ? item.transaction_time.split(/[\sT]/)[0] : getWIBDate(item.timestamp));
       if (itemDate) {
         if (filterTanggalAwal && itemDate < filterTanggalAwal) return false;
         if (filterTanggalAkhir && itemDate > filterTanggalAkhir) return false;
@@ -276,7 +297,11 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
         setSelectedDetail({
           resi_id: item.resi_id,
           transaksi_id: item.transaksi_id,
+          transaction_time: item.transaction_time,
+          imported_at: item.imported_at,
           timestamp: item.timestamp,
+          tanggal_transaksi: item.tanggal_transaksi,
+          jam_transaksi: item.jam_transaksi,
           tipe: item.tipe,
           tipe_produk: item.tipe === "Cargo" ? "Cargo Standard" : "EZ",
           admin_id: "",
@@ -630,10 +655,10 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                         
                         <div className="text-xs text-gray-500 space-y-0.5">
                           <p>
-                            <span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: {new Date(item.timestamp).toLocaleString("id-ID")}
+                            <span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: {formatDisplayTime(item.transaction_time || item.timestamp)}
                             {item.imported_at && (
-                              <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 ml-2 font-mono" title={`Waktu Import JNT OPS PRO: ${new Date(item.imported_at).toLocaleString("id-ID")}`}>
-                                Import: {new Date(item.imported_at).toLocaleTimeString("id-ID")}
+                              <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 ml-2 font-mono" title={`Waktu Import JNT OPS PRO: ${formatDisplayTime(item.imported_at)}`}>
+                                Import: {formatDisplayTime(item.imported_at)}
                               </span>
                             )}
                           </p>
@@ -813,14 +838,14 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                   <h2 className="text-lg font-bold text-gray-800">Detail Transaksi</h2>
                   <p className="text-xs text-gray-500 font-mono flex items-center flex-wrap gap-2">
                     <span>Resi: {selectedDetail.resi_id || selectedDetail.transaksi_id}</span>
-                    {selectedDetail.timestamp && (
+                    {(selectedDetail.transaction_time || selectedDetail.timestamp) && (
                       <span className="text-gray-600 font-sans">
-                        • {new Date(selectedDetail.timestamp).toLocaleString("id-ID")}
+                        • {formatDisplayTime(selectedDetail.transaction_time || selectedDetail.timestamp)}
                       </span>
                     )}
                     {selectedDetail.imported_at && (
-                      <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 font-sans" title={`Diimpor ke JNT OPS PRO: ${new Date(selectedDetail.imported_at).toLocaleString("id-ID")}`}>
-                        Import: {new Date(selectedDetail.imported_at).toLocaleTimeString("id-ID")}
+                      <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 font-sans" title={`Diimpor ke JNT OPS PRO: ${formatDisplayTime(selectedDetail.imported_at)}`}>
+                        Import: {formatDisplayTime(selectedDetail.imported_at)}
                       </span>
                     )}
                   </p>

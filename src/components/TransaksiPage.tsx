@@ -2814,9 +2814,19 @@ export default function TransaksiPage({
               ) : (
                 recentActivities.map((tx: any, idx: number) => {
                   const resi = tx.resi_id || tx.no_resi || tx.id || "-";
-                  const formattedTime = tx.timestamp 
-                    ? new Date(tx.timestamp).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
-                    : "-";
+                  const rawTime = tx.transaction_time || tx.jam_transaksi || tx.timestamp;
+                  let formattedTime = "-";
+                  if (rawTime) {
+                    const timeMatch = String(rawTime).match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+                    if (timeMatch) {
+                      formattedTime = `${timeMatch[1].padStart(2, "0")}.${timeMatch[2].padStart(2, "0")}`;
+                    } else {
+                      const d = new Date(rawTime);
+                      if (!isNaN(d.getTime())) {
+                        formattedTime = d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+                      }
+                    }
+                  }
                   const pengirim = tx.pengirim || tx.snapshot_nama_pengirim || "-";
                   const penerima = tx.penerima || tx.snapshot_nama_penerima || "-";
                   const grandTotal = Number(tx.grand_total || tx.total_bayar || tx.total_customer_bayar || 0);

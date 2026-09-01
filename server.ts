@@ -4376,15 +4376,26 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     const jenisBarang = tx.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
     const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || p?.metode_bayar || "Tunai";
 
-    const txTimestamp = (tx.tanggal_transaksi && tx.jam_transaksi)
-      ? `${tx.tanggal_transaksi}T${tx.jam_transaksi}`
+    const txTanggal = tx.tanggal_transaksi || p?.tanggal_transaksi || "";
+    const txJam = tx.jam_transaksi || p?.jam_transaksi || "";
+    const transactionTime = (txTanggal && txJam)
+      ? `${txTanggal} ${txJam}`
+      : (txTanggal ? `${txTanggal} 00:00:00` : (tx.timestamp || tx.created_at || new Date().toISOString()));
+
+    const txTimestamp = (txTanggal && txJam)
+      ? `${txTanggal}T${txJam}`
       : (tx.timestamp || tx.tanggal_transaksi || tx.created_at || new Date().toISOString());
+
+    const importedAt = tx.imported_at || p?.imported_at || (tx.sumber_data === "Import YoYi" || txId.startsWith("TRX-YY-") ? tx.created_at : undefined);
 
     return {
       resi_id: resiId,
       transaksi_id: txId,
+      transaction_time: transactionTime,
+      imported_at: importedAt,
       timestamp: txTimestamp,
-      imported_at: tx.imported_at || p?.imported_at,
+      tanggal_transaksi: txTanggal,
+      jam_transaksi: txJam,
       admin: userMap[tx.admin_id] || tx.admin_id,
       outlet: outletMap[tx.outlet_id] || tx.outlet_id,
       tipe: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express",
@@ -4407,7 +4418,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     const txKey = (r.transaksi_id || "").toUpperCase();
     if ((resiKey && !seenKeys.has(resiKey)) && (!txKey || !seenKeys.has(txKey))) {
       if (!filterOutlet || filterOutlet === "ALL" || r.outlet_id_input === filterOutlet) {
-        if (!checkDateMatch(r.timestamp)) return;
+        if (!checkDateMatch(r.tanggal_transaksi || r.timestamp)) return;
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[r.transaksi_id];
@@ -4415,11 +4426,24 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
         const jenisBarang = r.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
         const metodeBayar = r.metode_bayar || p?.metode_bayar || "Tunai";
 
+        const rTanggal = r.tanggal_transaksi || p?.tanggal_transaksi || "";
+        const rJam = r.jam_transaksi || p?.jam_transaksi || "";
+        const rTxTime = (rTanggal && rJam)
+          ? `${rTanggal} ${rJam}`
+          : (rTanggal ? `${rTanggal} 00:00:00` : (r.timestamp || r.created_at || new Date().toISOString()));
+        const rTxTimestamp = (rTanggal && rJam)
+          ? `${rTanggal}T${rJam}`
+          : (r.timestamp || new Date().toISOString());
+        const rImportedAt = r.imported_at || p?.imported_at || (r.sumber_data === "Import YoYi" || (r.transaksi_id && r.transaksi_id.startsWith("TRX-YY-")) ? r.timestamp : undefined);
+
         transaksiList.push({
           resi_id: r.resi_id,
           transaksi_id: r.transaksi_id || "",
-          timestamp: r.timestamp || new Date().toISOString(),
-          imported_at: r.imported_at || p?.imported_at,
+          transaction_time: rTxTime,
+          imported_at: rImportedAt,
+          timestamp: rTxTimestamp,
+          tanggal_transaksi: rTanggal,
+          jam_transaksi: rJam,
           admin: userMap[r.admin_id_pencatat] || r.admin_id_pencatat,
           outlet: outletMap[r.outlet_id_input] || r.outlet_id_input,
           tipe: "Express",
@@ -4444,7 +4468,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     const txKey = (c.transaksi_id || "").toUpperCase();
     if ((resiKey && !seenKeys.has(resiKey)) && (!txKey || !seenKeys.has(txKey))) {
       if (!filterOutlet || filterOutlet === "ALL" || c.outlet_id_input === filterOutlet) {
-        if (!checkDateMatch(c.timestamp)) return;
+        if (!checkDateMatch(c.tanggal_transaksi || c.timestamp)) return;
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[c.transaksi_id];
@@ -4452,11 +4476,24 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
         const jenisBarang = c.jenis_barang || p?.jenis_barang || "BARANG";
         const metodeBayar = c.metode_bayar || p?.metode_bayar || "Tunai";
 
+        const cTanggal = c.tanggal_transaksi || p?.tanggal_transaksi || "";
+        const cJam = c.jam_transaksi || p?.jam_transaksi || "";
+        const cTxTime = (cTanggal && cJam)
+          ? `${cTanggal} ${cJam}`
+          : (cTanggal ? `${cTanggal} 00:00:00` : (c.timestamp || c.created_at || new Date().toISOString()));
+        const cTxTimestamp = (cTanggal && cJam)
+          ? `${cTanggal}T${cJam}`
+          : (c.timestamp || new Date().toISOString());
+        const cImportedAt = c.imported_at || p?.imported_at || (c.sumber_data === "Import YoYi" || (c.transaksi_id && c.transaksi_id.startsWith("TRX-YY-")) ? c.timestamp : undefined);
+
         transaksiList.push({
           resi_id: c.resi_id,
           transaksi_id: c.transaksi_id || "",
-          timestamp: c.timestamp || new Date().toISOString(),
-          imported_at: c.imported_at || p?.imported_at,
+          transaction_time: cTxTime,
+          imported_at: cImportedAt,
+          timestamp: cTxTimestamp,
+          tanggal_transaksi: cTanggal,
+          jam_transaksi: cJam,
           admin: userMap[c.admin_id_pencatat] || c.admin_id_pencatat,
           outlet: outletMap[c.outlet_id_input] || c.outlet_id_input,
           tipe: "Cargo",
@@ -4475,7 +4512,11 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     }
   });
 
-  transaksiList.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  transaksiList.sort((a: any, b: any) => {
+    const timeA = new Date(a.transaction_time || a.timestamp).getTime();
+    const timeB = new Date(b.transaction_time || b.timestamp).getTime();
+    return timeB - timeA;
+  });
 
   return res.json({
     status: "success",
@@ -4586,11 +4627,22 @@ app.post("/api/getDetailTransaksi", (req, res) => {
   const outlet = (db.Outlets || []).find((o: any) => o.outlet_id === (resiObj?.outlet_id_input || masterTx?.outlet_id || pre?.outlet_id_tugas));
   const user = (db.Users || []).find((u: any) => u.user_id === (resiObj?.admin_id_pencatat || masterTx?.admin_id || pre?.admin_id));
 
+  const txTanggal = masterTx?.tanggal_transaksi || pre?.tanggal_transaksi || resiObj?.tanggal_transaksi || "";
+  const txJam = masterTx?.jam_transaksi || pre?.jam_transaksi || resiObj?.jam_transaksi || "";
+  const transactionTime = (txTanggal && txJam)
+    ? `${txTanggal} ${txJam}`
+    : (txTanggal ? `${txTanggal} 00:00:00` : (masterTx?.timestamp || resiObj?.timestamp || pre?.timestamp || masterTx?.created_at || new Date().toISOString()));
+
+  const importedAt = resiObj?.imported_at || masterTx?.imported_at || pre?.imported_at || ((masterTx?.sumber_data === "Import YoYi" || (txId && txId.startsWith("TRX-YY-"))) ? (masterTx?.created_at || resiObj?.timestamp) : undefined);
+
   const detail = {
     resi_id: resiObj?.resi_id || masterTx?.no_resi || resi_id || "",
     transaksi_id: txId,
-    timestamp: resiObj?.timestamp || (masterTx?.tanggal_transaksi && masterTx?.jam_transaksi ? `${masterTx.tanggal_transaksi}T${masterTx.jam_transaksi}` : (masterTx?.timestamp || masterTx?.tanggal_transaksi || pre?.timestamp || new Date().toISOString())),
-    imported_at: resiObj?.imported_at || masterTx?.imported_at || pre?.imported_at,
+    transaction_time: transactionTime,
+    imported_at: importedAt,
+    tanggal_transaksi: txTanggal,
+    jam_transaksi: txJam,
+    timestamp: (txTanggal && txJam) ? `${txTanggal}T${txJam}` : (resiObj?.timestamp || masterTx?.timestamp || masterTx?.tanggal_transaksi || pre?.timestamp || new Date().toISOString()),
     tipe: crg ? "Cargo" : "Express",
     tipe_produk: resiObj?.tipe_produk || masterTx?.tipe_produk || "EZ",
     admin_id: resiObj?.admin_id_pencatat || masterTx?.admin_id || pre?.admin_id || "",
