@@ -39,6 +39,7 @@ interface TransaksiItem {
   resi_id: string;
   transaksi_id: string;
   timestamp: string;
+  imported_at?: string;
   admin: string;
   outlet: string;
   tipe: "Express" | "Cargo";
@@ -58,6 +59,7 @@ interface TransaksiDetail {
   resi_id: string;
   transaksi_id: string;
   timestamp: string;
+  imported_at?: string;
   tipe: "Express" | "Cargo";
   tipe_produk: string;
   jenis_barang?: string;
@@ -627,7 +629,14 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                         </div>
                         
                         <div className="text-xs text-gray-500 space-y-0.5">
-                          <p><span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: {new Date(item.timestamp).toLocaleString("id-ID")}</p>
+                          <p>
+                            <span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: {new Date(item.timestamp).toLocaleString("id-ID")}
+                            {item.imported_at && (
+                              <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 ml-2 font-mono" title={`Waktu Import JNT OPS PRO: ${new Date(item.imported_at).toLocaleString("id-ID")}`}>
+                                Import: {new Date(item.imported_at).toLocaleTimeString("id-ID")}
+                              </span>
+                            )}
+                          </p>
                           <p><span className="font-medium text-gray-400 w-16 inline-block">Admin</span>: <span className="font-semibold text-gray-700">{highlightText(getAdminName(item.admin), searchTerm)}</span></p>
                           <p><span className="font-medium text-gray-400 w-16 inline-block">Outlet</span>: {item.outlet}</p>
                           <p className="mt-1 text-gray-600 font-medium flex items-center gap-1.5 flex-wrap">
@@ -802,7 +811,19 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                 </div>
                 <div>
                   <h2 className="text-lg font-bold text-gray-800">Detail Transaksi</h2>
-                  <p className="text-xs text-gray-500 font-mono">Resi: {selectedDetail.resi_id || selectedDetail.transaksi_id}</p>
+                  <p className="text-xs text-gray-500 font-mono flex items-center flex-wrap gap-2">
+                    <span>Resi: {selectedDetail.resi_id || selectedDetail.transaksi_id}</span>
+                    {selectedDetail.timestamp && (
+                      <span className="text-gray-600 font-sans">
+                        • {new Date(selectedDetail.timestamp).toLocaleString("id-ID")}
+                      </span>
+                    )}
+                    {selectedDetail.imported_at && (
+                      <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 font-sans" title={`Diimpor ke JNT OPS PRO: ${new Date(selectedDetail.imported_at).toLocaleString("id-ID")}`}>
+                        Import: {new Date(selectedDetail.imported_at).toLocaleTimeString("id-ID")}
+                      </span>
+                    )}
+                  </p>
                 </div>
               </div>
               <button

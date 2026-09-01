@@ -1136,9 +1136,60 @@ export default function TransaksiPage({
 
     const activeItem = String(preInputData?.nama_barang || matchingYoyi?.parsed_data?.nama_barang || "").trim();
 
+    // Priority Source Timestamp:
+    // 1. Timestamp YoYi / preInputData.timestamp
+    // 2. Field tanggal_transaksi + jam_transaksi dari pre-input / matchingYoyi
+    // 3. Current WIB time hanya untuk transaksi manual
+    let txTanggal = "";
+    let txJam = "";
+    let txTimestamp = "";
+    let txImportedAt: string | undefined = undefined;
+
+    const isYoyiSource = Boolean(
+      matchingYoyi ||
+      preInputData?.catatan_admin?.includes("Import YoYi") ||
+      preInputData?.transaksi_id?.startsWith("TRX-YY-") ||
+      pendingTxId?.startsWith("TRX-YY-")
+    );
+
+    if (matchingYoyi?.parsed_data?.tanggal_transaksi) {
+      txTanggal = matchingYoyi.parsed_data.tanggal_transaksi;
+      txJam = matchingYoyi.parsed_data.jam_transaksi || getWIBTime();
+      txTimestamp = `${txTanggal}T${txJam}`;
+      txImportedAt = new Date().toISOString();
+    } else if (preInputData?.timestamp) {
+      const rawTs = preInputData.timestamp;
+      if (rawTs.includes("T")) {
+        const parts = rawTs.split("T");
+        txTanggal = parts[0];
+        txJam = parts[1].replace("Z", "").split(".")[0] || getWIBTime();
+        txTimestamp = `${txTanggal}T${txJam}`;
+      } else if (rawTs.includes(" ")) {
+        const parts = rawTs.split(" ");
+        txTanggal = parts[0];
+        txJam = parts[1];
+        txTimestamp = `${txTanggal}T${txJam}`;
+      } else {
+        txTanggal = rawTs;
+        txJam = getWIBTime();
+        txTimestamp = `${txTanggal}T${txJam}`;
+      }
+      if (isYoyiSource) {
+        txImportedAt = new Date().toISOString();
+      }
+    } else {
+      // Manual Cashier transaction
+      txTanggal = getTodayWIB();
+      txJam = getWIBTime();
+      txTimestamp = `${txTanggal}T${txJam}`;
+    }
+
     const transactionData = {
-      tanggal_transaksi: getTodayWIB(),
-      jam_transaksi: getWIBTime(),
+      tanggal_transaksi: txTanggal,
+      jam_transaksi: txJam,
+      timestamp: txTimestamp,
+      imported_at: txImportedAt,
+      sumber_data: isYoyiSource ? "Import YoYi" : (preInputData ? "Pre Input" : "Kasir Manual"),
       resi_id: (resiId || "").trim().toUpperCase(),
       transaksi_id: pendingTxId || preInputData?.transaksi_id || ("TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5)),
       admin_id_pencatat: preInputData?.admin_id || session.user_id,

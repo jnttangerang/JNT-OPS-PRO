@@ -112,6 +112,9 @@ export interface RiwayatPenerima {
 export interface PreInputBackup {
   transaksi_id: string;
   timestamp: string;
+  imported_at?: string;
+  tanggal_transaksi?: string;
+  jam_transaksi?: string;
   admin_id: string;
   admin_name?: string;
   outlet_id_tugas: string;
@@ -145,6 +148,9 @@ export interface EXPResi {
   resi_id: string;
   transaksi_id: string;
   timestamp: string;
+  imported_at?: string;
+  tanggal_transaksi?: string;
+  jam_transaksi?: string;
   admin_id_pencatat: string;
   outlet_id_input: string;
   ekspedisi?: "Express" | "Cargo";
@@ -177,6 +183,9 @@ export interface CRGResi {
   resi_id: string;
   transaksi_id: string;
   timestamp: string;
+  imported_at?: string;
+  tanggal_transaksi?: string;
+  jam_transaksi?: string;
   admin_id_pencatat: string;
   outlet_id_input: string;
   ekspedisi?: "Express" | "Cargo";

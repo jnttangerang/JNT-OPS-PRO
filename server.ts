@@ -730,6 +730,8 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
   admin_name?: string;
   tanggal_transaksi?: string;
   jam_transaksi?: string;
+  timestamp?: string;
+  imported_at?: string;
   no_resi?: string;
   ekspedisi?: string;
   tipe_produk?: string;
@@ -867,11 +869,17 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
     if (params.status_audit) existingTx.status_audit = params.status_audit;
     if (params.sumber_data) existingTx.sumber_data = params.sumber_data;
     if (params.catatan) existingTx.catatan = params.catatan;
+    if (params.imported_at && !existingTx.imported_at) existingTx.imported_at = params.imported_at;
+    if (params.tanggal_transaksi) existingTx.tanggal_transaksi = params.tanggal_transaksi;
+    if (params.jam_transaksi) existingTx.jam_transaksi = params.jam_transaksi;
+    if (params.timestamp) existingTx.timestamp = params.timestamp;
   } else {
     const newTx = {
       id: txId,
       created_at: nowIso,
       updated_at: nowIso,
+      timestamp: params.timestamp || `${dateStr}T${timeStr}`,
+      imported_at: params.imported_at,
       import_id: params.import_id || "",
       outlet_id: params.outlet_id || "OUT-001",
       outlet_name: params.outlet_name || "",
@@ -2624,6 +2632,10 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       timestamp = `${data.tanggal_transaksi}T00:00:00`;
     }
 
+    const txTanggal = data.tanggal_transaksi || (timestamp.includes("T") ? timestamp.split("T")[0] : getWIBDate(timestamp));
+    const txJam = data.jam_transaksi || (timestamp.includes("T") ? timestamp.split("T")[1].replace("Z", "").split(".")[0] : getWIBTime(timestamp));
+    const importedAt = data.imported_at || (data.sumber_data === "Import YoYi" || data.transaksi_id?.startsWith("TRX-YY-") ? new Date().toISOString() : undefined);
+
     const isDoc = isDocumentTransaction(data);
     const metodeBayarOngkir = data.metode_pembayaran_ongkir || data.metode_bayar || data.metode_bayar_ongkir || "Tunai";
     const metodeBayarTambahan = data.metode_pembayaran_tambahan || data.metode_bayar_tambahan || "";
@@ -2656,6 +2668,9 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         resi_id: rid,
         transaksi_id: transId,
         timestamp,
+        imported_at: importedAt,
+        tanggal_transaksi: txTanggal,
+        jam_transaksi: txJam,
         admin_id_pencatat: adminId,
         outlet_id_input: outletId,
         tipe_produk: data.tipe_produk || "EZ",
@@ -2693,6 +2708,9 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         resi_id: rid,
         transaksi_id: transId,
         timestamp,
+        imported_at: importedAt,
+        tanggal_transaksi: txTanggal,
+        jam_transaksi: txJam,
         admin_id_pencatat: adminId,
         outlet_id_input: outletId,
         tipe_produk: data.tipe_produk || "FastTrack",
@@ -2754,6 +2772,10 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       pre.nama_pengirim = senderName;
       pre.nama_penerima = recName;
       pre.nama_barang = itemName;
+      pre.timestamp = timestamp;
+      if (importedAt) pre.imported_at = importedAt;
+      pre.tanggal_transaksi = txTanggal;
+      pre.jam_transaksi = txJam;
       if (senderHp) pre.hp_pengirim = senderHp;
       if (senderAddr) pre.alamat_pengirim = senderAddr;
       if (recHp) pre.hp_penerima = recHp;
@@ -2763,6 +2785,9 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       pre = {
         transaksi_id: transId,
         timestamp,
+        imported_at: importedAt,
+        tanggal_transaksi: txTanggal,
+        jam_transaksi: txJam,
         admin_id: adminId,
         admin_name: data.operator_nama || undefined,
         outlet_id_tugas: outletId,
@@ -2803,8 +2828,10 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         outlet_id: outletId,
         admin_id: adminId,
         admin_name: data.operator_nama || undefined,
-        tanggal_transaksi: data.tanggal_transaksi || getWIBDate(timestamp),
-        jam_transaksi: data.jam_transaksi || getWIBTime(timestamp),
+        tanggal_transaksi: txTanggal,
+        jam_transaksi: txJam,
+        timestamp: timestamp,
+        imported_at: importedAt,
         no_resi: rid,
         ekspedisi: data.ekspedisi || (jenis_layanan === "Cargo" ? "Cargo" : "Express"),
         tipe_produk: data.tipe_produk || (jenis_layanan === "Cargo" ? "FastTrack" : "EZ"),
@@ -3336,6 +3363,15 @@ function extractYoYiDataWithRegex(text: string): any {
   if (!result.no_hp_penerima) {
     const hpPenerima = text.match(/(?:(?:Telp|HP|No\.?\s*HP|Telepon)\s*(?:Penerima)?|Penerima[^\n\r]*?)[:\s]*(\+?62[\d\s-]{8,15}|08[\d\s-]{8,13})/i);
     if (hpPenerima) result.no_hp_penerima = hpPenerima[1].replace(/[\s-]/g, "");
+  }
+
+  // Operation History (Riwayat Operasi) -> Buat pesanan baru; <Operator>; <YYYY-MM-DD HH:mm:ss>
+  const createOrderPattern = /(?:Buat\s*pesanan\s*baru|Create\s*order)[;\s]+([^;\n\r]+)[;\s]+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/i;
+  const opMatch = text.match(createOrderPattern);
+  if (opMatch) {
+    result.operator = opMatch[1].trim();
+    result.tanggal_transaksi = opMatch[2].trim();
+    result.jam_transaksi = opMatch[3].trim();
   }
 
   // 4. Document fee calculation & total
@@ -4340,10 +4376,15 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     const jenisBarang = tx.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
     const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || p?.metode_bayar || "Tunai";
 
+    const txTimestamp = (tx.tanggal_transaksi && tx.jam_transaksi)
+      ? `${tx.tanggal_transaksi}T${tx.jam_transaksi}`
+      : (tx.timestamp || tx.tanggal_transaksi || tx.created_at || new Date().toISOString());
+
     return {
       resi_id: resiId,
       transaksi_id: txId,
-      timestamp: tx.created_at || tx.tanggal_transaksi || new Date().toISOString(),
+      timestamp: txTimestamp,
+      imported_at: tx.imported_at || p?.imported_at,
       admin: userMap[tx.admin_id] || tx.admin_id,
       outlet: outletMap[tx.outlet_id] || tx.outlet_id,
       tipe: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express",
@@ -4378,6 +4419,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
           resi_id: r.resi_id,
           transaksi_id: r.transaksi_id || "",
           timestamp: r.timestamp || new Date().toISOString(),
+          imported_at: r.imported_at || p?.imported_at,
           admin: userMap[r.admin_id_pencatat] || r.admin_id_pencatat,
           outlet: outletMap[r.outlet_id_input] || r.outlet_id_input,
           tipe: "Express",
@@ -4414,6 +4456,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
           resi_id: c.resi_id,
           transaksi_id: c.transaksi_id || "",
           timestamp: c.timestamp || new Date().toISOString(),
+          imported_at: c.imported_at || p?.imported_at,
           admin: userMap[c.admin_id_pencatat] || c.admin_id_pencatat,
           outlet: outletMap[c.outlet_id_input] || c.outlet_id_input,
           tipe: "Cargo",
@@ -4546,7 +4589,8 @@ app.post("/api/getDetailTransaksi", (req, res) => {
   const detail = {
     resi_id: resiObj?.resi_id || masterTx?.no_resi || resi_id || "",
     transaksi_id: txId,
-    timestamp: resiObj?.timestamp || masterTx?.tanggal_transaksi || pre?.timestamp || new Date().toISOString(),
+    timestamp: resiObj?.timestamp || (masterTx?.tanggal_transaksi && masterTx?.jam_transaksi ? `${masterTx.tanggal_transaksi}T${masterTx.jam_transaksi}` : (masterTx?.timestamp || masterTx?.tanggal_transaksi || pre?.timestamp || new Date().toISOString())),
+    imported_at: resiObj?.imported_at || masterTx?.imported_at || pre?.imported_at,
     tipe: crg ? "Cargo" : "Express",
     tipe_produk: resiObj?.tipe_produk || masterTx?.tipe_produk || "EZ",
     admin_id: resiObj?.admin_id_pencatat || masterTx?.admin_id || pre?.admin_id || "",
