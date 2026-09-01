@@ -7285,11 +7285,46 @@ async function syncDbWithAppsScript(db: any) {
       }
 
       if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
-        db.Master_Setoran = setoranRes.data;
+        const localSetoran = db.Master_Setoran || [];
+        const remoteSetoranIds = new Set(setoranRes.data.map((s: any) => s.id || s.setoran_id));
+        const localOnlySetoran = localSetoran.filter((l: any) => {
+          const lid = l.id || l.setoran_id;
+          return lid && !remoteSetoranIds.has(lid);
+        });
+        db.Master_Setoran = [...setoranRes.data, ...localOnlySetoran];
       }
 
-      if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data) && keuanganRes.data.length > 0) {
-        db.KeuanganOutlet = keuanganRes.data;
+      if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data)) {
+        const localKeuangan = db.KeuanganOutlet || [];
+        const remoteKeuanganIds = new Set(keuanganRes.data.map((k: any) => k.id));
+        
+        const mergedKeuangan = keuanganRes.data.map((remoteK: any) => {
+          const localK = localKeuangan.find((l: any) => l.id === remoteK.id);
+          let resolvedLokasiUang = remoteK.lokasi_uang || localK?.lokasi_uang;
+
+          // Transaction-derived for Amplop/Packing (resi-based)
+          if (!resolvedLokasiUang && (remoteK.resi_id || (remoteK.deskripsi && remoteK.deskripsi.toLowerCase().includes("resi")))) {
+            const resiIdMatch = remoteK.resi_id || remoteK.deskripsi.match(/resi\s+([a-z0-9]+)/i)?.[1];
+            if (resiIdMatch) {
+              const tx = (db.MASTER_TRANSAKSI || []).find((t: any) => t.resi_id === resiIdMatch || t.no_resi === resiIdMatch);
+              if (tx) {
+                const mBayar = (tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "").toUpperCase();
+                const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar.includes("APP") || mBayar.includes("DFOD");
+                resolvedLokasiUang = isDigital ? "OWNER" : "ADMIN";
+              }
+            }
+          }
+
+          // Fallback for manual ledger (stored)
+          if (!resolvedLokasiUang) {
+            resolvedLokasiUang = "ADMIN";
+          }
+
+          return { ...remoteK, lokasi_uang: resolvedLokasiUang };
+        });
+
+        const localOnlyKeuangan = localKeuangan.filter((k: any) => k.id && !remoteKeuanganIds.has(k.id));
+        db.KeuanganOutlet = [...mergedKeuangan, ...localOnlyKeuangan];
         writeDb(db);
       }
       
