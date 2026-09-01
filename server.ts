@@ -2854,7 +2854,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-207" || k.kategori_id === "KAT-102" || k.deskripsi?.includes("Packing"))
       );
       if (!hasPacking) {
-        const mBayar = (data.metode_bayar || "").toUpperCase();
+        const mBayar = (data.metode_bayar || data.metode_pembayaran_ongkir || data.metode_bayar_ongkir || "").toUpperCase();
         const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now()}-P`,
@@ -2879,7 +2879,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-208" || k.kategori_id === "KAT-103" || k.deskripsi?.includes("Amplop"))
       );
       if (!hasAmplop) {
-        const mBayar = (data.metode_bayar || "").toUpperCase();
+        const mBayar = (data.metode_bayar || data.metode_pembayaran_ongkir || data.metode_bayar_ongkir || "").toUpperCase();
         const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now() + 1}-A`,
@@ -6517,8 +6517,8 @@ function toIsoDateString(val: any, fallback?: any): string {
 
 // === KEUANGAN OUTLET (LEDGER) ENDPOINTS ===
 
-const handleGetKeuanganOutlet = (req: any, res: any) => {
-  const db = readDb();
+const handleGetKeuanganOutlet = async (req: any, res: any) => {
+  const db = await syncDbWithAppsScript(readDb());
   const params = { ...req.query, ...req.body };
   const list = db.KeuanganOutlet || [];
   const catList = db.MasterKategoriKeuangan || [];
@@ -7088,20 +7088,20 @@ app.post("/api/reconciliation/reopen", (req, res) => {
   return res.json(result);
 });
 
-app.get("/api/reconciliation/exceptions", (req, res) => {
-  const db = readDb();
+app.get("/api/reconciliation/exceptions", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const list = getExceptions(db, req.query as any);
   return res.json({ status: "success", data: list });
 });
 
-app.post("/api/reconciliation/exceptions", (req, res) => {
-  const db = readDb();
+app.post("/api/reconciliation/exceptions", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const list = getExceptions(db, req.body || {});
   return res.json({ status: "success", data: list });
 });
 
-app.get("/api/reconciliation/exception/:id", (req, res) => {
-  const db = readDb();
+app.get("/api/reconciliation/exception/:id", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const { id } = req.params;
   const list = getExceptions(db, { search: id });
   const item = list.find(e => e.exception_id === id);
@@ -7109,180 +7109,200 @@ app.get("/api/reconciliation/exception/:id", (req, res) => {
   return res.json({ status: "success", data: item });
 });
 
-app.get("/api/reconciliation/closingStatus", (req, res) => {
-  const db = readDb();
+app.get("/api/reconciliation/closingStatus", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const { outlet_id, date } = req.query as any;
   const statusInfo = getClosingReconciliationStatus(db, outlet_id, date);
   return res.json({ status: "success", data: statusInfo });
 });
 
-app.post("/api/reconciliation/closingStatus", (req, res) => {
-  const db = readDb();
+app.post("/api/reconciliation/closingStatus", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const { outlet_id, date } = req.body || {};
   const statusInfo = getClosingReconciliationStatus(db, outlet_id, date);
   return res.json({ status: "success", data: statusInfo });
 });
+
+let lastSyncTime = 0;
+let syncPromise: Promise<any> | null = null;
 
 // Helper to sync live transaction and setoran data from Google Sheets when running in proxy/serverless mode
 async function syncDbWithAppsScript(db: any) {
   const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
   if (!appsScriptUrl || !appsScriptUrl.trim()) return db;
 
-  try {
-    const [txRes, setoranRes, keuanganRes] = await Promise.all([
-      fetch(appsScriptUrl.trim(), {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "getRiwayatTransaksi", data: { filterOutlet: "ALL" } }),
-        signal: AbortSignal.timeout(8000)
-      }).then(r => r.json()).catch(() => null),
-      fetch(appsScriptUrl.trim(), {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "getSetoranList", data: {} }),
-        signal: AbortSignal.timeout(8000)
-      }).then(r => r.json()).catch(() => null),
-      fetch(appsScriptUrl.trim(), {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "getKeuanganOutlet", data: {} }),
-        signal: AbortSignal.timeout(8000)
-      }).then(r => r.json()).catch(() => null)
-    ]);
+  const now = Date.now();
+  if (now - lastSyncTime < 5000) {
+    return db;
+  }
 
-    if (txRes && txRes.status === "success" && Array.isArray(txRes.data)) {
-      const localTxs = db.MASTER_TRANSAKSI || [];
-      const remoteMapped = txRes.data.map((tx: any) => {
-        const id = tx.transaksi_id || tx.id || tx.resi_id;
-        const localTx = localTxs.find((l: any) => 
-          (id && (l.transaksi_id === id || l.id === id)) || 
-          (tx.resi_id && (l.no_resi === tx.resi_id || l.resi_id === tx.resi_id)) ||
-          (tx.no_resi && (l.no_resi === tx.no_resi || l.resi_id === tx.no_resi))
-        );
-        
-        // Resolve Admin identity with priority fallback and user resolution
-        const rawAdmin = tx.admin_id_pencatat || tx.admin_id || tx.admin || tx.user_id || tx.dibuat_oleh || tx.admin_pembuat || tx.created_by;
-        let finalAdminId = rawAdmin;
-        
-        if (rawAdmin && String(rawAdmin).trim() !== "" && rawAdmin !== "SYSTEM") {
-          const cleanAdmin = String(rawAdmin).trim();
-          const matchedUser = (db.Users || []).find((u: any) => 
-            u.user_id === cleanAdmin || 
-            u.username === cleanAdmin || 
-            (u.nama_lengkap && u.nama_lengkap.trim().toUpperCase() === cleanAdmin.toUpperCase())
+  if (syncPromise) {
+    return syncPromise;
+  }
+
+  syncPromise = (async () => {
+    try {
+      const [txRes, setoranRes, keuanganRes] = await Promise.all([
+        fetch(appsScriptUrl.trim(), {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "getRiwayatTransaksi", data: { filterOutlet: "ALL" } }),
+          signal: AbortSignal.timeout(8000)
+        }).then(r => r.json()).catch(() => null),
+        fetch(appsScriptUrl.trim(), {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "getSetoranList", data: {} }),
+          signal: AbortSignal.timeout(8000)
+        }).then(r => r.json()).catch(() => null),
+        fetch(appsScriptUrl.trim(), {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "getKeuanganOutlet", data: {} }),
+          signal: AbortSignal.timeout(8000)
+        }).then(r => r.json()).catch(() => null)
+      ]);
+
+      if (txRes && txRes.status === "success" && Array.isArray(txRes.data)) {
+        const localTxs = db.MASTER_TRANSAKSI || [];
+        const remoteMapped = txRes.data.map((tx: any) => {
+          const id = tx.transaksi_id || tx.id || tx.resi_id;
+          const localTx = localTxs.find((l: any) => 
+            (id && (l.transaksi_id === id || l.id === id)) || 
+            (tx.resi_id && (l.no_resi === tx.resi_id || l.resi_id === tx.resi_id)) ||
+            (tx.no_resi && (l.no_resi === tx.no_resi || l.resi_id === tx.no_resi))
           );
-          if (matchedUser) {
-            finalAdminId = matchedUser.user_id;
-          }
-        }
-        
-        if (!finalAdminId || finalAdminId === "SYSTEM") {
-          finalAdminId = (localTx && localTx.admin_id && localTx.admin_id !== "SYSTEM") ? localTx.admin_id : "SYSTEM";
-        }
-
-        // Resolve Outlet identity with code / name mapping fallback
-        const rawOutlet = tx.outlet_id_input || tx.outlet_id || tx.outlet || tx.nama_outlet || localTx?.outlet_id;
-        let finalOutletId = rawOutlet || "OUT-001";
-        if (rawOutlet && String(rawOutlet).trim() !== "") {
-          const cleanOutlet = String(rawOutlet).trim();
-          const matchedOutlet = (db.Outlets || []).find((o: any) =>
-            o.outlet_id === cleanOutlet ||
-            (o.nama_outlet && o.nama_outlet.trim().toUpperCase() === cleanOutlet.toUpperCase()) ||
-            (o.kode_outlet && o.kode_outlet.trim().toUpperCase() === cleanOutlet.toUpperCase())
-          );
-          if (matchedOutlet) {
-            finalOutletId = matchedOutlet.outlet_id;
-          }
-        }
-
-        // Helper to pick financial field: remote valid (>0 or authoritative) > local valid > fallback 0
-        const resolveNum = (remoteVal: any, localVal: any): number => {
-          if (remoteVal !== undefined && remoteVal !== null && String(remoteVal).trim() !== "") {
-            const rNum = Number(remoteVal);
-            if (!isNaN(rNum)) {
-              if (rNum !== 0) return rNum;
-              if (localVal !== undefined && localVal !== null && Number(localVal) !== 0) {
-                return Number(localVal);
-              }
-              return 0;
+          
+          // Resolve Admin identity with priority fallback and user resolution
+          const rawAdmin = tx.admin_id_pencatat || tx.admin_id || tx.admin || tx.user_id || tx.dibuat_oleh || tx.admin_pembuat || tx.created_by;
+          let finalAdminId = rawAdmin;
+          
+          if (rawAdmin && String(rawAdmin).trim() !== "" && rawAdmin !== "SYSTEM") {
+            const cleanAdmin = String(rawAdmin).trim();
+            const matchedUser = (db.Users || []).find((u: any) => 
+              u.user_id === cleanAdmin || 
+              u.username === cleanAdmin || 
+              (u.nama_lengkap && u.nama_lengkap.trim().toUpperCase() === cleanAdmin.toUpperCase())
+            );
+            if (matchedUser) {
+              finalAdminId = matchedUser.user_id;
             }
           }
-          if (localVal !== undefined && localVal !== null && String(localVal).trim() !== "") {
-            const lNum = Number(localVal);
-            if (!isNaN(lNum)) return lNum;
+          
+          if (!finalAdminId || finalAdminId === "SYSTEM") {
+            finalAdminId = (localTx && localTx.admin_id && localTx.admin_id !== "SYSTEM") ? localTx.admin_id : "SYSTEM";
           }
-          return 0;
-        };
 
-        return {
-          id: id,
-          transaksi_id: tx.transaksi_id || tx.id || localTx?.transaksi_id || id,
-          no_resi: tx.resi_id || tx.no_resi || localTx?.no_resi || "",
-          outlet_id: finalOutletId,
-          admin_id: finalAdminId,
-          admin_pembuat: finalAdminId,
-          user_id: finalAdminId,
-          tanggal_transaksi: extractBusinessDate(tx) || getWIBDate(tx.timestamp || tx.tanggal_transaksi || localTx?.tanggal_transaksi || localTx?.created_at),
-          jam_transaksi: getWIBTime(tx.timestamp || tx.created_at || tx.jam_transaksi || localTx?.jam_transaksi || "00:00:00"),
-          created_at: tx.timestamp || tx.created_at || localTx?.created_at || new Date().toISOString(),
-          ekspedisi: tx.tipe_layanan || tx.ekspedisi || localTx?.ekspedisi || "Express",
-          tipe_produk: tx.tipe_produk || localTx?.tipe_produk || "",
-          pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || localTx?.pengirim || localTx?.nama_pengirim || "",
-          nama_pengirim: tx.nama_pengirim || tx.pengirim || tx.snapshot_nama_pengirim || localTx?.nama_pengirim || localTx?.pengirim || "",
-          snapshot_nama_pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || localTx?.snapshot_nama_pengirim || "",
-          hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || localTx?.hp_pengirim || "",
-          snapshot_hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || localTx?.snapshot_hp_pengirim || "",
-          alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || localTx?.alamat_pengirim || "",
-          snapshot_alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || localTx?.snapshot_alamat_pengirim || "",
-          penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || localTx?.penerima || localTx?.nama_penerima || "",
-          nama_penerima: tx.nama_penerima || tx.penerima || tx.snapshot_nama_penerima || localTx?.nama_penerima || localTx?.penerima || "",
-          snapshot_nama_penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || localTx?.snapshot_nama_penerima || "",
-          hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || localTx?.hp_penerima || "",
-          snapshot_hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || localTx?.snapshot_hp_penerima || "",
-          alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || localTx?.alamat_penerima || "",
-          snapshot_alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || localTx?.snapshot_alamat_penerima || "",
-          nama_barang: tx.nama_barang || localTx?.nama_barang || "Paket",
-          metode_bayar: tx.metode_bayar || tx.metode_pembayaran_ongkir || localTx?.metode_bayar || localTx?.metode_pembayaran_ongkir || "CASH",
-          ongkir_customer: resolveNum(tx.ongkir_dasar ?? tx.ongkir_customer ?? tx.biaya_kirim, localTx?.ongkir_customer ?? localTx?.ongkir_dasar ?? localTx?.biaya_kirim),
-          ongkir_yoyi: resolveNum(tx.ongkir_dasar ?? tx.ongkir_yoyi, localTx?.ongkir_yoyi ?? localTx?.ongkir_dasar),
-          biaya_yoyi: resolveNum(tx.biaya_yoyi ?? tx.biaya_jtc, localTx?.biaya_yoyi ?? localTx?.biaya_jtc),
-          packing: resolveNum(tx.biaya_packing ?? tx.packing, localTx?.packing ?? localTx?.biaya_packing),
-          amplop: resolveNum(tx.biaya_amplop ?? tx.amplop, localTx?.amplop ?? localTx?.biaya_amplop),
-          biaya_lain: resolveNum(tx.biaya_lain ?? tx.biaya_lain_yoyi, localTx?.biaya_lain ?? localTx?.biaya_lain_yoyi),
-          asuransi: resolveNum(tx.biaya_asuransi ?? tx.asuransi, localTx?.asuransi ?? localTx?.biaya_asuransi),
-          pembulatan: resolveNum(tx.pembulatan, localTx?.pembulatan),
-          total_customer: resolveNum(tx.total_dibayar_customer ?? tx.total_customer ?? tx.jumlah_dibayar_customer, localTx?.total_customer ?? localTx?.total_dibayar_customer ?? localTx?.jumlah_dibayar_customer ?? tx.grand_total ?? localTx?.grand_total),
-          grand_total: resolveNum(tx.grand_total, localTx?.grand_total ?? (Number(tx.total_dibayar_customer || 0) + Number(tx.biaya_packing || 0) + Number(tx.biaya_amplop || 0) + Number(tx.biaya_lain || 0))),
-          wajib_setor_owner: resolveNum(tx.setoran_ke_owner ?? tx.wajib_setor_owner ?? tx.setoran_owner, localTx?.wajib_setor_owner ?? localTx?.setoran_owner ?? localTx?.setoran_ke_owner),
-          kas_outlet: resolveNum(tx.kas_operasional ?? tx.kas_outlet, localTx?.kas_outlet ?? localTx?.kas_operasional),
-          status_transaksi: tx.status_resi === "BATAL" ? "CANCELLED" : (localTx?.status_transaksi || "PAID"),
-          status_setoran: tx.status_setoran || localTx?.status_setoran || "PENDING",
-          status_audit: tx.status_audit || localTx?.status_audit || "PENDING"
-        };
-      });
+          // Resolve Outlet identity with code / name mapping fallback
+          const rawOutlet = tx.outlet_id_input || tx.outlet_id || tx.outlet || tx.nama_outlet || localTx?.outlet_id;
+          let finalOutletId = rawOutlet || "OUT-001";
+          if (rawOutlet && String(rawOutlet).trim() !== "") {
+            const cleanOutlet = String(rawOutlet).trim();
+            const matchedOutlet = (db.Outlets || []).find((o: any) =>
+              o.outlet_id === cleanOutlet ||
+              (o.nama_outlet && o.nama_outlet.trim().toUpperCase() === cleanOutlet.toUpperCase()) ||
+              (o.kode_outlet && o.kode_outlet.trim().toUpperCase() === cleanOutlet.toUpperCase())
+            );
+            if (matchedOutlet) {
+              finalOutletId = matchedOutlet.outlet_id;
+            }
+          }
 
-      const remoteIds = new Set(remoteMapped.map((r: any) => r.id || r.transaksi_id || r.no_resi).filter(Boolean));
-      const localOnly = localTxs.filter((l: any) => {
-        const lid = l.id || l.transaksi_id || l.no_resi;
-        return lid && !remoteIds.has(lid);
-      });
-      const remoteNonTest = remoteMapped.filter((r: any) => r.tanggal_transaksi !== '2026-08-26');
-      const local26 = localTxs.filter((l: any) => l.tanggal_transaksi === '2026-08-26');
-      db.MASTER_TRANSAKSI = [...remoteNonTest, ...local26, ...localOnly.filter((l: any) => l.tanggal_transaksi !== '2026-08-26')];
+          // Helper to pick financial field: remote valid (>0 or authoritative) > local valid > fallback 0
+          const resolveNum = (remoteVal: any, localVal: any): number => {
+            if (remoteVal !== undefined && remoteVal !== null && String(remoteVal).trim() !== "") {
+              const rNum = Number(remoteVal);
+              if (!isNaN(rNum)) {
+                if (rNum !== 0) return rNum;
+                if (localVal !== undefined && localVal !== null && Number(localVal) !== 0) {
+                  return Number(localVal);
+                }
+                return 0;
+              }
+            }
+            if (localVal !== undefined && localVal !== null && String(localVal).trim() !== "") {
+              const lNum = Number(localVal);
+              if (!isNaN(lNum)) return lNum;
+            }
+            return 0;
+          };
+
+          return {
+            id: id,
+            transaksi_id: tx.transaksi_id || tx.id || localTx?.transaksi_id || id,
+            no_resi: tx.resi_id || tx.no_resi || localTx?.no_resi || "",
+            outlet_id: finalOutletId,
+            admin_id: finalAdminId,
+            admin_pembuat: finalAdminId,
+            user_id: finalAdminId,
+            tanggal_transaksi: extractBusinessDate(tx) || getWIBDate(tx.timestamp || tx.tanggal_transaksi || localTx?.tanggal_transaksi || localTx?.created_at),
+            jam_transaksi: getWIBTime(tx.timestamp || tx.created_at || tx.jam_transaksi || localTx?.jam_transaksi || "00:00:00"),
+            created_at: tx.timestamp || tx.created_at || localTx?.created_at || new Date().toISOString(),
+            ekspedisi: tx.tipe_layanan || tx.ekspedisi || localTx?.ekspedisi || "Express",
+            tipe_produk: tx.tipe_produk || localTx?.tipe_produk || "",
+            pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || localTx?.pengirim || localTx?.nama_pengirim || "",
+            nama_pengirim: tx.nama_pengirim || tx.pengirim || tx.snapshot_nama_pengirim || localTx?.nama_pengirim || localTx?.pengirim || "",
+            snapshot_nama_pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || localTx?.snapshot_nama_pengirim || "",
+            hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || localTx?.hp_pengirim || "",
+            snapshot_hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || localTx?.snapshot_hp_pengirim || "",
+            alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || localTx?.alamat_pengirim || "",
+            snapshot_alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || localTx?.snapshot_alamat_pengirim || "",
+            penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || localTx?.penerima || localTx?.nama_penerima || "",
+            nama_penerima: tx.nama_penerima || tx.penerima || tx.snapshot_nama_penerima || localTx?.nama_penerima || localTx?.penerima || "",
+            snapshot_nama_penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || localTx?.snapshot_nama_penerima || "",
+            hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || localTx?.hp_penerima || "",
+            snapshot_hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || localTx?.snapshot_hp_penerima || "",
+            alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || localTx?.alamat_penerima || "",
+            snapshot_alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || localTx?.snapshot_alamat_penerima || "",
+            nama_barang: tx.nama_barang || localTx?.nama_barang || "Paket",
+            metode_bayar: tx.metode_bayar || tx.metode_pembayaran_ongkir || localTx?.metode_bayar || localTx?.metode_pembayaran_ongkir || "CASH",
+            ongkir_customer: resolveNum(tx.ongkir_dasar ?? tx.ongkir_customer ?? tx.biaya_kirim, localTx?.ongkir_customer ?? localTx?.ongkir_dasar ?? localTx?.biaya_kirim),
+            ongkir_yoyi: resolveNum(tx.ongkir_dasar ?? tx.ongkir_yoyi, localTx?.ongkir_yoyi ?? localTx?.ongkir_dasar),
+            biaya_yoyi: resolveNum(tx.biaya_yoyi ?? tx.biaya_jtc, localTx?.biaya_yoyi ?? localTx?.biaya_jtc),
+            packing: resolveNum(tx.biaya_packing ?? tx.packing, localTx?.packing ?? localTx?.biaya_packing),
+            amplop: resolveNum(tx.biaya_amplop ?? tx.amplop, localTx?.amplop ?? localTx?.biaya_amplop),
+            biaya_lain: resolveNum(tx.biaya_lain ?? tx.biaya_lain_yoyi, localTx?.biaya_lain ?? localTx?.biaya_lain_yoyi),
+            asuransi: resolveNum(tx.biaya_asuransi ?? tx.asuransi, localTx?.asuransi ?? localTx?.biaya_asuransi),
+            pembulatan: resolveNum(tx.pembulatan, localTx?.pembulatan),
+            total_customer: resolveNum(tx.total_dibayar_customer ?? tx.total_customer ?? tx.jumlah_dibayar_customer, localTx?.total_customer ?? localTx?.total_dibayar_customer ?? localTx?.jumlah_dibayar_customer ?? tx.grand_total ?? localTx?.grand_total),
+            grand_total: resolveNum(tx.grand_total, localTx?.grand_total ?? (Number(tx.total_dibayar_customer || 0) + Number(tx.biaya_packing || 0) + Number(tx.biaya_amplop || 0) + Number(tx.biaya_lain || 0))),
+            wajib_setor_owner: resolveNum(tx.setoran_ke_owner ?? tx.wajib_setor_owner ?? tx.setoran_owner, localTx?.wajib_setor_owner ?? localTx?.setoran_owner ?? localTx?.setoran_ke_owner),
+            kas_outlet: resolveNum(tx.kas_operasional ?? tx.kas_outlet, localTx?.kas_outlet ?? localTx?.kas_operasional),
+            status_transaksi: tx.status_resi === "BATAL" ? "CANCELLED" : (localTx?.status_transaksi || "PAID"),
+            status_setoran: tx.status_setoran || localTx?.status_setoran || "PENDING",
+            status_audit: tx.status_audit || localTx?.status_audit || "PENDING"
+          };
+        });
+
+        const remoteIds = new Set(remoteMapped.map((r: any) => r.id || r.transaksi_id || r.no_resi).filter(Boolean));
+        const localOnly = localTxs.filter((l: any) => {
+          const lid = l.id || l.transaksi_id || l.no_resi;
+          return lid && !remoteIds.has(lid);
+        });
+        const remoteNonTest = remoteMapped.filter((r: any) => r.tanggal_transaksi !== '2026-08-26');
+        const local26 = localTxs.filter((l: any) => l.tanggal_transaksi === '2026-08-26');
+        db.MASTER_TRANSAKSI = [...remoteNonTest, ...local26, ...localOnly.filter((l: any) => l.tanggal_transaksi !== '2026-08-26')];
+      }
+
+      if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
+        db.Master_Setoran = setoranRes.data;
+      }
+
+      if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data) && keuanganRes.data.length > 0) {
+        db.KeuanganOutlet = keuanganRes.data;
+        writeDb(db);
+      }
+      
+      lastSyncTime = Date.now();
+    } catch (e: any) {
+      console.warn("syncDbWithAppsScript warning:", e.message);
+    } finally {
+      syncPromise = null;
     }
+    return db;
+  })();
 
-    if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
-      db.Master_Setoran = setoranRes.data;
-    }
-
-    if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data) && keuanganRes.data.length > 0) {
-      db.KeuanganOutlet = keuanganRes.data;
-      writeDb(db);
-    }
-  } catch (e: any) {
-    console.warn("syncDbWithAppsScript warning:", e.message);
-  }
-  return db;
+  return syncPromise;
 }
 
 // === PHASE 30 DAILY CLOSING ENGINE ENDPOINTS ===
@@ -7925,23 +7945,23 @@ app.get("/api/financial-close/evidence/:id/audit", (req, res) => {
 
 // === PHASE 35 MANAGEMENT CONTROL TOWER ENDPOINTS ===
 
-app.get("/api/control-tower/summary", (req, res) => {
-  const db = readDb();
+app.get("/api/control-tower/summary", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const outlet_id = req.query.outlet_id as string;
   const tanggal = req.query.tanggal as string;
   const result = getControlTowerSummary(db, { outlet_id, tanggal });
   return res.json(result);
 });
 
-app.get("/api/control-tower/matrix", (req, res) => {
-  const db = readDb();
+app.get("/api/control-tower/matrix", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const tanggal = req.query.tanggal as string;
   const result = getControlTowerMatrix(db, { tanggal });
   return res.json(result);
 });
 
-app.get("/api/control-tower/trend", (req, res) => {
-  const db = readDb();
+app.get("/api/control-tower/trend", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
   const outlet_id = req.query.outlet_id as string;
   const end_date = req.query.end_date as string;
   const daysStr = req.query.days as string;

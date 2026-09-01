@@ -594,7 +594,7 @@ export default function ManagementControlTowerPage({
 
             <div className="bg-blue-50/50 p-4 rounded-xl border border-blue-100 shadow-sm flex flex-col justify-center">
               <span className="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">Wajib Setor</span>
-              <span className="text-2xl font-black text-blue-900">{formatCurrency(summaryData.financialSummary.total_owner)}</span>
+              <span className="text-2xl font-black text-blue-900">{formatCurrency(summaryData.financialSummary.total_cash_payment)}</span>
               <span className="text-[10px] text-blue-500 font-medium mt-1">Expected Deposit</span>
             </div>
 

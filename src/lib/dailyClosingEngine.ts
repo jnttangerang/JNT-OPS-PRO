@@ -782,7 +782,7 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
       resi_id: tx.resi_id || tx.no_resi,
       ekspedisi: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express",
       customer_payment: sum.customer_payment,
-      wajib_setor_owner: sum.owner_deposit,
+      wajib_setor_owner: sum.cash_payment,
       kas_outlet: sum.outlet_cash,
       metode_bayar: tx.metode_bayar || tx.metode_pembayaran_ongkir || "CASH",
       status_resi: tx.status_resi || tx.status || "OK"
