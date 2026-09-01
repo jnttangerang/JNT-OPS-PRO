@@ -220,6 +220,20 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
     setCurrentPage(1);
   }, [searchTerm, filterOutlet, filterAdmin, filterEkspedisi]);
 
+  const resolveItemTime = (item?: { transaction_time?: string; tanggal_transaksi?: string; jam_transaksi?: string; timestamp?: string }): string => {
+    if (!item) return "";
+    if (item.tanggal_transaksi && item.jam_transaksi) {
+      return `${item.tanggal_transaksi} ${item.jam_transaksi}`;
+    }
+    if (item.transaction_time) {
+      return item.transaction_time;
+    }
+    if (item.tanggal_transaksi) {
+      return `${item.tanggal_transaksi} 00:00:00`;
+    }
+    return item.timestamp || "";
+  };
+
   const formatDisplayTime = (timeStr?: string): string => {
     if (!timeStr) return "-";
     const match = String(timeStr).match(/^(\d{4})-(\d{1,2})-(\d{1,2})[T\s](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
@@ -655,7 +669,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                         
                         <div className="text-xs text-gray-500 space-y-0.5">
                           <p>
-                            <span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: {formatDisplayTime(item.transaction_time || item.timestamp)}
+                            <span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: {formatDisplayTime(resolveItemTime(item))}
                             {item.imported_at && (
                               <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 ml-2 font-mono" title={`Waktu Import JNT OPS PRO: ${formatDisplayTime(item.imported_at)}`}>
                                 Import: {formatDisplayTime(item.imported_at)}
@@ -838,9 +852,9 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                   <h2 className="text-lg font-bold text-gray-800">Detail Transaksi</h2>
                   <p className="text-xs text-gray-500 font-mono flex items-center flex-wrap gap-2">
                     <span>Resi: {selectedDetail.resi_id || selectedDetail.transaksi_id}</span>
-                    {(selectedDetail.transaction_time || selectedDetail.timestamp) && (
+                    {resolveItemTime(selectedDetail) && (
                       <span className="text-gray-600 font-sans">
-                        • {formatDisplayTime(selectedDetail.transaction_time || selectedDetail.timestamp)}
+                        • {formatDisplayTime(resolveItemTime(selectedDetail))}
                       </span>
                     )}
                     {selectedDetail.imported_at && (

@@ -1240,8 +1240,7 @@ function apiGetDashboardData(params) {
 // ==========================================
 
 /**
- * status_resi & grand_total dicari lewat getColIndex_ (nama header),
- * bukan lagi r[21]/c[24]/r[18]/c[21] hardcoded posisi.
+ * Ambil Riwayat Transaksi (Support Filter Outlet & Tanggal)
  */
 function apiGetRiwayatTransaksi(params) {
   var filterOutlet = params.filterOutlet || "ALL";
@@ -1249,11 +1248,13 @@ function apiGetRiwayatTransaksi(params) {
   var dbExp = DatabaseService.getSheetData("EXP_Resi");
   var dbCrg = DatabaseService.getSheetData("CRG_Resi");
   var dbBackup = DatabaseService.getSheetData("PreInput_Backup");
+  var dbMasterTx = DatabaseService.getSheetData("MASTER_TRANSAKSI");
   var dbOutlets = DatabaseService.getSheetData("Outlets");
   var dbUsers = DatabaseService.getSheetData("Users");
 
   var expHeader = (dbExp && dbExp[0]) ? dbExp[0] : [];
   var crgHeader = (dbCrg && dbCrg[0]) ? dbCrg[0] : [];
+  var mtxHeader = (dbMasterTx && dbMasterTx[0]) ? dbMasterTx[0] : [];
 
   var getVal = function(header, row, colName, fallbackIdx) {
     var idx = header ? header.indexOf(colName) : -1;
@@ -1268,9 +1269,39 @@ function apiGetRiwayatTransaksi(params) {
     return isNaN(num) ? 0 : num;
   };
 
+  var padTime = function(tStr) {
+    if (!tStr) return "00:00:00";
+    var match = tStr.toString().match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if (match) {
+      var h = ("0" + match[1]).slice(-2);
+      var m = ("0" + match[2]).slice(-2);
+      var s = match[3] ? ("0" + match[3]).slice(-2) : "00";
+      return h + ":" + m + ":" + s;
+    }
+    return tStr.toString();
+  };
+
   var backupMap = {};
-  for (var k = 1; k < dbBackup.length; k++) {
-    backupMap[dbBackup[k][0].toString()] = { pengirim: dbBackup[k][4].toString(), penerima: dbBackup[k][7].toString() };
+  if (dbBackup && dbBackup.length > 1) {
+    for (var k = 1; k < dbBackup.length; k++) {
+      backupMap[dbBackup[k][0].toString()] = { 
+        pengirim: dbBackup[k][4].toString(), 
+        penerima: dbBackup[k][7].toString(),
+        hp_pengirim: (dbBackup[k][5] || "").toString(),
+        hp_penerima: (dbBackup[k][8] || "").toString(),
+        nama_barang: (dbBackup[k][10] || "").toString()
+      };
+    }
+  }
+
+  var masterTxMap = {};
+  if (dbMasterTx && dbMasterTx.length > 1) {
+    for (var m = 1; m < dbMasterTx.length; m++) {
+      var mObj = rowToObject_(mtxHeader, dbMasterTx[m]);
+      if (mObj.id) masterTxMap[mObj.id.toString()] = mObj;
+      if (mObj.transaksi_id) masterTxMap[mObj.transaksi_id.toString()] = mObj;
+      if (mObj.no_resi) masterTxMap[mObj.no_resi.toString()] = mObj;
+    }
   }
 
   var outletMap = {};
@@ -1280,17 +1311,102 @@ function apiGetRiwayatTransaksi(params) {
   for (var u = 1; u < dbUsers.length; u++) userMap[dbUsers[u][0].toString()] = dbUsers[u][1].toString();
 
   var transaksiList = [];
+  var seenKeys = {};
 
+  // 1. Process MASTER_TRANSAKSI as primary source of truth
+  if (dbMasterTx && dbMasterTx.length > 1) {
+    for (var mi = 1; mi < dbMasterTx.length; mi++) {
+      var tx = rowToObject_(mtxHeader, dbMasterTx[mi]);
+      var outIdM = (tx.outlet_id || "").toString();
+      if (filterOutlet !== "ALL" && outIdM !== filterOutlet) continue;
+
+      var resiIdM = (tx.no_resi || tx.resi_id || tx.id || "").toString();
+      var txIdM = (tx.id || tx.transaksi_id || "").toString();
+      if (resiIdM) seenKeys[resiIdM.toUpperCase()] = true;
+      if (txIdM) seenKeys[txIdM.toUpperCase()] = true;
+
+      var pM = backupMap[txIdM] || { pengirim: "", penerima: "", hp_pengirim: "", hp_penerima: "", nama_barang: "" };
+
+      var txTanggalM = (tx.tanggal_transaksi || "").toString();
+      var txJamM = padTime(tx.jam_transaksi);
+      var transactionTimeM = (txTanggalM && txJamM) 
+        ? (txTanggalM + " " + txJamM) 
+        : (txTanggalM ? (txTanggalM + " 00:00:00") : (tx.created_at || new Date().toISOString()));
+      var txTimestampM = (txTanggalM && txJamM) 
+        ? (txTanggalM + "T" + txJamM) 
+        : (tx.created_at || new Date().toISOString());
+      var importedAtM = tx.created_at || undefined;
+
+      transaksiList.push({
+        resi_id: resiIdM,
+        transaksi_id: txIdM,
+        transaction_time: transactionTimeM,
+        imported_at: importedAtM,
+        timestamp: txTimestampM,
+        tanggal_transaksi: txTanggalM,
+        jam_transaksi: txJamM,
+        admin: userMap[tx.admin_id] || tx.admin_name || tx.admin_id || "-",
+        admin_id: (tx.admin_id || "").toString(),
+        outlet: outletMap[outIdM] || tx.outlet_name || outIdM,
+        outlet_id: outIdM,
+        tipe: ((tx.ekspedisi || "Express").toUpperCase() === "CARGO") ? "Cargo" : "Express",
+        tipe_produk: (tx.tipe_produk || "EZ").toString(),
+        jenis_barang: (tx.jenis_barang || (tx.tipe_produk === "DOC" ? "DOKUMEN" : "BARANG")).toString(),
+        metode_bayar: (tx.metode_bayar || "Tunai").toString(),
+        ongkir_dasar: parseFloat(tx.ongkir_customer) || 0,
+        biaya_asuransi: parseFloat(tx.asuransi) || 0,
+        biaya_yoyi: parseFloat(tx.biaya_yoyi || tx.ongkir_yoyi) || 0,
+        total_dibayar_customer: parseFloat(tx.total_customer) || 0,
+        pembulatan: 0,
+        biaya_packing: parseFloat(tx.packing) || 0,
+        biaya_amplop: parseFloat(tx.amplop) || 0,
+        biaya_lain: parseFloat(tx.biaya_lain) || 0,
+        grand_total: parseFloat(tx.total_customer || tx.grand_total) || 0,
+        setoran_ke_owner: parseFloat(tx.wajib_setor_owner) || 0,
+        kas_operasional: parseFloat(tx.kas_outlet) || 0,
+        pengirim: (tx.snapshot_nama_pengirim || pM.pengirim || "").toString(),
+        penerima: (tx.snapshot_nama_penerima || pM.penerima || "").toString(),
+        hp_pengirim: (tx.snapshot_hp_pengirim || pM.hp_pengirim || "").toString(),
+        hp_penerima: (tx.snapshot_hp_penerima || pM.hp_penerima || "").toString(),
+        nama_barang: (tx.nama_barang || pM.nama_barang || "-").toString(),
+        status_resi: (tx.status_transaksi === "CANCELLED" ? "BATAL" : (tx.status_transaksi || "AKTIF")).toString()
+      });
+    }
+  }
+
+  // 2. Process EXP_Resi
   for (var i = 1; i < dbExp.length; i++) {
     var r = dbExp[i];
     var outId = r[4].toString();
     if (filterOutlet !== "ALL" && outId !== filterOutlet) continue;
+    var resiKey = r[0].toString().toUpperCase();
     var txId = r[1].toString();
-    var p = backupMap[txId] || { pengirim: "", penerima: "" };
+    var txKey = txId.toUpperCase();
+    if (seenKeys[resiKey] || (txKey && seenKeys[txKey])) continue;
+    seenKeys[resiKey] = true;
+    if (txKey) seenKeys[txKey] = true;
+
+    var p = backupMap[txId] || { pengirim: "", penerima: "", hp_pengirim: "", hp_penerima: "", nama_barang: "" };
+    var m = masterTxMap[r[0].toString()] || masterTxMap[txId] || null;
+
+    var txTanggal = (m && m.tanggal_transaksi) ? m.tanggal_transaksi.toString() : "";
+    var txJam = (m && m.jam_transaksi) ? padTime(m.jam_transaksi) : "";
+    var transactionTime = (txTanggal && txJam)
+      ? (txTanggal + " " + txJam)
+      : (txTanggal ? (txTanggal + " 00:00:00") : r[2].toString());
+    var txTimestamp = (txTanggal && txJam)
+      ? (txTanggal + "T" + txJam)
+      : r[2].toString();
+    var importedAt = (m && m.created_at) ? m.created_at : r[2].toString();
+
     transaksiList.push({
       resi_id: r[0].toString(),
       transaksi_id: txId,
-      timestamp: r[2].toString(),
+      transaction_time: transactionTime,
+      imported_at: importedAt,
+      timestamp: txTimestamp,
+      tanggal_transaksi: txTanggal,
+      jam_transaksi: txJam,
       admin: userMap[r[3].toString()] || r[3].toString(),
       admin_id: r[3].toString(),
       outlet: outletMap[outId] || outId,
@@ -1311,20 +1427,46 @@ function apiGetRiwayatTransaksi(params) {
       kas_operasional: getNum(expHeader, r, "kas_operasional", 20),
       pengirim: p.pengirim,
       penerima: p.penerima,
+      hp_pengirim: p.hp_pengirim,
+      hp_penerima: p.hp_penerima,
+      nama_barang: p.nama_barang || "-",
       status_resi: (getVal(expHeader, r, "status_resi", 21) || "AKTIF").toString()
     });
   }
 
+  // 3. Process CRG_Resi
   for (var j = 1; j < dbCrg.length; j++) {
     var c = dbCrg[j];
     var outIdC = c[4].toString();
     if (filterOutlet !== "ALL" && outIdC !== filterOutlet) continue;
+    var resiKeyC = c[0].toString().toUpperCase();
     var txIdC = c[1].toString();
-    var pC = backupMap[txIdC] || { pengirim: "", penerima: "" };
+    var txKeyC = txIdC.toUpperCase();
+    if (seenKeys[resiKeyC] || (txKeyC && seenKeys[txKeyC])) continue;
+    seenKeys[resiKeyC] = true;
+    if (txKeyC) seenKeys[txKeyC] = true;
+
+    var pC = backupMap[txIdC] || { pengirim: "", penerima: "", hp_pengirim: "", hp_penerima: "", nama_barang: "" };
+    var mC = masterTxMap[c[0].toString()] || masterTxMap[txIdC] || null;
+
+    var txTanggalC = (mC && mC.tanggal_transaksi) ? mC.tanggal_transaksi.toString() : "";
+    var txJamC = (mC && mC.jam_transaksi) ? padTime(mC.jam_transaksi) : "";
+    var transactionTimeC = (txTanggalC && txJamC)
+      ? (txTanggalC + " " + txJamC)
+      : (txTanggalC ? (txTanggalC + " 00:00:00") : c[2].toString());
+    var txTimestampC = (txTanggalC && txJamC)
+      ? (txTanggalC + "T" + txJamC)
+      : c[2].toString();
+    var importedAtC = (mC && mC.created_at) ? mC.created_at : c[2].toString();
+
     transaksiList.push({
       resi_id: c[0].toString(),
       transaksi_id: txIdC,
-      timestamp: c[2].toString(),
+      transaction_time: transactionTimeC,
+      imported_at: importedAtC,
+      timestamp: txTimestampC,
+      tanggal_transaksi: txTanggalC,
+      jam_transaksi: txJamC,
       admin: userMap[c[3].toString()] || c[3].toString(),
       admin_id: c[3].toString(),
       outlet: outletMap[outIdC] || outIdC,
@@ -1345,12 +1487,17 @@ function apiGetRiwayatTransaksi(params) {
       kas_operasional: getNum(crgHeader, c, "kas_operasional", 23),
       pengirim: pC.pengirim,
       penerima: pC.penerima,
+      hp_pengirim: pC.hp_pengirim,
+      hp_penerima: pC.hp_penerima,
+      nama_barang: pC.nama_barang || "-",
       status_resi: (getVal(crgHeader, c, "status_resi", 24) || "AKTIF").toString()
     });
   }
 
   transaksiList.sort(function (a, b) {
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    var timeA = new Date(a.transaction_time || a.timestamp).getTime();
+    var timeB = new Date(b.transaction_time || b.timestamp).getTime();
+    return timeB - timeA;
   });
 
   return { status: "success", data: transaksiList };
@@ -1381,15 +1528,42 @@ function apiGetDetailTransaksi(params) {
   var dbExp = DatabaseService.getSheetData("EXP_Resi");
   var dbCrg = DatabaseService.getSheetData("CRG_Resi");
   var dbBackup = DatabaseService.getSheetData("PreInput_Backup");
+  var dbMasterTx = DatabaseService.getSheetData("MASTER_TRANSAKSI");
   var dbOutlets = DatabaseService.getSheetData("Outlets");
   var dbUsers = DatabaseService.getSheetData("Users");
 
   var expHeaders = dbExp ? dbExp[0] : [];
   var crgHeaders = dbCrg ? dbCrg[0] : [];
   var backupHeaders = dbBackup ? dbBackup[0] : [];
+  var mtxHeaders = dbMasterTx ? dbMasterTx[0] : [];
+
+  var padTime = function(tStr) {
+    if (!tStr) return "00:00:00";
+    var match = tStr.toString().match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if (match) {
+      var h = ("0" + match[1]).slice(-2);
+      var m = ("0" + match[2]).slice(-2);
+      var s = match[3] ? ("0" + match[3]).slice(-2) : "00";
+      return h + ":" + m + ":" + s;
+    }
+    return tStr.toString();
+  };
+
+  var masterTx = null;
+  if (dbMasterTx && dbMasterTx.length > 1) {
+    for (var m = 1; m < dbMasterTx.length; m++) {
+      var mObj = rowToObject_(mtxHeaders, dbMasterTx[m]);
+      if ((resiId && mObj.no_resi === resiId) || (txId && (mObj.id === txId || mObj.transaksi_id === txId))) {
+        masterTx = mObj;
+        if (!resiId && mObj.no_resi) resiId = mObj.no_resi;
+        if (!txId && mObj.id) txId = mObj.id;
+        break;
+      }
+    }
+  }
 
   var resiObj = null;
-  var tipe = "Express";
+  var tipe = (masterTx && masterTx.ekspedisi && masterTx.ekspedisi.toUpperCase() === "CARGO") ? "Cargo" : "Express";
 
   if (dbExp && dbExp.length > 1) {
     for (var i = 1; i < dbExp.length; i++) {
@@ -1419,7 +1593,7 @@ function apiGetDetailTransaksi(params) {
   if (txId && dbBackup && dbBackup.length > 1) {
     for (var k = 1; k < dbBackup.length; k++) {
       var rowP = rowToObject_(backupHeaders, dbBackup[k]);
-      if (rowP.transaksi_id === txId) {
+      if (rowP.transaksi_id === txId || (resiId && rowP.no_resi === resiId)) {
         preObj = rowP;
         break;
       }
@@ -1446,41 +1620,53 @@ function apiGetDetailTransaksi(params) {
     }
   }
 
-  var outId = (resiObj && resiObj.outlet_id_input) || (preObj && preObj.outlet_id_tugas) || "";
-  var adminId = (resiObj && resiObj.admin_id_pencatat) || (preObj && preObj.admin_id) || "";
+  var outId = (masterTx && masterTx.outlet_id) || (resiObj && resiObj.outlet_id_input) || (preObj && preObj.outlet_id_tugas) || "";
+  var adminId = (masterTx && masterTx.admin_id) || (resiObj && resiObj.admin_id_pencatat) || (preObj && preObj.admin_id) || "";
 
-  var adminName = adminId && userMap[adminId] ? userMap[adminId] : adminId;
-  var outletName = outId && outletMap[outId] ? outletMap[outId] : outId;
+  var adminName = adminId && userMap[adminId] ? userMap[adminId] : ((masterTx && masterTx.admin_name) || adminId);
+  var outletName = outId && outletMap[outId] ? outletMap[outId] : ((masterTx && masterTx.outlet_name) || outId);
+
+  var txTanggal = (masterTx && masterTx.tanggal_transaksi) || (preObj && preObj.tanggal_transaksi) || (resiObj && resiObj.tanggal_transaksi) || "";
+  var txJam = padTime((masterTx && masterTx.jam_transaksi) || (preObj && preObj.jam_transaksi) || (resiObj && resiObj.jam_transaksi) || "");
+  var transactionTime = (txTanggal && txJam)
+    ? (txTanggal + " " + txJam)
+    : (txTanggal ? (txTanggal + " 00:00:00") : ((resiObj && resiObj.timestamp) || (preObj && preObj.timestamp) || (masterTx && masterTx.created_at) || new Date().toISOString()));
+  var importedAt = (resiObj && resiObj.timestamp) || (masterTx && masterTx.created_at) || undefined;
 
   var detail = {
-    resi_id: (resiObj && resiObj.resi_id) || resiId || "",
+    resi_id: (resiObj && resiObj.resi_id) || (masterTx && masterTx.no_resi) || resiId || "",
     transaksi_id: txId || "",
-    timestamp: (resiObj && resiObj.timestamp) || (preObj && preObj.timestamp) || new Date().toISOString(),
+    transaction_time: transactionTime,
+    imported_at: importedAt,
+    tanggal_transaksi: txTanggal,
+    jam_transaksi: txJam,
+    timestamp: (txTanggal && txJam) ? (txTanggal + "T" + txJam) : ((resiObj && resiObj.timestamp) || (preObj && preObj.timestamp) || (masterTx && masterTx.created_at) || new Date().toISOString()),
     tipe: tipe,
-    tipe_produk: (resiObj && resiObj.tipe_produk) || "EZ",
+    tipe_produk: (resiObj && resiObj.tipe_produk) || (masterTx && masterTx.tipe_produk) || "EZ",
+    jenis_barang: (masterTx && masterTx.jenis_barang) || (preObj && preObj.jenis_barang) || ((resiObj && resiObj.tipe_produk === "DOC") || (masterTx && masterTx.tipe_produk === "DOC") ? "DOKUMEN" : "BARANG"),
     admin_id: adminId,
     admin_name: adminName,
     outlet_id: outId,
     outlet_name: outletName,
-    nama_pengirim: (preObj && preObj.nama_pengirim) || "",
-    hp_pengirim: (preObj && preObj.hp_pengirim) || "",
-    alamat_pengirim: (preObj && preObj.alamat_pengirim) || "",
-    nama_penerima: (preObj && preObj.nama_penerima) || "",
-    hp_penerima: (preObj && preObj.hp_penerima) || "",
-    alamat_penerima: (preObj && preObj.alamat_penerima) || "",
-    nama_barang: (preObj && preObj.nama_barang) || "",
-    berat_kg: Number((resiObj && resiObj.berat_kg) || (preObj && preObj.berat_kg) || 1),
-    ongkir_dasar: Number((resiObj && resiObj.ongkir_dasar) || 0),
-    biaya_asuransi: Number((resiObj && resiObj.biaya_asuransi) || 0),
-    biaya_packing: Number((resiObj && resiObj.biaya_packing) || 0),
-    biaya_amplop: Number((resiObj && resiObj.biaya_amplop) || 0),
-    biaya_lain: Number((resiObj && resiObj.biaya_lain) || 0),
-    grand_total: Number((resiObj && resiObj.grand_total) || 0),
-    setoran_ke_owner: Number((resiObj && resiObj.setoran_ke_owner) || 0),
-    kas_operasional: Number((resiObj && resiObj.kas_operasional) || 0),
-    metode_bayar: (resiObj && resiObj.metode_bayar) || "Tunai",
-    status_resi: (resiObj && resiObj.status_resi) || "AKTIF",
-    catatan: (preObj && preObj.catatan_admin) || ""
+    nama_pengirim: (masterTx && masterTx.snapshot_nama_pengirim) || (preObj && preObj.nama_pengirim) || "",
+    hp_pengirim: (masterTx && masterTx.snapshot_hp_pengirim) || (preObj && preObj.hp_pengirim) || "",
+    alamat_pengirim: (masterTx && masterTx.snapshot_alamat_pengirim) || (preObj && preObj.alamat_pengirim) || "",
+    nama_penerima: (masterTx && masterTx.snapshot_nama_penerima) || (preObj && preObj.nama_penerima) || "",
+    hp_penerima: (masterTx && masterTx.snapshot_hp_penerima) || (preObj && preObj.hp_penerima) || "",
+    alamat_penerima: (masterTx && masterTx.snapshot_alamat_penerima) || (preObj && preObj.alamat_penerima) || "",
+    nama_barang: (masterTx && masterTx.nama_barang) || (preObj && preObj.nama_barang) || "",
+    berat_kg: Number((resiObj && resiObj.berat_kg) || (preObj && preObj.berat_kg) || (masterTx && masterTx.berat_barang) || 1),
+    ongkir_dasar: Number((resiObj && resiObj.ongkir_dasar) || (masterTx && masterTx.ongkir_customer) || 0),
+    biaya_asuransi: Number((resiObj && resiObj.biaya_asuransi) || (masterTx && masterTx.asuransi) || 0),
+    biaya_packing: Number((resiObj && resiObj.biaya_packing) || (masterTx && masterTx.packing) || 0),
+    biaya_amplop: Number((resiObj && resiObj.biaya_amplop) || (masterTx && masterTx.amplop) || 0),
+    biaya_lain: Number((resiObj && resiObj.biaya_lain) || (masterTx && masterTx.biaya_lain) || 0),
+    grand_total: Number((resiObj && resiObj.grand_total) || (masterTx && masterTx.total_customer) || 0),
+    setoran_ke_owner: Number((resiObj && resiObj.setoran_ke_owner) || (masterTx && masterTx.wajib_setor_owner) || 0),
+    kas_operasional: Number((resiObj && resiObj.kas_operasional) || (masterTx && masterTx.kas_outlet) || 0),
+    metode_bayar: (resiObj && resiObj.metode_bayar) || (masterTx && masterTx.metode_bayar) || "Tunai",
+    status_resi: (masterTx && masterTx.status_transaksi === "CANCELLED" ? "BATAL" : ((resiObj && resiObj.status_resi) || (masterTx && masterTx.status_transaksi) || "AKTIF")),
+    catatan: (preObj && preObj.catatan_admin) || (masterTx && masterTx.catatan) || ""
   };
 
   return { status: "success", data: detail };
