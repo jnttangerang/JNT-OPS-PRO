@@ -2900,6 +2900,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
     }
 
     writeDb(db);
+    invalidateSyncCache();
 
     // Audit Log
     try {
@@ -4514,6 +4515,7 @@ app.post("/api/deleteTransaksi", (req, res) => {
   db.AuditLogs.unshift(newLog);
 
   writeDb(db);
+  invalidateSyncCache();
 
   return res.json({
     status: "success",
@@ -4700,6 +4702,7 @@ app.post("/api/updateTransaksi", (req, res) => {
   });
 
   writeDb(db);
+  invalidateSyncCache();
   return res.json({ status: "success", message: "Transaksi berhasil diperbarui!" });
 });
 
@@ -6705,6 +6708,7 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
   if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
   db.KeuanganOutlet.unshift(newItem);
   writeDb(db);
+  invalidateSyncCache();
 
   return res.json({ status: "success", message: "Catatan keuangan berhasil disimpan.", data: newItem });
 };
@@ -6756,6 +6760,7 @@ const handleUpdateKeuanganOutlet = (req: any, res: any) => {
   }
 
   writeDb(db);
+  invalidateSyncCache();
   return res.json({ status: "success", message: "Catatan keuangan berhasil diperbarui.", data: target });
 };
 
@@ -6783,6 +6788,7 @@ const handleDeleteKeuanganOutlet = (req: any, res: any) => {
 
   target.aktif = false;
   writeDb(db);
+  invalidateSyncCache();
   return res.json({ status: "success", message: "Catatan keuangan berhasil dinonaktifkan." });
 };
 
@@ -7068,6 +7074,7 @@ app.post("/api/reconciliation/resolve", (req, res) => {
   });
   if (result.status === "error") return res.status(400).json(result);
   writeDb(db);
+  invalidateSyncCache();
   return res.json(result);
 });
 
@@ -7085,6 +7092,7 @@ app.post("/api/reconciliation/reopen", (req, res) => {
   });
   if (result.status === "error") return res.status(400).json(result);
   writeDb(db);
+  invalidateSyncCache();
   return res.json(result);
 });
 
@@ -7125,14 +7133,19 @@ app.post("/api/reconciliation/closingStatus", async (req, res) => {
 
 let lastSyncTime = 0;
 let syncPromise: Promise<any> | null = null;
+const SYNC_CACHE_TTL_MS = 10000; // 10 seconds TTL for fast in-memory read projections
+
+function invalidateSyncCache() {
+  lastSyncTime = 0;
+}
 
 // Helper to sync live transaction and setoran data from Google Sheets when running in proxy/serverless mode
-async function syncDbWithAppsScript(db: any) {
+async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) {
   const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
   if (!appsScriptUrl || !appsScriptUrl.trim()) return db;
 
   const now = Date.now();
-  if (now - lastSyncTime < 5000) {
+  if (!options.force && (now - lastSyncTime < SYNC_CACHE_TTL_MS)) {
     return db;
   }
 
@@ -7162,6 +7175,8 @@ async function syncDbWithAppsScript(db: any) {
           signal: AbortSignal.timeout(8000)
         }).then(r => r.json()).catch(() => null)
       ]);
+
+      let hasChanged = false;
 
       if (txRes && txRes.status === "success" && Array.isArray(txRes.data)) {
         const localTxs = db.MASTER_TRANSAKSI || [];
@@ -7282,6 +7297,7 @@ async function syncDbWithAppsScript(db: any) {
         const remoteNonTest = remoteMapped.filter((r: any) => r.tanggal_transaksi !== '2026-08-26');
         const local26 = localTxs.filter((l: any) => l.tanggal_transaksi === '2026-08-26');
         db.MASTER_TRANSAKSI = [...remoteNonTest, ...local26, ...localOnly.filter((l: any) => l.tanggal_transaksi !== '2026-08-26')];
+        hasChanged = true;
       }
 
       if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
@@ -7292,6 +7308,7 @@ async function syncDbWithAppsScript(db: any) {
           return lid && !remoteSetoranIds.has(lid);
         });
         db.Master_Setoran = [...setoranRes.data, ...localOnlySetoran];
+        hasChanged = true;
       }
 
       if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data)) {
@@ -7325,6 +7342,10 @@ async function syncDbWithAppsScript(db: any) {
 
         const localOnlyKeuangan = localKeuangan.filter((k: any) => k.id && !remoteKeuanganIds.has(k.id));
         db.KeuanganOutlet = [...mergedKeuangan, ...localOnlyKeuangan];
+        hasChanged = true;
+      }
+
+      if (hasChanged) {
         writeDb(db);
       }
       
@@ -7342,7 +7363,7 @@ async function syncDbWithAppsScript(db: any) {
 
 // === PHASE 30 DAILY CLOSING ENGINE ENDPOINTS ===
 app.post("/api/dailyClosing/validate", async (req, res) => {
-  const db = await syncDbWithAppsScript(readDb());
+  const db = await syncDbWithAppsScript(readDb(), { force: true });
   const { outlet_id, outlet_name, tanggal, actor_id, actor_name, actor_role } = req.body || {};
   const result = validateDailyClosing(db, {
     outlet_id,
@@ -7361,7 +7382,7 @@ app.post("/api/dailyClosing/validate", async (req, res) => {
 });
 
 app.post("/api/dailyClosing/close", async (req, res) => {
-  const db = await syncDbWithAppsScript(readDb());
+  const db = await syncDbWithAppsScript(readDb(), { force: true });
   const { outlet_id, outlet_name, tanggal, notes, actor_id, actor_name, actor_role } = req.body || {};
   const result = executeDailyClosing(db, {
     outlet_id,
@@ -7375,6 +7396,7 @@ app.post("/api/dailyClosing/close", async (req, res) => {
     }
   });
   writeDb(db);
+  invalidateSyncCache();
   if (result.status === "error") return res.status(400).json(result);
   return res.json(result);
 });
@@ -7454,7 +7476,7 @@ app.post("/api/dailyClosing/status", async (req, res) => {
 });
 
 app.post("/api/dailyClosing/reopen", async (req, res) => {
-  const db = await syncDbWithAppsScript(readDb());
+  const db = await syncDbWithAppsScript(readDb(), { force: true });
   const { outlet_id, outlet_name, tanggal, reason, actor_id, actor_name, actor_role } = req.body || {};
   const result = reopenDailyClosing(db, {
     outlet_id,
@@ -7468,6 +7490,7 @@ app.post("/api/dailyClosing/reopen", async (req, res) => {
     }
   });
   writeDb(db);
+  invalidateSyncCache();
   if (result.status === "error") return res.status(400).json(result);
   return res.json(result);
 });
