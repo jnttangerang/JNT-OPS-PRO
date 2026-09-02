@@ -4634,10 +4634,16 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     return timeB - timeA;
   });
 
-  return res.json({
-    status: "success",
-    data: transaksiList
-  });
+  const debugJD05 = transaksiList.find(
+  (x: any) => x.resi_id === "JD0585369760"
+);
+
+console.log("=== RIWAYAT FINAL RESPONSE JD0585369760 ===", debugJD05);
+
+return res.json({
+  status: "success",
+  data: transaksiList
+});
 });
 
 app.post("/api/deleteTransaksi", (req, res) => {
