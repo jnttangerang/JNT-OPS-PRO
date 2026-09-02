@@ -1452,31 +1452,138 @@ const PRODUCTION_MODE = true;
 const UTILITY_ACTIONS = new Set([
   "ping",
   "testConnection",
-  "perbaikiAlamatAI",
-  "parseYoYiOrder",
-  "analyzeResiPhoto",
-  "analyzeReview",
-  "askAssistant",
-  "syncGoogleReviews",
+  "test-connection",
+  "updateSettingsOutlet",
   "testDriveConnection",
+  "changePassword",
+  "getAllSettings",
+  "saveAllSettings",
+  "getSettings",
+  "saveSettings",
+  "getOutlets",
+  "outlets",
+  "getUsers",
+  "users",
+  "getCustomers",
+  "getCustomerHistory",
+  "getBukuPengirim",
+  "getBukuPenerima",
+  "deleteBulkCustomers",
+  "updateCustomer",
+  "getCustomersMaster",
+  "getCustomerDetailFull",
+  "searchCustomer",
+  "getRiwayatPenerima",
+  "checkDuplicateResi",
+  "deletePreInputDraft",
+  "cleanupOldDrafts",
+  "getPreInputDrafts",
+  "getPreInput",
+  "deletePreInput",
+  "saveDataPreInput",
+  "savePreInput",
+  "updatePreInputStatus",
+  "saveTransaksi",
+  "apiSaveTransaksi",
+  "importYoYi",
+  "parseYoYiOrder",
+  "parseYoYiScreenshot",
+  "perbaikiAlamatAI",
+  "analyzeResiPhoto",
+  "uploadFile",
+  "initDatabaseSheets",
+  "getAdminDashboardData",
+  "getDashboardData",
+  "getRiwayatTransaksi",
+  "deleteTransaksi",
+  "getDetailTransaksi",
+  "updateTransaksi",
+  "getReviews",
+  "syncGoogleReviews",
+  "addReview",
+  "deleteReview",
+  "analyzeReview",
+  "getSetoranList",
+  "getSetoranDetail",
+  "createSetoran",
+  "approveSetoran",
+  "rejectSetoran",
+  "getAuditTrailByTransaction",
+  "getAuditTrailByCustomer",
+  "getAuditTrailByImport",
+  "auditTransaction",
+  "getAuditData",
+  "updateAuditDecision",
+  "validateClosing",
+  "executeClosing",
+  "getReportingSummary",
+  "getReportingTransactions",
+  "getReportingSettlement",
+  "getReportingAudit",
+  "dailySummary",
+  "apiDailySummary",
+  "detectAnomalies",
+  "apiDetectAnomalies",
+  "askAssistant",
+  "apiAskAssistant",
+  "getKategoriKeuangan",
+  "saveKategoriKeuangan",
+  "updateKategoriKeuangan",
+  "setKategoriAktif",
+  "deleteKategoriKeuangan",
   "getKeuanganOutlet",
   "saveKeuanganOutlet",
   "updateKeuanganOutlet",
   "deleteKeuanganOutlet",
-  "getKategoriKeuangan",
-  "saveKategoriKeuangan",
-  "updateKategoriKeuangan",
-  "deleteKategoriKeuangan",
   "backfillKeuanganOutlet",
-  "getRiwayatTransaksi",
-  "getDetailTransaksi"
+  "apiBackfillKeuanganOutletFromTransactions",
+  "reconcileTransaction",
+  "reconcileDaily",
+  "reconcileOutlet",
+  "getReconciliationSummary",
+  "reconciliation",
+  "dailyClosing",
+  "settlement",
+  "financial-close",
+  "control-tower",
+  "management",
+  "control",
+  "workflow",
+  "intelligence",
+  "management-review",
+  "generateResi",
+  "trackResi",
+  "getTrackingSummary",
+  "getPerformanceSummary",
+  "getAuditLogs",
+  "exportData",
+  "getMasterTransaksi",
+  "getEXP_Resi",
+  "getCRG_Resi",
+  "getRecentActivities",
+  "getDailyClosingStatus",
+  "submitDailyClosing",
+  "reopenDailyClosing",
+  "getSetoranHarian",
+  "updateSetoranStatus",
+  "login"
 ]);
 
 app.use("/api/:action", async (req, res, next) => {
   const action = req.params.action;
 
-  // Utility actions run locally on Node/Express server without database dependency
-  if (UTILITY_ACTIONS.has(action)) {
+  // Local actions run directly on Express server without waiting or proxying to Apps Script
+  if (
+    UTILITY_ACTIONS.has(action) ||
+    action.startsWith("dailyClosing") ||
+    action.startsWith("reconciliation") ||
+    action.startsWith("settlement") ||
+    action.startsWith("financial-close") ||
+    action.startsWith("control") ||
+    action.startsWith("workflow") ||
+    action.startsWith("management") ||
+    action.startsWith("intelligence")
+  ) {
     return next();
   }
 
@@ -1491,7 +1598,8 @@ app.use("/api/:action", async (req, res, next) => {
       const response = await fetch(appsScriptUrl.trim(), {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: action, data: req.body || {} })
+        body: JSON.stringify({ action: action, data: req.body || {} }),
+        signal: AbortSignal.timeout(8000)
       });
       const text = await response.text();
       let json: any;
@@ -1503,9 +1611,9 @@ app.use("/api/:action", async (req, res, next) => {
       }
       if (json && json.status === "error") {
         const errMsg = json.message || "";
-        // Only fallback if Apps Script action is unrecognized
-        if (errMsg.includes("Aksi tidak dikenali") || errMsg.includes("unrecognized")) {
-          console.log(`Apps Script action not recognized for ${action}, falling back to local route handler...`);
+        // Fallback to local route handler if Apps Script action is unrecognized or hit a script runtime crash
+        if (errMsg.includes("Aksi tidak dikenali") || errMsg.includes("unrecognized") || errMsg.includes("ReferenceError") || errMsg.includes("is not defined") || errMsg.includes("TypeError")) {
+          console.log(`Apps Script action not recognized or runtime error for ${action} (${errMsg}), falling back to local route handler...`);
           return next();
         }
         return res.status(400).json(json);
@@ -4443,16 +4551,16 @@ app.post("/api/getRiwayatTransaksi", async (req, res) => {
     const jenisBarang = tx.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
     const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || p?.metode_bayar || "Tunai";
 
-    const txDate = tx.tanggal_transaksi || p?.tanggal_transaksi || tx.timestamp?.split("T")[0] || tx.created_at?.split("T")[0] || getTodayWIB();
+    const txDate = extractBusinessDate(tx) || extractBusinessDate(p) || getTodayWIB();
     const txTime = tx.jam_transaksi || p?.jam_transaksi || tx.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
-    const transactionTime = `${txDate} ${txTime}`;
+    const displayTime = `${txDate} ${txTime}`;
     const txTimestamp = `${txDate}T${txTime}`;
     const importedAt = tx.imported_at || p?.imported_at || tx.created_at || tx.timestamp;
 
     return {
       resi_id: resiId,
       transaksi_id: txId,
-      transaction_time: transactionTime,
+      transaction_time: displayTime,
       imported_at: importedAt,
       timestamp: txTimestamp,
       tanggal_transaksi: txDate,
@@ -4690,15 +4798,15 @@ app.post("/api/getDetailTransaksi", (req, res) => {
   const outlet = (db.Outlets || []).find((o: any) => o.outlet_id === (resiObj?.outlet_id_input || masterTx?.outlet_id || pre?.outlet_id_tugas));
   const user = (db.Users || []).find((u: any) => u.user_id === (resiObj?.admin_id_pencatat || masterTx?.admin_id || pre?.admin_id));
 
-  const txDate = masterTx?.tanggal_transaksi || pre?.tanggal_transaksi || resiObj?.tanggal_transaksi || masterTx?.timestamp?.split("T")[0] || resiObj?.timestamp?.split("T")[0] || masterTx?.created_at?.split("T")[0] || getTodayWIB();
+  const txDate = extractBusinessDate(masterTx) || extractBusinessDate(pre) || extractBusinessDate(resiObj) || getTodayWIB();
   const txTime = masterTx?.jam_transaksi || pre?.jam_transaksi || resiObj?.jam_transaksi || masterTx?.timestamp?.split("T")[1]?.slice(0, 8) || resiObj?.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
-  const transactionTime = `${txDate} ${txTime}`;
+  const displayTime = `${txDate} ${txTime}`;
   const importedAt = masterTx?.imported_at || resiObj?.imported_at || pre?.imported_at || masterTx?.created_at || resiObj?.timestamp || pre?.timestamp;
 
   const detail = {
     resi_id: resiObj?.resi_id || masterTx?.no_resi || resi_id || "",
     transaksi_id: txId,
-    transaction_time: transactionTime,
+    transaction_time: displayTime,
     imported_at: importedAt,
     tanggal_transaksi: txDate,
     jam_transaksi: txTime,
@@ -7289,7 +7397,7 @@ app.post("/api/reconciliation/closingStatus", async (req, res) => {
 
 let lastSyncTime = 0;
 let syncPromise: Promise<any> | null = null;
-const SYNC_CACHE_TTL_MS = 5000; // 5 seconds TTL for fast in-memory read projections
+const SYNC_CACHE_TTL_MS = 30000; // 30 seconds TTL for fast in-memory read projections
 
 function invalidateSyncCache() {
   lastSyncTime = 0;
@@ -7306,7 +7414,7 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
   }
 
   if (syncPromise) {
-    return syncPromise;
+    return options.force ? syncPromise : db;
   }
 
   syncPromise = (async () => {
@@ -7316,19 +7424,19 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ action: "getRiwayatTransaksi", data: { filterOutlet: "ALL" } }),
-          signal: AbortSignal.timeout(8000)
+          signal: AbortSignal.timeout(3000)
         }).then(r => r.json()).catch(() => null),
         fetch(appsScriptUrl.trim(), {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ action: "getSetoranList", data: {} }),
-          signal: AbortSignal.timeout(8000)
+          signal: AbortSignal.timeout(3000)
         }).then(r => r.json()).catch(() => null),
         fetch(appsScriptUrl.trim(), {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ action: "getKeuanganOutlet", data: {} }),
-          signal: AbortSignal.timeout(8000)
+          signal: AbortSignal.timeout(3000)
         }).then(r => r.json()).catch(() => null)
       ]);
 
@@ -7687,6 +7795,15 @@ app.post("/api/dailyClosing/reopen", async (req, res) => {
   invalidateSyncCache();
   if (result.status === "error") return res.status(400).json(result);
   return res.json(result);
+});
+
+app.all("/api/dailyClosing", async (req, res) => {
+  const db = await syncDbWithAppsScript(readDb());
+  const { outlet_id, tanggal, date } = { ...req.query, ...req.body };
+  const targetDate = (tanggal || date || new Date().toISOString().slice(0, 10)) as string;
+  const targetOutlet = (outlet_id || "ALL") as string;
+  const statusInfo = getDailyClosingStatus(db, targetOutlet, targetDate);
+  return res.json({ status: "success", data: statusInfo });
 });
 
 // === PHASE 32 FINANCIAL SETTLEMENT & OWNER APPROVAL ENDPOINTS ===

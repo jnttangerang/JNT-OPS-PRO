@@ -862,6 +862,18 @@ function apiGetDashboardData(params) {
   var dateStart = params.dateStart ? String(params.dateStart).slice(0, 10) : "";
   var dateEnd = params.dateEnd ? String(params.dateEnd).slice(0, 10) : "";
 
+  var padTime = function(tStr) {
+    if (!tStr) return "00:00:00";
+    var match = tStr.toString().match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+    if (match) {
+      var h = ("0" + match[1]).slice(-2);
+      var m = ("0" + match[2]).slice(-2);
+      var s = match[3] ? ("0" + match[3]).slice(-2) : "00";
+      return h + ":" + m + ":" + s;
+    }
+    return tStr.toString();
+  };
+
   var dbExp = DatabaseService.getSheetData("EXP_Resi");
   var dbCrg = DatabaseService.getSheetData("CRG_Resi");
   var dbBackup = DatabaseService.getSheetData("PreInput_Backup");
@@ -2781,6 +2793,22 @@ function rowToObject_(headers, row) {
   var obj = {};
   headers.forEach(function (h, i) { obj[h] = row[i]; });
   return obj;
+}
+
+function padTime(tStr) {
+  if (!tStr) return "00:00:00";
+  var match = tStr.toString().match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+  if (match) {
+    var h = ("0" + match[1]).slice(-2);
+    var m = ("0" + match[2]).slice(-2);
+    var s = match[3] ? ("0" + match[3]).slice(-2) : "00";
+    return h + ":" + m + ":" + s;
+  }
+  return tStr.toString();
+}
+
+function padTime_(tStr) {
+  return padTime(tStr);
 }
 
 /**
