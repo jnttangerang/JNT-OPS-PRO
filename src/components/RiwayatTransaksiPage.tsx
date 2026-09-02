@@ -7,6 +7,7 @@ import {
   AlertCircle, 
   ChevronLeft, 
   ChevronRight, 
+  RefreshCw,
   Pencil, 
   Ban, 
   X, 
@@ -98,6 +99,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
   const { callBackend } = useAppsScript();
   const [data, setData] = useState<TransaksiItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const loadingRef = React.useRef(false);
   const [users, setUsers] = useState<UserType[]>([]);
   
   const todayStr = getTodayWIB();
@@ -148,6 +150,8 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
   };
 
   const fetchData = async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       const response = await callBackend("getRiwayatTransaksi", { 
@@ -162,6 +166,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
       console.error("Error fetching riwayat:", error);
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   };
 
@@ -500,6 +505,14 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
             <button
+              onClick={() => fetchData()}
+              disabled={loading}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-bold shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              Segarkan
+            </button>
+            <button
               onClick={() => setIsBulkImportModalOpen(true)}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-sm font-bold shadow-md hover:bg-gray-800 transition-colors"
             >
@@ -526,36 +539,39 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
             <span>Filter:</span>
           </div>
 
-          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-xl text-xs">
+          <div className={`flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-xl text-xs ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
             <Calendar className="h-3.5 w-3.5 text-gray-400" />
             <span className="text-gray-500 font-bold">Awal:</span>
             <input
               type="date"
               value={filterTanggalAwal}
               onChange={(e) => setFilterTanggalAwal(e.target.value)}
-              className="bg-transparent font-semibold text-gray-800 focus:outline-none"
+              disabled={loading}
+              className="bg-transparent font-semibold text-gray-800 focus:outline-none disabled:cursor-not-allowed"
             />
           </div>
 
-          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-xl text-xs">
+          <div className={`flex items-center gap-2 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-xl text-xs ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
             <Calendar className="h-3.5 w-3.5 text-gray-400" />
             <span className="text-gray-500 font-bold">Akhir:</span>
             <input
               type="date"
               value={filterTanggalAkhir}
               onChange={(e) => setFilterTanggalAkhir(e.target.value)}
-              className="bg-transparent font-semibold text-gray-800 focus:outline-none"
+              disabled={loading}
+              className="bg-transparent font-semibold text-gray-800 focus:outline-none disabled:cursor-not-allowed"
             />
           </div>
 
           {/* Filter Ekspedisi (Semua Level: ADMIN & OWNER) */}
-          <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs">
+          <div className={`flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
             <Truck className="h-3.5 w-3.5 text-gray-400" />
             <span className="text-gray-500 font-bold">Ekspedisi:</span>
             <select
               value={filterEkspedisi}
               onChange={(e) => setFilterEkspedisi(e.target.value)}
-              className="bg-transparent font-semibold text-gray-800 focus:outline-none cursor-pointer"
+              disabled={loading}
+              className="bg-transparent font-semibold text-gray-800 focus:outline-none cursor-pointer disabled:cursor-not-allowed"
             >
               <option value="ALL">Semua Ekspedisi</option>
               <option value="Express">Express</option>
@@ -564,13 +580,14 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           </div>
 
           {/* Filter Admin (Semua Level: ADMIN & OWNER) */}
-          <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs">
+          <div className={`flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
             <User className="h-3.5 w-3.5 text-gray-400" />
             <span className="text-gray-500 font-bold">Admin:</span>
             <select
               value={filterAdmin}
               onChange={(e) => setFilterAdmin(e.target.value)}
-              className="bg-transparent font-semibold text-gray-800 focus:outline-none cursor-pointer max-w-[150px] truncate"
+              disabled={loading}
+              className="bg-transparent font-semibold text-gray-800 focus:outline-none cursor-pointer max-w-[150px] truncate disabled:cursor-not-allowed"
             >
               <option value="ALL">Semua Admin</option>
               {adminOptions.map((adm) => (
@@ -582,12 +599,13 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           </div>
 
           {session.role === "OWNER" && (
-            <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs">
+            <div className={`flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200 text-xs ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
               <MapPin className="h-3.5 w-3.5 text-gray-400" />
               <select
                 value={filterOutlet}
                 onChange={(e) => setFilterOutlet(e.target.value)}
-                className="bg-transparent font-semibold text-gray-800 focus:outline-none cursor-pointer"
+                disabled={loading}
+                className="bg-transparent font-semibold text-gray-800 focus:outline-none cursor-pointer disabled:cursor-not-allowed"
               >
                 <option value="ALL">Semua Outlet</option>
                 {outlets.map((o) => (
