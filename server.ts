@@ -4358,10 +4358,11 @@ app.post("/api/getDashboardData", async (req, res) => {
   });
 });
 
-app.post("/api/getRiwayatTransaksi", (req, res) => {
+app.post("/api/getRiwayatTransaksi", async (req, res) => {
   console.log("--> /api/getRiwayatTransaksi called with body:", req.body);
-  const db = readDb();
-  const { filterOutlet, tanggal_awal, tanggal_akhir } = req.body || {};
+  try {
+    const db = await syncDbWithAppsScript(readDb());
+    const { filterOutlet, tanggal_awal, tanggal_akhir } = req.body || {};
 
   const checkDateMatch = (txOrTimestamp: any) => {
     if (!tanggal_awal && !tanggal_akhir) return true;
@@ -4575,10 +4576,14 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
 
 
 
-return res.json({
-  status: "success",
-  data: transaksiList
-});
+  return res.json({
+    status: "success",
+    data: transaksiList
+  });
+} catch (error: any) {
+  console.error("Error in getRiwayatTransaksi:", error);
+  return res.status(500).json({ status: "error", message: error.message });
+}
 });
 
 app.post("/api/deleteTransaksi", (req, res) => {
@@ -4684,8 +4689,8 @@ app.post("/api/getDetailTransaksi", (req, res) => {
   const outlet = (db.Outlets || []).find((o: any) => o.outlet_id === (resiObj?.outlet_id_input || masterTx?.outlet_id || pre?.outlet_id_tugas));
   const user = (db.Users || []).find((u: any) => u.user_id === (resiObj?.admin_id_pencatat || masterTx?.admin_id || pre?.admin_id));
 
-  const txTanggal = tx.tanggal_transaksi || p?.tanggal_transaksi || "";
-const txJam = tx.jam_transaksi || p?.jam_transaksi || "";
+  const txTanggal = masterTx?.tanggal_transaksi || pre?.tanggal_transaksi || resiObj?.tanggal_transaksi || "";
+  const txJam = masterTx?.jam_transaksi || pre?.jam_transaksi || resiObj?.jam_transaksi || "";
   const transactionTime = (txTanggal && txJam)
     ? `${txTanggal} ${txJam}`
     : (txTanggal ? `${txTanggal} 00:00:00` : (masterTx?.timestamp || resiObj?.timestamp || pre?.timestamp || masterTx?.created_at || new Date().toISOString()));
@@ -7286,7 +7291,7 @@ app.post("/api/reconciliation/closingStatus", async (req, res) => {
 
 let lastSyncTime = 0;
 let syncPromise: Promise<any> | null = null;
-const SYNC_CACHE_TTL_MS = 10000; // 10 seconds TTL for fast in-memory read projections
+const SYNC_CACHE_TTL_MS = 5000; // 5 seconds TTL for fast in-memory read projections
 
 function invalidateSyncCache() {
   lastSyncTime = 0;
@@ -7465,13 +7470,29 @@ const resJam =
         });
 
         const remoteIds = new Set(remoteMapped.map((r: any) => r.id || r.transaksi_id || r.no_resi).filter(Boolean));
+
+        // Hanya pertahankan data lokal yang statusnya DRAFT/PENDING (belum selesai)
         const localOnly = localTxs.filter((l: any) => {
           const lid = l.id || l.transaksi_id || l.no_resi;
-          return lid && !remoteIds.has(lid);
+          const status = l.status_transaksi || l.status || "";
+          const isDraft = status.toUpperCase() === "DRAFT" || status.toUpperCase() === "PENDING";
+          return lid && !remoteIds.has(lid) && isDraft;
         });
-        const remoteNonTest = remoteMapped.filter((r: any) => r.tanggal_transaksi !== '2026-08-26');
-        const local26 = localTxs.filter((l: any) => l.tanggal_transaksi === '2026-08-26');
-        db.MASTER_TRANSAKSI = [...remoteNonTest, ...local26, ...localOnly.filter((l: any) => l.tanggal_transaksi !== '2026-08-26')];
+
+        // Data lokal yang PAID/SELESAI tetapi tidak ada di remote → dihapus (dianggap sudah dihapus dari Spreadsheet)
+        const localPaidRemoved = localTxs.filter((l: any) => {
+          const lid = l.id || l.transaksi_id || l.no_resi;
+          const status = l.status_transaksi || l.status || "";
+          const isPaid = status.toUpperCase() === "PAID" || status.toUpperCase() === "SELESAI";
+          return lid && !remoteIds.has(lid) && isPaid;
+        });
+
+        if (localPaidRemoved.length > 0) {
+          console.log(`[sync] Menghapus ${localPaidRemoved.length} transaksi PAID/SELESAI yang tidak ada di remote (dihapus dari Spreadsheet).`);
+        }
+
+        // Gabungkan: remote + localOnly (hanya DRAFT/PENDING)
+        db.MASTER_TRANSAKSI = [...remoteMapped, ...localOnly];
         hasChanged = true;
       }
 
