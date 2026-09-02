@@ -919,10 +919,16 @@ function apiGetDashboardData(params) {
       var setoranExp = Number(rExp.setoran_ke_owner) || 0;
       var kasExp = Number(rExp.kas_operasional) || ((Number(rExp.biaya_packing) || 0) + (Number(rExp.biaya_amplop) || 0));
 
+      var txTanggalExp = (rExp.tanggal_transaksi || "").toString().trim();
+      var txJamExp = padTime(rExp.jam_transaksi || "");
       var txItemExp = {
         resi_id: resiIdExp,
         transaksi_id: txIdExp,
-        timestamp: (rExp.timestamp || "").toString(),
+        tanggal_transaksi: txTanggalExp,
+        jam_transaksi: txJamExp,
+        transaction_time: (txTanggalExp && txJamExp) ? (txTanggalExp + " " + txJamExp) : (txTanggalExp ? (txTanggalExp + " 00:00:00") : (rExp.timestamp || "").toString()),
+        imported_at: rExp.created_at || (rExp.timestamp ? rExp.timestamp.toString() : undefined),
+        timestamp: (txTanggalExp && txJamExp) ? (txTanggalExp + "T" + txJamExp) : (rExp.timestamp || "").toString(),
         admin_id_pencatat: (rExp.admin_id_pencatat || "SYSTEM").toString(),
         outlet_id_input: (rExp.outlet_id_input || "OUT-001").toString(),
         tipe_produk: (rExp.tipe_produk || "").toString(),
@@ -960,10 +966,16 @@ function apiGetDashboardData(params) {
       var setoranCrg = Number(rCrg.setoran_ke_owner) || 0;
       var kasCrg = Number(rCrg.kas_operasional) || ((Number(rCrg.biaya_packing) || 0) + (Number(rCrg.biaya_amplop) || 0));
 
+      var txTanggalCrg = (rCrg.tanggal_transaksi || "").toString().trim();
+      var txJamCrg = padTime(rCrg.jam_transaksi || "");
       var txItemCrg = {
         resi_id: resiIdCrg,
         transaksi_id: txIdCrg,
-        timestamp: (rCrg.timestamp || "").toString(),
+        tanggal_transaksi: txTanggalCrg,
+        jam_transaksi: txJamCrg,
+        transaction_time: (txTanggalCrg && txJamCrg) ? (txTanggalCrg + " " + txJamCrg) : (txTanggalCrg ? (txTanggalCrg + " 00:00:00") : (rCrg.timestamp || "").toString()),
+        imported_at: rCrg.created_at || (rCrg.timestamp ? rCrg.timestamp.toString() : undefined),
+        timestamp: (txTanggalCrg && txJamCrg) ? (txTanggalCrg + "T" + txJamCrg) : (rCrg.timestamp || "").toString(),
         admin_id_pencatat: (rCrg.admin_id_pencatat || "SYSTEM").toString(),
         outlet_id_input: (rCrg.outlet_id_input || "OUT-001").toString(),
         tipe_produk: (rCrg.tipe_produk || "").toString(),
@@ -989,7 +1001,7 @@ function apiGetDashboardData(params) {
     if (filterOutlet !== "ALL" && r.outlet_id_input !== filterOutlet) return false;
     if (filterTipeLayanan !== "ALL" && r.tipe_layanan !== filterTipeLayanan) return false;
 
-    var txDateStr = (r.timestamp || "").slice(0, 10);
+    var txDateStr = (r.tanggal_transaksi || r.timestamp || "").slice(0, 10);
     if (dateStart && txDateStr && txDateStr < dateStart) return false;
     if (dateEnd && txDateStr && txDateStr > dateEnd) return false;
 
@@ -1021,7 +1033,8 @@ function apiGetDashboardData(params) {
       setoranCargo += r.setoran_ke_owner;
     }
 
-    if ((r.timestamp || "").slice(0, 10) === todayDateStr) {
+    var rDate = (r.tanggal_transaksi || r.timestamp || "").slice(0, 10);
+    if (rDate === todayDateStr) {
       totalResiToday++;
     }
   });
@@ -1069,7 +1082,7 @@ function apiGetDashboardData(params) {
   // Daily Trend / Grafik
   var dailyMap = {};
   filtered.forEach(function (r) {
-    var dStr = (r.timestamp || "").slice(0, 10) || "Unknown";
+    var dStr = (r.tanggal_transaksi || r.timestamp || "").slice(0, 10) || "Unknown";
     if (!dailyMap[dStr]) dailyMap[dStr] = { date: dStr, Express: 0, Cargo: 0, total: 0, setoran: 0, kas: 0, resi: 0 };
     dailyMap[dStr][r.tipe_layanan] = (dailyMap[dStr][r.tipe_layanan] || 0) + r.grand_total;
     dailyMap[dStr].total += r.grand_total;
@@ -4952,7 +4965,7 @@ function apiBackfillKeuanganOutletFromTransactions() {
       var tx = txList[t];
       var resiId = (tx.resi_id || tx.no_resi || "").toString().trim().toUpperCase();
       if (!resiId) continue;
-      var txDate = (tx.timestamp || tx.tanggal_transaksi || tx.created_at || new Date().toISOString()).toString().slice(0, 10);
+      var txDate = (tx.tanggal_transaksi || tx.timestamp || tx.created_at || new Date().toISOString()).toString().slice(0, 10);
       var outletId = tx.outlet_id_input || tx.outlet_id || "";
       var adminId = tx.admin_id_pencatat || tx.admin_id || "SYSTEM";
       var packing = Number(tx.biaya_packing || tx.packing) || 0;

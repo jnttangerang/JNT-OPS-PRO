@@ -37,6 +37,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
 
   const formatBusinessTime = (r: any) => {
     if (r.jam_transaksi) return r.jam_transaksi.slice(0, 5);
+    if (r.transaction_time && r.transaction_time.includes(" ")) return r.transaction_time.split(" ")[1].slice(0, 5);
     if (r.timestamp) return getWIBTime(r.timestamp).slice(0, 5);
     if (r.created_at) return getWIBTime(r.created_at).slice(0, 5);
     return "";

@@ -669,10 +669,11 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                         
                         <div className="text-xs text-gray-500 space-y-0.5">
                           <p>
-                            <span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: {formatDisplayTime(resolveItemTime(item))}
+                            <span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: <span className="font-medium text-gray-700">{formatDisplayTime(item.transaction_time || resolveItemTime(item))}</span>
                             {item.imported_at && (
-                              <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 ml-2 font-mono" title={`Waktu Import JNT OPS PRO: ${formatDisplayTime(item.imported_at)}`}>
-                                Import: {formatDisplayTime(item.imported_at)}
+                              <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 ml-2 font-mono inline-flex items-center gap-1" title={`Waktu Import JNT OPS PRO: ${formatDisplayTime(item.imported_at)}`}>
+                                <Clock className="h-3 w-3 text-indigo-500" />
+                                Waktu Import: {formatDisplayTime(item.imported_at)}
                               </span>
                             )}
                           </p>
@@ -852,16 +853,6 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                   <h2 className="text-lg font-bold text-gray-800">Detail Transaksi</h2>
                   <p className="text-xs text-gray-500 font-mono flex items-center flex-wrap gap-2">
                     <span>Resi: {selectedDetail.resi_id || selectedDetail.transaksi_id}</span>
-                    {resolveItemTime(selectedDetail) && (
-                      <span className="text-gray-600 font-sans">
-                        • {formatDisplayTime(resolveItemTime(selectedDetail))}
-                      </span>
-                    )}
-                    {selectedDetail.imported_at && (
-                      <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 font-sans" title={`Diimpor ke JNT OPS PRO: ${formatDisplayTime(selectedDetail.imported_at)}`}>
-                        Import: {formatDisplayTime(selectedDetail.imported_at)}
-                      </span>
-                    )}
                   </p>
                 </div>
               </div>
@@ -871,6 +862,24 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
               >
                 <X className="h-5 w-5" />
               </button>
+            </div>
+
+            {/* Waktu Transaksi & Waktu Import */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 border border-slate-100 p-3 rounded-xl text-xs">
+              <div>
+                <span className="text-gray-400 block text-[10px] uppercase font-bold tracking-wider">Waktu Transaksi</span>
+                <span className="font-bold text-gray-800 flex items-center gap-1.5 mt-0.5 font-mono">
+                  <Clock className="h-3.5 w-3.5 text-blue-600" />
+                  {formatDisplayTime(selectedDetail.transaction_time || resolveItemTime(selectedDetail))}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-400 block text-[10px] uppercase font-bold tracking-wider">Waktu Import</span>
+                <span className="font-semibold text-gray-700 flex items-center gap-1.5 mt-0.5 font-mono">
+                  <Clock className="h-3.5 w-3.5 text-indigo-500" />
+                  {selectedDetail.imported_at ? formatDisplayTime(selectedDetail.imported_at) : "-"}
+                </span>
+              </div>
             </div>
 
             {/* Info Badge */}
