@@ -1523,7 +1523,8 @@ const UTILITY_ACTIONS = new Set([
   "saveKategoriKeuangan",
   "updateKategoriKeuangan",
   "deleteKategoriKeuangan",
-  "backfillKeuanganOutlet"
+  "backfillKeuanganOutlet",
+  "getRiwayatTransaksi"
 ]);
 
 app.use("/api/:action", async (req, res, next) => {
