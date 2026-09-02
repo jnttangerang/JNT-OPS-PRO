@@ -1373,62 +1373,6 @@ function readDb() {
       updated = true;
     }
 
-    // Ensure JD0585369760 has correct business transaction date/time invariant
-    let jdFoundInMaster = false;
-    (parsed.MASTER_TRANSAKSI || []).forEach((tx: any) => {
-      if (tx.no_resi === "JD0585369760" || tx.resi_id === "JD0585369760") {
-        tx.tanggal_transaksi = "2026-08-31";
-        tx.jam_transaksi = "09:39:13";
-        jdFoundInMaster = true;
-        updated = true;
-      }
-    });
-    if (!jdFoundInMaster) {
-      parsed.MASTER_TRANSAKSI.unshift({
-        id: "PRE-YY-1788286355-1hp",
-        transaksi_id: "PRE-YY-1788286355-1hp",
-        no_resi: "JD0585369760",
-        outlet_id: "OUT-002",
-        admin_id: "USR_1786776882250",
-        admin_pembuat: "USR_1786776882250",
-        user_id: "USR_1786776882250",
-        tanggal_transaksi: "2026-08-31",
-        jam_transaksi: "09:39:13",
-        created_at: "2026-08-31T09:39:13.000Z",
-        ekspedisi: "Express",
-        tipe_produk: "DOC",
-        pengirim: "PT. PERWIRA ARTHABAJA PASIFIK",
-        snapshot_nama_pengirim: "PT. PERWIRA ARTHABAJA PASIFIK",
-        penerima: "IBU ERIN",
-        snapshot_nama_penerima: "IBU ERIN",
-        nama_barang: "Paket",
-        metode_bayar: "Tunai",
-        ongkir_customer: 18000,
-        ongkir_yoyi: 18000,
-        biaya_yoyi: 19000,
-        packing: 0,
-        amplop: 2000,
-        biaya_lain: 1000,
-        asuransi: 0,
-        pembulatan: 0,
-        total_customer: 19000,
-        grand_total: 21000,
-        wajib_setor_owner: 19000,
-        kas_outlet: 2000,
-        status_transaksi: "PAID",
-        status_setoran: "PENDING",
-        status_audit: "PENDING"
-      });
-      updated = true;
-    }
-    (parsed.EXP_Resi || []).forEach((r: any) => {
-      if (r.resi_id === "JD0585369760") {
-        r.tanggal_transaksi = "2026-08-31";
-        r.jam_transaksi = "09:39:13";
-        updated = true;
-      }
-    });
-
     if (updated) {
       fs.writeFileSync(dbPath, JSON.stringify(parsed, null, 2));
     }
@@ -4461,11 +4405,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     if (tId) masterByResi.set(tId, tx);
   });
 
-  console.log("DEBUG TRACE JD0585369760:", {
-    masterMatch: masterByResi.get("JD0585369760"),
-    backupMatch: backupByResi.get("JD0585369760"),
-    expMatch: (db.EXP_Resi || []).find((r: any) => r.resi_id === "JD0585369760"),
-  });
+
 
   const filtered = (db.MASTER_TRANSAKSI || []).filter((tx: any) => {
     if (filterOutlet && filterOutlet !== "ALL" && tx.outlet_id !== filterOutlet) return false;
@@ -4487,9 +4427,8 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     const jenisBarang = tx.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
     const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || p?.metode_bayar || "Tunai";
 
-    const isJD05 = (resiId === "JD0585369760" || tx.no_resi === "JD0585369760" || txId.startsWith("PRE-YY-1788286355") || txId.startsWith("PRE-YY-1788290979"));
-    const txTanggal = isJD05 ? "2026-08-31" : (tx.tanggal_transaksi || p?.tanggal_transaksi || "");
-    const txJam = isJD05 ? "09:39:13" : (tx.jam_transaksi || p?.jam_transaksi || "");
+    const txTanggal = tx.tanggal_transaksi || p?.tanggal_transaksi || "";
+    const txJam = tx.jam_transaksi || p?.jam_transaksi || "";
     const transactionTime = (txTanggal && txJam)
       ? `${txTanggal} ${txJam}`
       : (txTanggal ? `${txTanggal} 00:00:00` : (tx.timestamp || tx.created_at || new Date().toISOString()));
@@ -4540,9 +4479,8 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
         const jenisBarang = r.jenis_barang || masterTx?.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
         const metodeBayar = r.metode_bayar || masterTx?.metode_bayar || p?.metode_bayar || "Tunai";
 
-        const isJD05Resi = (resiKey === "JD0585369760" || masterTx?.no_resi === "JD0585369760" || r.transaksi_id?.startsWith("PRE-YY-1788286355") || r.transaksi_id?.startsWith("PRE-YY-1788290979"));
-        const rTanggal = isJD05Resi ? "2026-08-31" : (masterTx?.tanggal_transaksi || p?.tanggal_transaksi || r.tanggal_transaksi || "");
-        const rJam = isJD05Resi ? "09:39:13" : (masterTx?.jam_transaksi || p?.jam_transaksi || r.jam_transaksi || "");
+        const rTanggal = masterTx?.tanggal_transaksi || p?.tanggal_transaksi || r.tanggal_transaksi || "";
+        const rJam = masterTx?.jam_transaksi || p?.jam_transaksi || r.jam_transaksi || "";
         const rTxTime = (rTanggal && rJam)
           ? `${rTanggal} ${rJam}`
           : (rTanggal ? `${rTanggal} 00:00:00` : (r.timestamp || r.created_at || new Date().toISOString()));
@@ -4635,11 +4573,7 @@ app.post("/api/getRiwayatTransaksi", (req, res) => {
     return timeB - timeA;
   });
 
-  const debugJD05 = transaksiList.find(
-  (x: any) => x.resi_id === "JD0585369760"
-);
 
-console.log("=== RIWAYAT FINAL RESPONSE JD0585369760 ===", debugJD05);
 
 return res.json({
   status: "success",
@@ -4750,9 +4684,8 @@ app.post("/api/getDetailTransaksi", (req, res) => {
   const outlet = (db.Outlets || []).find((o: any) => o.outlet_id === (resiObj?.outlet_id_input || masterTx?.outlet_id || pre?.outlet_id_tugas));
   const user = (db.Users || []).find((u: any) => u.user_id === (resiObj?.admin_id_pencatat || masterTx?.admin_id || pre?.admin_id));
 
-  const isJD05Detail = (resi_id === "JD0585369760" || resiObj?.resi_id === "JD0585369760" || masterTx?.no_resi === "JD0585369760" || txId.startsWith("PRE-YY-1788286355") || txId.startsWith("PRE-YY-1788290979"));
-  const txTanggal = isJD05Detail ? "2026-08-31" : (masterTx?.tanggal_transaksi || pre?.tanggal_transaksi || resiObj?.tanggal_transaksi || "");
-  const txJam = isJD05Detail ? "09:39:13" : (masterTx?.jam_transaksi || pre?.jam_transaksi || resiObj?.jam_transaksi || "");
+  const txTanggal = tx.tanggal_transaksi || p?.tanggal_transaksi || "";
+const txJam = tx.jam_transaksi || p?.jam_transaksi || "";
   const transactionTime = (txTanggal && txJam)
     ? `${txTanggal} ${txJam}`
     : (txTanggal ? `${txTanggal} 00:00:00` : (masterTx?.timestamp || resiObj?.timestamp || pre?.timestamp || masterTx?.created_at || new Date().toISOString()));
@@ -7471,9 +7404,18 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
           const preTanggal = matchingPre?.tanggal_transaksi || (matchingPre?.timestamp ? getWIBDate(matchingPre.timestamp) : "");
           const preJam = matchingPre?.jam_transaksi || (matchingPre?.timestamp ? getWIBTime(matchingPre.timestamp) : "");
 
-          const isJD05 = tx.resi_id === "JD0585369760" || tx.no_resi === "JD0585369760" || id === "PRE-YY-1788286355-1hp" || id === "PRE-YY-1788290979-mov";
-          const resTanggal = isJD05 ? "2026-08-31" : (tx.tanggal_transaksi || localTx?.tanggal_transaksi || preTanggal || extractBusinessDate(tx) || (tx.timestamp ? getWIBDate(tx.timestamp) : (localTx?.created_at ? getWIBDate(localTx.created_at) : getTodayWIB())));
-          const resJam = isJD05 ? "09:39:13" : (tx.jam_transaksi || localTx?.jam_transaksi || preJam || (tx.timestamp ? getWIBTime(tx.timestamp) : (localTx?.created_at ? getWIBTime(localTx.created_at) : "00:00:00")));
+          const resTanggal =
+  tx.tanggal_transaksi ||
+  localTx?.tanggal_transaksi ||
+  preTanggal ||
+  extractBusinessDate(tx) ||
+  (tx.timestamp ? getWIBDate(tx.timestamp) : (localTx?.created_at ? getWIBDate(localTx.created_at) : getTodayWIB()));
+
+const resJam =
+  tx.jam_transaksi ||
+  localTx?.jam_transaksi ||
+  preJam ||
+  (tx.timestamp ? getWIBTime(tx.timestamp) : (localTx?.created_at ? getWIBTime(localTx.created_at) : "00:00:00"));
 
           return {
             id: id,
