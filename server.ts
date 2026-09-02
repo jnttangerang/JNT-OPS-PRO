@@ -4484,6 +4484,10 @@ app.post("/api/getDashboardData", async (req, res) => {
 app.post("/api/getRiwayatTransaksi", async (req, res) => {
   console.log("--> /api/getRiwayatTransaksi called with body:", req.body);
   try {
+    if (!(global as any)._lastRiwayatSync || Date.now() - (global as any)._lastRiwayatSync > 5000) {
+      await syncDbWithAppsScript(readDb(), { force: true });
+      (global as any)._lastRiwayatSync = Date.now();
+    }
     const db = await syncDbWithAppsScript(readDb());
     const { filterOutlet, tanggal_awal, tanggal_akhir } = req.body || {};
 
