@@ -2781,7 +2781,11 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
 
     const txTanggal = data.tanggal_transaksi || (timestamp.includes("T") ? timestamp.split("T")[0] : getWIBDate(timestamp));
     const txJam = data.jam_transaksi || (timestamp.includes("T") ? timestamp.split("T")[1].replace("Z", "").split(".")[0] : getWIBTime(timestamp));
-    const importedAt = data.imported_at || (data.sumber_data === "Import YoYi" || data.transaksi_id?.startsWith("TRX-YY-") ? new Date().toISOString() : undefined);
+    const importedAt = (data.imported_at && !data.imported_at.includes("T") && !data.imported_at.includes("Z"))
+      ? data.imported_at
+      : (data.sumber_data === "Import YoYi" || data.transaksi_id?.startsWith("TRX-YY-") || data.imported_at
+          ? `${getWIBDate(new Date())} ${getWIBTime(new Date())}`
+          : undefined);
 
     const isDoc = isDocumentTransaction(data);
     const metodeBayarOngkir = data.metode_pembayaran_ongkir || data.metode_bayar || data.metode_bayar_ongkir || "Tunai";
@@ -3185,6 +3189,7 @@ app.post("/api/importYoYi", async (req, res) => {
     timestamp = `${txDate}T${txTime}`;
   }
   const transId = "TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5);
+  const importedAt = `${getWIBDate(new Date())} ${getWIBTime(new Date())}`;
 
   // Financial calculations
   const isDoc = isDocumentTransaction({ ...parsed, ...input });
@@ -3215,6 +3220,7 @@ app.post("/api/importYoYi", async (req, res) => {
   const preBackup = {
     transaksi_id: transId,
     timestamp,
+    imported_at: importedAt,
     admin_id: adminId,
     outlet_id_tugas: outletId,
     nama_pengirim: parsed.nama_pengirim || "YoYi Pengirim",
@@ -3238,6 +3244,7 @@ app.post("/api/importYoYi", async (req, res) => {
     resi_id: rid,
     transaksi_id: transId,
     timestamp,
+    imported_at: importedAt,
     admin_id_pencatat: adminId,
     outlet_id_input: outletId,
     tipe_produk: parsed.tipe_produk || "EZ",
@@ -3288,6 +3295,8 @@ app.post("/api/importYoYi", async (req, res) => {
     admin_id: adminId,
     tanggal_transaksi: txDate,
     jam_transaksi: txTime,
+    timestamp,
+    imported_at: importedAt,
     no_resi: rid,
     ekspedisi: "Express",
     tipe_produk: parsed.tipe_produk || "EZ",
@@ -7630,27 +7639,60 @@ const resJam =
 
         const remoteIds = new Set(remoteMapped.map((r: any) => r.id || r.transaksi_id || r.no_resi).filter(Boolean));
 
-        // Hanya pertahankan data lokal yang statusnya DRAFT/PENDING (belum selesai)
+        const GRACE_PERIOD_MS = 15 * 60 * 1000; // 15 menit grace period
+        const syncNow = Date.now();
+
+        // Helper untuk parse tanggal/waktu transaksi lokal ke milliseconds
+        const getCreatedTimeMs = (item: any): number => {
+          const raw = item.created_at || item.imported_at || item.timestamp;
+          if (!raw) return 0;
+          let ms = new Date(raw).getTime();
+          if (isNaN(ms)) {
+            ms = new Date(String(raw).replace(" ", "T")).getTime();
+          }
+          return isNaN(ms) ? 0 : ms;
+        };
+
+        // Pertahankan data lokal yang:
+        // 1. Status DRAFT atau PENDING
+        // 2. Status PAID atau SELESAI jika created_at masih dalam 15 menit terakhir
         const localOnly = localTxs.filter((l: any) => {
           const lid = l.id || l.transaksi_id || l.no_resi;
-          const status = l.status_transaksi || l.status || "";
-          const isDraft = status.toUpperCase() === "DRAFT" || status.toUpperCase() === "PENDING";
-          return lid && !remoteIds.has(lid) && isDraft;
+          if (!lid || remoteIds.has(lid)) return false;
+
+          const status = (l.status_transaksi || l.status || "").toUpperCase();
+          const isDraft = status === "DRAFT" || status === "PENDING";
+          if (isDraft) return true;
+
+          const isPaid = status === "PAID" || status === "SELESAI";
+          if (isPaid) {
+            const createdMs = getCreatedTimeMs(l);
+            const isWithinGracePeriod = createdMs > 0 && (syncNow - createdMs < GRACE_PERIOD_MS);
+            return isWithinGracePeriod;
+          }
+
+          return false;
         });
 
-        // Data lokal yang PAID/SELESAI tetapi tidak ada di remote → dihapus (dianggap sudah dihapus dari Spreadsheet)
+        // Data lokal yang PAID/SELESAI tetapi tidak ada di remote dan lebih dari 15 menit → dihapus
         const localPaidRemoved = localTxs.filter((l: any) => {
           const lid = l.id || l.transaksi_id || l.no_resi;
-          const status = l.status_transaksi || l.status || "";
-          const isPaid = status.toUpperCase() === "PAID" || status.toUpperCase() === "SELESAI";
-          return lid && !remoteIds.has(lid) && isPaid;
+          if (!lid || remoteIds.has(lid)) return false;
+
+          const status = (l.status_transaksi || l.status || "").toUpperCase();
+          const isPaid = status === "PAID" || status === "SELESAI";
+          if (!isPaid) return false;
+
+          const createdMs = getCreatedTimeMs(l);
+          const isOlderThanGracePeriod = createdMs === 0 || (syncNow - createdMs >= GRACE_PERIOD_MS);
+          return isOlderThanGracePeriod;
         });
 
         if (localPaidRemoved.length > 0) {
-          console.log(`[sync] Menghapus ${localPaidRemoved.length} transaksi PAID/SELESAI yang tidak ada di remote (dihapus dari Spreadsheet).`);
+          console.log(`[sync] Menghapus ${localPaidRemoved.length} transaksi PAID/SELESAI (>15 menit) yang tidak ada di remote (dihapus dari Spreadsheet).`);
         }
 
-        // Gabungkan: remote + localOnly (hanya DRAFT/PENDING)
+        // Gabungkan: remote + localOnly (DRAFT/PENDING dan PAID/SELESAI dalam grace period 15 menit)
         db.MASTER_TRANSAKSI = [...remoteMapped, ...localOnly];
         hasChanged = true;
       }

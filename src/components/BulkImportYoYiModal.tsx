@@ -364,7 +364,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         tanggal_transaksi: row.tanggal_transaksi,
         jam_transaksi: row.jam_transaksi,
         timestamp: `${row.tanggal_transaksi}T${row.jam_transaksi}`,
-        imported_at: new Date().toISOString(),
+        imported_at: `${getWIBDate(new Date())} ${getWIBTime(new Date())}`,
         outlet_id_input: row.mapped_outlet_id,
         admin_id_pencatat: resolvedAdminId,
         operator_nama: row.operator,
