@@ -12,6 +12,27 @@ export default function DeveloperPage() {
   const [appsScriptUrl, setAppsScriptUrl] = useState("");
   const [spreadsheetId, setSpreadsheetId] = useState("");
   const [saved, setSaved] = useState(false);
+  const [syncLogs, setSyncLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+
+  useEffect(() => {
+    fetchSyncLogs();
+  }, []);
+
+  const fetchSyncLogs = async () => {
+    setLoadingLogs(true);
+    try {
+      const res = await fetch("/api/dev/sync-logs");
+      const json = await res.json();
+      if (json.status === "success") {
+        setSyncLogs(json.data || []);
+      }
+    } catch (err) {
+      console.error("Failed to load sync logs", err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
 
   useEffect(() => {
     // Load initial settings

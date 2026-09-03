@@ -1268,7 +1268,7 @@ function readDb() {
       "Users", "Outlets", "EXP_Resi", "CRG_Resi", "PreInput_Backup", "MASTER_TRANSAKSI",
       "Master_Setoran", "SetoranData", "AuditLogs", "KeuanganOutlet", "MASTER_CUSTOMER",
       "MASTER_PENGIRIMAN", "DailyClosing", "Exceptions", "SettlementRecords", "FinancialCertifications", "WorkflowCases",
-      "ManagementReviews"
+      "ManagementReviews", "SyncLogs"
     ];
     for (const key of criticalArrays) {
       if (!parsed[key] || !Array.isArray(parsed[key])) {
@@ -4484,11 +4484,39 @@ app.post("/api/getDashboardData", async (req, res) => {
 app.post("/api/getRiwayatTransaksi", async (req, res) => {
   console.log("--> /api/getRiwayatTransaksi called with body:", req.body);
   try {
-    if (!(global as any)._lastRiwayatSync || Date.now() - (global as any)._lastRiwayatSync > 5000) {
-      await syncDbWithAppsScript(readDb(), { force: true });
-      (global as any)._lastRiwayatSync = Date.now();
+    const RIWAYAT_SYNC_TTL_MS = 5000;
+    const now = Date.now();
+    const lastSync = (global as any)._lastRiwayatSync || 0;
+
+    // Gracefully handle network latency scenarios:
+    // 1. If a sync is currently in-flight, queue onto the existing promise so subsequent calls await completion
+    //    without spawning duplicate concurrent syncs or causing data reconciliation race conditions.
+    // 2. If a sync request takes longer than the 5s TTL, subsequent calls are queued or suppressed.
+    // 3. If a sync has finished within the TTL (5s), auto-sync is suppressed and serves from local state.
+    if ((global as any)._riwayatSyncPromise) {
+      try {
+        await (global as any)._riwayatSyncPromise;
+      } catch (err: any) {
+        console.warn("Queued riwayat sync completed with error:", err?.message || err);
+      }
+    } else if (now - lastSync > RIWAYAT_SYNC_TTL_MS) {
+      const syncP = (async () => {
+        try {
+          await syncDbWithAppsScript(readDb(), { force: true });
+        } finally {
+          (global as any)._lastRiwayatSync = Date.now();
+          (global as any)._riwayatSyncPromise = null;
+        }
+      })();
+      (global as any)._riwayatSyncPromise = syncP;
+      try {
+        await syncP;
+      } catch (err: any) {
+        console.warn("Auto-sync riwayat error:", err?.message || err);
+      }
     }
-    const db = await syncDbWithAppsScript(readDb());
+
+    const db = readDb();
     const { filterOutlet, tanggal_awal, tanggal_akhir } = req.body || {};
 
   const checkDateMatch = (txOrTimestamp: any) => {
@@ -7407,6 +7435,21 @@ function invalidateSyncCache() {
   lastSyncTime = 0;
 }
 
+function addSyncLog(db: any, status: string, duration_ms: number, payload_size: number, detail: string) {
+  if (!db.SyncLogs) db.SyncLogs = [];
+  db.SyncLogs.unshift({
+    log_id: "SYNC-" + String(Date.now()).slice(-6) + Math.floor(Math.random() * 10),
+    timestamp: new Date().toISOString(),
+    status,
+    duration_ms,
+    payload_size,
+    detail
+  });
+  if (db.SyncLogs.length > 50) {
+    db.SyncLogs = db.SyncLogs.slice(0, 50);
+  }
+}
+
 // Helper to sync live transaction and setoran data from Google Sheets when running in proxy/serverless mode
 async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) {
   const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
@@ -7418,35 +7461,41 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
   }
 
   if (syncPromise) {
-    return options.force ? syncPromise : db;
+    return syncPromise;
   }
 
   syncPromise = (async () => {
+    const startTime = Date.now();
+    let detailMsg = "";
+    let isError = false;
+    let totalPayload = 0;
+
     try {
       const [txRes, setoranRes, keuanganRes] = await Promise.all([
         fetch(appsScriptUrl.trim(), {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ action: "getRiwayatTransaksi", data: { filterOutlet: "ALL" } }),
-          signal: AbortSignal.timeout(3000)
-        }).then(r => r.json()).catch(() => null),
+          signal: AbortSignal.timeout(8000)
+        }).then(r => r.json()).catch((e) => { detailMsg += `TX Fail: ${e.message}; `; return null; }),
         fetch(appsScriptUrl.trim(), {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ action: "getSetoranList", data: {} }),
-          signal: AbortSignal.timeout(3000)
-        }).then(r => r.json()).catch(() => null),
+          signal: AbortSignal.timeout(8000)
+        }).then(r => r.json()).catch((e) => { detailMsg += `Setoran Fail: ${e.message}; `; isError = true; return null; }),
         fetch(appsScriptUrl.trim(), {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
           body: JSON.stringify({ action: "getKeuanganOutlet", data: {} }),
-          signal: AbortSignal.timeout(3000)
-        }).then(r => r.json()).catch(() => null)
+          signal: AbortSignal.timeout(8000)
+        }).then(r => r.json()).catch((e) => { detailMsg += `Keuangan Fail: ${e.message}; `; isError = true; return null; })
       ]);
 
       let hasChanged = false;
 
       if (txRes && txRes.status === "success" && Array.isArray(txRes.data)) {
+        totalPayload += txRes.data.length;
         const localTxs = db.MASTER_TRANSAKSI || [];
         const remoteMapped = txRes.data.map((tx: any) => {
           const id = tx.transaksi_id || tx.id || tx.resi_id;
@@ -7607,6 +7656,7 @@ const resJam =
       }
 
       if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
+        totalPayload += setoranRes.data.length;
         const localSetoran = db.Master_Setoran || [];
         const remoteSetoranIds = new Set(setoranRes.data.map((s: any) => s.id || s.setoran_id));
         const localOnlySetoran = localSetoran.filter((l: any) => {
@@ -7618,6 +7668,7 @@ const resJam =
       }
 
       if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data)) {
+        totalPayload += keuanganRes.data.length;
         const localKeuangan = db.KeuanganOutlet || [];
         const remoteKeuanganIds = new Set(keuanganRes.data.map((k: any) => k.id));
         
@@ -7657,15 +7708,23 @@ const resJam =
       
       lastSyncTime = Date.now();
     } catch (e: any) {
-      console.warn("syncDbWithAppsScript warning:", e.message);
+      isError = true; detailMsg += `Error: ${e.message}; `; console.warn("syncDbWithAppsScript warning:", e.message);
     } finally {
-      syncPromise = null;
+      const duration = Date.now() - startTime; addSyncLog(db, isError ? "ERROR" : "SUCCESS", duration, totalPayload, detailMsg || "Sync completed successfully"); syncPromise = null;
     }
     return db;
   })();
 
   return syncPromise;
 }
+
+app.get("/api/dev/sync-logs", (req, res) => {
+  const db = readDb();
+  return res.json({
+    status: "success",
+    data: db.SyncLogs || []
+  });
+});
 
 // === PHASE 30 DAILY CLOSING ENGINE ENDPOINTS ===
 app.post("/api/dailyClosing/validate", async (req, res) => {

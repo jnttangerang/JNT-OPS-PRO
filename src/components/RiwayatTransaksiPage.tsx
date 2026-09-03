@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { 
   Search, 
   Eye, 
@@ -95,21 +95,39 @@ interface TransaksiDetail {
   catatan?: string;
 }
 
+// Module-level cache & in-flight tracking to prevent duplicate fetches across rapid tab navigation
+let _lastFetchTime = 0;
+let _cachedRiwayatData: TransaksiItem[] | null = null;
+let _lastFetchParamsKey = "";
+let _activeFetchPromise: Promise<any> | null = null;
+const TTL_CACHE_MS = 5000; // 5-second TTL for background updates
+
 export default function RiwayatTransaksiPage({ session, outlets, activeOutletId }: RiwayatTransaksiPageProps) {
   const { callBackend } = useAppsScript();
-  const [data, setData] = useState<TransaksiItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const loadingRef = React.useRef(false);
-  const [users, setUsers] = useState<UserType[]>([]);
-  
   const todayStr = getTodayWIB();
-  
+
   const [filterTanggalAwal, setFilterTanggalAwal] = useState(todayStr);
   const [filterTanggalAkhir, setFilterTanggalAkhir] = useState(todayStr);
   const [filterOutlet, setFilterOutlet] = useState<string>(session.role === "OWNER" ? "ALL" : (activeOutletId || session.outlet_id_home));
   const [filterAdmin, setFilterAdmin] = useState<string>("ALL");
   const [filterEkspedisi, setFilterEkspedisi] = useState<string>("ALL");
   const [searchTerm, setSearchTerm] = useState("");
+
+  const initialParamsKey = `${session.role === "OWNER" ? "ALL" : (activeOutletId || session.outlet_id_home)}_${todayStr}_${todayStr}`;
+  const hasWarmCache = !!_cachedRiwayatData && (Date.now() - _lastFetchTime < TTL_CACHE_MS) && (_lastFetchParamsKey === initialParamsKey);
+
+  const [data, setData] = useState<TransaksiItem[]>(() => hasWarmCache ? (_cachedRiwayatData || []) : []);
+  const [loading, setLoading] = useState(!hasWarmCache);
+  const loadingRef = React.useRef(false);
+  const isMountedRef = React.useRef(true);
+  const [users, setUsers] = useState<UserType[]>([]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -149,35 +167,93 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
     }
   };
 
-  const fetchData = async () => {
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    setLoading(true);
-    try {
-      const response = await callBackend("getRiwayatTransaksi", { 
-        filterOutlet,
-        tanggal_awal: filterTanggalAwal,
-        tanggal_akhir: filterTanggalAkhir
-      });
-      if (response.status === "success" && response.data) {
-        setData(response.data);
+  const fetchData = useCallback(async (isBackground = false, force = false) => {
+    const paramsKey = `${filterOutlet}_${filterTanggalAwal}_${filterTanggalAkhir}`;
+    const now = Date.now();
+
+    // 1. If within 5s TTL, same parameters, and not forced, reuse existing cached data without making network call
+    if (!force && _cachedRiwayatData && paramsKey === _lastFetchParamsKey && (now - _lastFetchTime < TTL_CACHE_MS)) {
+      if (isMountedRef.current) {
+        setData(_cachedRiwayatData);
+        if (!isBackground) setLoading(false);
       }
-    } catch (error) {
-      console.error("Error fetching riwayat:", error);
-    } finally {
-      setLoading(false);
-      loadingRef.current = false;
+      return;
     }
-  };
+
+    // 2. If a request with the exact same parameters is already in flight, queue onto it
+    if (_activeFetchPromise && paramsKey === _lastFetchParamsKey) {
+      try {
+        const res = await _activeFetchPromise;
+        if (isMountedRef.current && res?.status === "success" && Array.isArray(res.data)) {
+          setData(res.data);
+        }
+      } finally {
+        if (isMountedRef.current && !isBackground) {
+          setLoading(false);
+        }
+      }
+      return;
+    }
+
+    if (loadingRef.current && !isBackground) return;
+    if (!isBackground) {
+      loadingRef.current = true;
+      setLoading(true);
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const response = await callBackend("getRiwayatTransaksi", { 
+          filterOutlet,
+          tanggal_awal: filterTanggalAwal,
+          tanggal_akhir: filterTanggalAkhir
+        });
+        if (response?.status === "success" && Array.isArray(response.data)) {
+          _cachedRiwayatData = response.data;
+          _lastFetchTime = Date.now();
+          _lastFetchParamsKey = paramsKey;
+          if (isMountedRef.current) {
+            setData(response.data);
+          }
+        }
+        return response;
+      } catch (error) {
+        console.error("Error fetching riwayat:", error);
+        return null;
+      } finally {
+        _activeFetchPromise = null;
+        if (isMountedRef.current && !isBackground) {
+          setLoading(false);
+          loadingRef.current = false;
+        }
+      }
+    })();
+
+    _activeFetchPromise = fetchPromise;
+    await fetchPromise;
+  }, [callBackend, filterOutlet, filterTanggalAwal, filterTanggalAkhir]);
 
   useEffect(() => {
     fetchUsers();
   }, []);
 
+  // Debounced trigger for filter changes and tab navigation
   useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterOutlet, filterTanggalAwal, filterTanggalAkhir]);
+    const timer = setTimeout(() => {
+      fetchData(false);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [fetchData]);
+
+  // Background auto-update interval (maintains 5-second TTL auto-update in the background)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (!document.hidden && isMountedRef.current) {
+        fetchData(true);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
   const getAdminName = (rawAdmin: string) => {
     if (!rawAdmin) return "-";
@@ -455,7 +531,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
       if (res.status === "success") {
         toast.success(res.message || "Transaksi berhasil diperbarui!");
         setEditItem(null);
-        fetchData();
+        fetchData(false, true);
       } else {
         toast.error("Gagal memperbarui: " + (res.message || "Terjadi kesalahan"));
       }
@@ -481,7 +557,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
       if (response.status === "success") {
         toast.success("Transaksi resi " + cancelTarget.resi_id + " berhasil dibatalkan.");
         setCancelTarget(null);
-        fetchData();
+        fetchData(false, true);
       } else {
         toast.error("Gagal membatalkan: " + response.message);
       }
@@ -505,7 +581,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           
           <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
             <button
-              onClick={() => fetchData()}
+              onClick={() => fetchData(false, true)}
               disabled={loading}
               className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-xl text-sm font-bold shadow-sm hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -1377,7 +1453,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
         users={users}
         onImportComplete={() => {
           setIsBulkImportModalOpen(false);
-          fetchData();
+          fetchData(false, true);
         }}
       />
     </div>
