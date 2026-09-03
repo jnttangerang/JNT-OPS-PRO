@@ -4526,101 +4526,110 @@ app.post("/api/getRiwayatTransaksi", async (req, res) => {
     }
 
     const db = readDb();
-    const { filterOutlet, tanggal_awal, tanggal_akhir } = req.body || {};
+    const { filterOutlet: reqOutlet, activeOutletId, tanggal_awal: rawAwal, tanggal_akhir: rawAkhir, filterStatus } = req.body || {};
+    const filterOutlet = reqOutlet || activeOutletId || "ALL";
+    const tanggal_awal = rawAwal ? String(rawAwal).slice(0, 10) : undefined;
+    const tanggal_akhir = rawAkhir ? String(rawAkhir).slice(0, 10) : undefined;
 
-  const checkDateMatch = (txOrTimestamp: any) => {
-    if (!tanggal_awal && !tanggal_akhir) return true;
-    let d = "";
-    if (typeof txOrTimestamp === "object" && txOrTimestamp !== null) {
-      d = txOrTimestamp.tanggal_transaksi || extractBusinessDate(txOrTimestamp) || getWIBDate(txOrTimestamp.created_at || txOrTimestamp.timestamp);
-    } else {
-      d = getWIBDate(txOrTimestamp);
-    }
-    if (!d) return true;
-    if (tanggal_awal && d < tanggal_awal) return false;
-    if (tanggal_akhir && d > tanggal_akhir) return false;
-    return true;
-  };
-
-  const outletMap: Record<string, string> = {};
-  (db.Outlets || []).forEach((o: any) => {
-    outletMap[o.outlet_id] = o.nama_outlet;
-  });
-
-  const userMap: Record<string, string> = {};
-  (db.Users || []).forEach((u: any) => {
-    userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
-  });
-
-  const backupMap: Record<string, any> = {};
-  const backupByResi = new Map<string, any>();
-  (db.PreInput_Backup || []).forEach((b: any) => {
-    if (b.transaksi_id) {
-      backupMap[b.transaksi_id] = b;
-    }
-    const rId = (b.no_resi || b.resi_id || "").toUpperCase();
-    if (rId) backupByResi.set(rId, b);
-  });
-
-  const masterByResi = new Map<string, any>();
-  (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
-    const rId = (tx.no_resi || tx.resi_id || tx.id || "").toUpperCase();
-    if (rId) masterByResi.set(rId, tx);
-    const tId = (tx.transaksi_id || tx.id || "").toUpperCase();
-    if (tId) masterByResi.set(tId, tx);
-  });
-
-
-
-  const filtered = (db.MASTER_TRANSAKSI || []).filter((tx: any) => {
-    if (filterOutlet && filterOutlet !== "ALL" && tx.outlet_id !== filterOutlet) return false;
-    if (!checkDateMatch(tx)) return false;
-    return true;
-  });
-
-  const seenKeys = new Set<string>();
-
-  const transaksiList = filtered.map((tx: any) => {
-    const sum = calculateFinancialSummary(tx);
-    const txId = tx.id || tx.transaksi_id || "";
-    const p = backupMap[txId];
-    const resiId = tx.no_resi || tx.resi_id || tx.id;
-    if (resiId) seenKeys.add(resiId.toUpperCase());
-    if (txId) seenKeys.add(txId.toUpperCase());
-
-    const tipeProduk = tx.tipe_produk || p?.tipe_produk || ((tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "EZ");
-    const jenisBarang = tx.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
-    const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || p?.metode_bayar || "Tunai";
-
-    const txDate = extractBusinessDate(tx) || extractBusinessDate(p) || getTodayWIB();
-    const txTime = tx.jam_transaksi || p?.jam_transaksi || tx.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
-    const displayTime = `${txDate} ${txTime}`;
-    const txTimestamp = `${txDate}T${txTime}`;
-    const importedAt = tx.imported_at || p?.imported_at || tx.created_at || tx.timestamp;
-
-    return {
-      resi_id: resiId,
-      transaksi_id: txId,
-      transaction_time: displayTime,
-      imported_at: importedAt,
-      timestamp: txTimestamp,
-      tanggal_transaksi: txDate,
-      jam_transaksi: txTime,
-      admin: userMap[tx.admin_id] || tx.admin_id,
-      outlet: outletMap[tx.outlet_id] || tx.outlet_id,
-      tipe: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express",
-      tipe_produk: tipeProduk,
-      jenis_barang: jenisBarang,
-      metode_bayar: metodeBayar,
-      grand_total: sum.customer_payment || Number(tx.total_customer) || Number(tx.grand_total) || 0,
-      pengirim: tx.snapshot_nama_pengirim || p?.nama_pengirim || "",
-      penerima: tx.snapshot_nama_penerima || p?.nama_penerima || "",
-      hp_pengirim: tx.snapshot_hp_pengirim || p?.hp_pengirim || "",
-      hp_penerima: tx.snapshot_hp_penerima || p?.hp_penerima || "",
-      nama_barang: tx.nama_barang || p?.nama_barang || "-",
-      status_resi: tx.status_resi || tx.status_transaksi || tx.status || "AKTIF"
+    const checkDateMatch = (txOrTimestamp: any) => {
+      if (!tanggal_awal && !tanggal_akhir) return true;
+      let d = "";
+      if (typeof txOrTimestamp === "object" && txOrTimestamp !== null) {
+        d = extractBusinessDate(txOrTimestamp) || (txOrTimestamp.tanggal_transaksi ? getWIBDate(txOrTimestamp.tanggal_transaksi) : "") || getWIBDate(txOrTimestamp.created_at || txOrTimestamp.timestamp);
+      } else {
+        d = getWIBDate(txOrTimestamp);
+      }
+      if (!d) return true;
+      if (tanggal_awal && d < tanggal_awal) return false;
+      if (tanggal_akhir && d > tanggal_akhir) return false;
+      return true;
     };
-  });
+
+    const outletMap: Record<string, string> = {};
+    (db.Outlets || []).forEach((o: any) => {
+      outletMap[o.outlet_id] = o.nama_outlet;
+    });
+
+    const userMap: Record<string, string> = {};
+    (db.Users || []).forEach((u: any) => {
+      userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
+    });
+
+    const backupMap: Record<string, any> = {};
+    const backupByResi = new Map<string, any>();
+    (db.PreInput_Backup || []).forEach((b: any) => {
+      if (b.transaksi_id) {
+        backupMap[b.transaksi_id] = b;
+      }
+      const rId = (b.no_resi || b.resi_id || "").toUpperCase();
+      if (rId) backupByResi.set(rId, b);
+    });
+
+    const masterByResi = new Map<string, any>();
+    (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
+      const rId = (tx.no_resi || tx.resi_id || tx.id || "").toUpperCase();
+      if (rId) masterByResi.set(rId, tx);
+      const tId = (tx.transaksi_id || tx.id || "").toUpperCase();
+      if (tId) masterByResi.set(tId, tx);
+    });
+
+    const filtered = (db.MASTER_TRANSAKSI || []).filter((tx: any) => {
+      const txOutlet = tx.outlet_id || tx.outlet_id_input || tx.outlet_id_tugas;
+      if (filterOutlet && filterOutlet !== "ALL" && txOutlet !== filterOutlet) return false;
+      if (filterStatus && filterStatus !== "ALL") {
+        const status = (tx.status_transaksi || tx.status || tx.status_resi || "").toUpperCase();
+        if (status !== filterStatus.toUpperCase()) return false;
+      }
+      if (!checkDateMatch(tx)) return false;
+      return true;
+    });
+
+    const seenKeys = new Set<string>();
+
+    const transaksiList = filtered.map((tx: any) => {
+      const sum = calculateFinancialSummary(tx);
+      const txId = tx.id || tx.transaksi_id || "";
+      const p = backupMap[txId];
+      const resiId = tx.no_resi || tx.resi_id || tx.id;
+      if (resiId) seenKeys.add(resiId.toUpperCase());
+      if (txId) seenKeys.add(txId.toUpperCase());
+
+      const tipeProduk = tx.tipe_produk || p?.tipe_produk || ((tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "EZ");
+      const jenisBarang = tx.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
+      const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || p?.metode_bayar || "Tunai";
+
+      const txDate = extractBusinessDate(tx) || extractBusinessDate(p) || (tx.tanggal_transaksi ? getWIBDate(tx.tanggal_transaksi) : "") || getTodayWIB();
+      const txTime = tx.jam_transaksi || p?.jam_transaksi || tx.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
+      const displayTime = `${txDate} ${txTime}`;
+      const txTimestamp = `${txDate}T${txTime}`;
+      const importedAt = tx.imported_at || p?.imported_at || tx.created_at || tx.timestamp;
+
+      const txOutlet = tx.outlet_id || tx.outlet_id_input || tx.outlet_id_tugas || "";
+      const txAdmin = tx.admin_id || tx.admin_pembuat || tx.user_id || tx.admin_id_pencatat || "";
+
+      return {
+        resi_id: resiId,
+        transaksi_id: txId,
+        transaction_time: displayTime,
+        imported_at: importedAt,
+        timestamp: txTimestamp,
+        tanggal_transaksi: txDate,
+        jam_transaksi: txTime,
+        admin: userMap[txAdmin] || txAdmin,
+        outlet: outletMap[txOutlet] || txOutlet,
+        tipe: (tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "Express",
+        tipe_produk: tipeProduk,
+        jenis_barang: jenisBarang,
+        metode_bayar: metodeBayar,
+        grand_total: sum.customer_payment || Number(tx.total_customer) || Number(tx.grand_total) || Number(tx.jumlah_dibayar_customer) || 0,
+        pengirim: tx.snapshot_nama_pengirim || tx.nama_pengirim || tx.pengirim || p?.nama_pengirim || "",
+        penerima: tx.snapshot_nama_penerima || tx.nama_penerima || tx.penerima || p?.nama_penerima || "",
+        hp_pengirim: tx.snapshot_hp_pengirim || tx.hp_pengirim || p?.hp_pengirim || "",
+        hp_penerima: tx.snapshot_hp_penerima || tx.hp_penerima || p?.hp_penerima || "",
+        nama_barang: tx.nama_barang || p?.nama_barang || "-",
+        status_resi: tx.status_resi || tx.status_transaksi || tx.status || "AKTIF"
+      };
+    });
 
   // Ensure any transactions in EXP_Resi not in MASTER_TRANSAKSI are also included
   (db.EXP_Resi || []).forEach((r: any) => {
@@ -4629,8 +4638,9 @@ app.post("/api/getRiwayatTransaksi", async (req, res) => {
     const masterTx = masterByResi.get(resiKey) || masterByResi.get(txKey);
 
     if ((resiKey && !seenKeys.has(resiKey)) && (!txKey || !seenKeys.has(txKey))) {
-      if (!filterOutlet || filterOutlet === "ALL" || r.outlet_id_input === filterOutlet || (masterTx && (!filterOutlet || filterOutlet === "ALL" || masterTx.outlet_id === filterOutlet))) {
-        if (!checkDateMatch(masterTx || r.tanggal_transaksi || r.timestamp)) return;
+      const rOutlet = r.outlet_id_input || r.outlet_id || masterTx?.outlet_id || masterTx?.outlet_id_input || "";
+      if (!filterOutlet || filterOutlet === "ALL" || rOutlet === filterOutlet) {
+        if (!checkDateMatch(masterTx || r)) return;
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[r.transaksi_id] || backupByResi.get(resiKey) || (masterTx ? backupMap[masterTx.transaksi_id] : null);
@@ -4677,8 +4687,9 @@ app.post("/api/getRiwayatTransaksi", async (req, res) => {
     const masterTx = masterByResi.get(resiKey) || masterByResi.get(txKey);
 
     if ((resiKey && !seenKeys.has(resiKey)) && (!txKey || !seenKeys.has(txKey))) {
-      if (!filterOutlet || filterOutlet === "ALL" || c.outlet_id_input === filterOutlet || (masterTx && (!filterOutlet || filterOutlet === "ALL" || masterTx.outlet_id === filterOutlet))) {
-        if (!checkDateMatch(masterTx || c.tanggal_transaksi || c.timestamp)) return;
+      const cOutlet = c.outlet_id_input || c.outlet_id || masterTx?.outlet_id || masterTx?.outlet_id_input || "";
+      if (!filterOutlet || filterOutlet === "ALL" || cOutlet === filterOutlet) {
+        if (!checkDateMatch(masterTx || c)) return;
         if (resiKey) seenKeys.add(resiKey);
         if (txKey) seenKeys.add(txKey);
         const p = backupMap[c.transaksi_id] || backupByResi.get(resiKey) || (masterTx ? backupMap[masterTx.transaksi_id] : null);
@@ -7578,11 +7589,11 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
           const preJam = matchingPre?.jam_transaksi || (matchingPre?.timestamp ? getWIBTime(matchingPre.timestamp) : "");
 
           const resTanggal =
-  tx.tanggal_transaksi ||
-  localTx?.tanggal_transaksi ||
-  preTanggal ||
-  extractBusinessDate(tx) ||
-  (tx.timestamp ? getWIBDate(tx.timestamp) : (localTx?.created_at ? getWIBDate(localTx.created_at) : getTodayWIB()));
+            extractBusinessDate(tx) ||
+            (tx.tanggal_transaksi ? getWIBDate(tx.tanggal_transaksi) : "") ||
+            (localTx?.tanggal_transaksi ? getWIBDate(localTx.tanggal_transaksi) : "") ||
+            preTanggal ||
+            (tx.timestamp ? getWIBDate(tx.timestamp) : (localTx?.created_at ? getWIBDate(localTx.created_at) : getTodayWIB()));
 
 const resJam =
   tx.jam_transaksi ||
