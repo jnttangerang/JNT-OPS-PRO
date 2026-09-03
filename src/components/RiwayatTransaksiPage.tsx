@@ -50,6 +50,15 @@ interface TransaksiItem {
   tipe_produk?: string;
   jenis_barang?: string;
   metode_bayar?: string;
+  metode_bayar_tambahan?: string;
+  ongkir_dasar?: number;
+  biaya_asuransi?: number;
+  biaya_lain?: number;
+  biaya_amplop?: number;
+  biaya_packing?: number;
+  pembulatan?: number;
+  wajib_setor_owner?: number;
+  kas_operasional?: number;
   grand_total: number;
   pengirim: string;
   penerima: string;
@@ -87,12 +96,17 @@ interface TransaksiDetail {
   biaya_packing: number;
   biaya_amplop: number;
   biaya_lain: number;
+  pembulatan?: number;
   grand_total: number;
   setoran_ke_owner: number;
   kas_operasional: number;
   metode_bayar: string;
+  metode_bayar_tambahan?: string;
   status_resi: string;
   catatan?: string;
+  foto_paket_url?: string;
+  foto_resi_url?: string;
+  bukti_bayar_url?: string;
 }
 
 // Module-level cache & in-flight tracking to prevent duplicate fetches across rapid tab navigation
@@ -398,28 +412,30 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           tanggal_transaksi: item.tanggal_transaksi,
           jam_transaksi: item.jam_transaksi,
           tipe: item.tipe,
-          tipe_produk: item.tipe === "Cargo" ? "Cargo Standard" : "EZ",
+          tipe_produk: item.tipe === "Cargo" ? "Cargo Standard" : (item.tipe_produk || "EZ"),
           admin_id: "",
           admin_name: item.admin,
           outlet_id: "",
           outlet_name: item.outlet,
           nama_pengirim: item.pengirim,
-          hp_pengirim: "-",
+          hp_pengirim: item.hp_pengirim || "-",
           alamat_pengirim: "-",
           nama_penerima: item.penerima,
-          hp_penerima: "-",
+          hp_penerima: item.hp_penerima || "-",
           alamat_penerima: "-",
           nama_barang: item.nama_barang || "-",
           berat_kg: 1,
-          ongkir_dasar: item.grand_total,
-          biaya_asuransi: 0,
-          biaya_packing: 0,
-          biaya_amplop: 0,
-          biaya_lain: 0,
+          ongkir_dasar: item.ongkir_dasar ?? item.grand_total,
+          biaya_asuransi: item.biaya_asuransi ?? 0,
+          biaya_packing: item.biaya_packing ?? 0,
+          biaya_amplop: item.biaya_amplop ?? 0,
+          biaya_lain: item.biaya_lain ?? 0,
+          pembulatan: item.pembulatan ?? 0,
           grand_total: item.grand_total,
-          setoran_ke_owner: item.grand_total,
-          kas_operasional: 0,
-          metode_bayar: "Tunai",
+          setoran_ke_owner: item.wajib_setor_owner ?? item.grand_total,
+          kas_operasional: item.kas_operasional ?? 0,
+          metode_bayar: item.metode_bayar || "Tunai",
+          metode_bayar_tambahan: item.metode_bayar_tambahan,
           status_resi: item.status_resi
         });
       }
@@ -984,7 +1000,14 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
               </div>
               <div>
                 <span className="text-gray-400 block text-[10px] uppercase font-bold">Metode Bayar</span>
-                <span className={`font-bold ${selectedDetail.metode_bayar === 'DFOD' ? 'text-amber-700 font-black' : 'text-gray-800'}`}>{selectedDetail.metode_bayar}</span>
+                <span className={`font-bold ${selectedDetail.metode_bayar === 'DFOD' ? 'text-amber-700 font-black' : 'text-gray-800'}`}>
+                  {selectedDetail.metode_bayar}
+                </span>
+                {selectedDetail.metode_bayar_tambahan && selectedDetail.metode_bayar_tambahan !== selectedDetail.metode_bayar && (
+                  <span className="text-[10px] text-gray-500 block font-medium mt-0.5">
+                    + {selectedDetail.metode_bayar_tambahan}
+                  </span>
+                )}
               </div>
               <div>
                 <span className="text-gray-400 block text-[10px] uppercase font-bold">Status</span>
@@ -1032,7 +1055,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
             </div>
 
             {/* Barang & Biaya */}
-            <div className="bg-gray-50/70 p-4 rounded-xl border border-gray-100 space-y-3">
+            <div className="bg-gray-50/70 p-4 rounded-xl border border-gray-100 space-y-2.5">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-gray-500">Nama Barang & Berat:</span>
                 <span className="font-semibold text-gray-800">{selectedDetail.nama_barang || "Paket"} ({selectedDetail.berat_kg} Kg)</span>
@@ -1041,28 +1064,58 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                 <span className="text-gray-500">Ongkos Kirim Dasar:</span>
                 <span className="font-mono text-gray-800">Rp {Number(selectedDetail.ongkir_dasar || 0).toLocaleString("id-ID")}</span>
               </div>
-              {selectedDetail.biaya_packing > 0 && (
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-gray-500">Biaya Packing:</span>
-                  <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_packing).toLocaleString("id-ID")}</span>
-                </div>
-              )}
-              {selectedDetail.biaya_asuransi > 0 && (
+              {Number(selectedDetail.biaya_asuransi) > 0 && (
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-gray-500">Biaya Asuransi:</span>
                   <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_asuransi).toLocaleString("id-ID")}</span>
                 </div>
               )}
-              {selectedDetail.biaya_amplop > 0 && (
+              {Number(selectedDetail.biaya_lain) > 0 && (
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-500">Biaya Lain / Admin:</span>
+                  <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_lain).toLocaleString("id-ID")}</span>
+                </div>
+              )}
+              {Number(selectedDetail.biaya_packing) > 0 && (
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-500">Biaya Packing:</span>
+                  <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_packing).toLocaleString("id-ID")}</span>
+                </div>
+              )}
+              {Number(selectedDetail.biaya_amplop) > 0 && (
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-gray-500">Biaya Amplop:</span>
                   <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_amplop).toLocaleString("id-ID")}</span>
                 </div>
               )}
+              {Number(selectedDetail.pembulatan || 0) !== 0 && (
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-500">Pembulatan / Selisih:</span>
+                  <span className="font-mono text-gray-800">
+                    {Number(selectedDetail.pembulatan) > 0 ? "+" : ""}Rp {Number(selectedDetail.pembulatan).toLocaleString("id-ID")}
+                  </span>
+                </div>
+              )}
               <div className="border-t border-gray-200 pt-2 flex justify-between items-center font-bold">
-                <span className="text-sm text-gray-800">Grand Total ({selectedDetail.metode_bayar}):</span>
+                <span className="text-sm text-gray-800">
+                  Grand Total ({selectedDetail.metode_bayar}{selectedDetail.metode_bayar_tambahan && selectedDetail.metode_bayar_tambahan !== selectedDetail.metode_bayar ? ` + ${selectedDetail.metode_bayar_tambahan}` : ""}):
+                </span>
                 <span className="text-base text-[#E4002B] font-mono">Rp {Number(selectedDetail.grand_total || 0).toLocaleString("id-ID")}</span>
               </div>
+
+              {/* Breakdown Setoran Owner & Kas Outlet */}
+              {(selectedDetail.setoran_ke_owner > 0 || selectedDetail.kas_operasional > 0) && (
+                <div className="mt-2 pt-2 border-t border-dashed border-gray-200 grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="bg-white p-2 rounded-lg border border-gray-100">
+                    <span className="text-gray-400 block text-[10px] uppercase font-bold">Wajib Setor Owner</span>
+                    <span className="font-mono font-bold text-gray-800">Rp {Number(selectedDetail.setoran_ke_owner || 0).toLocaleString("id-ID")}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-gray-100">
+                    <span className="text-gray-400 block text-[10px] uppercase font-bold">Kas Outlet / Tambahan</span>
+                    <span className="font-mono font-bold text-emerald-700">Rp {Number(selectedDetail.kas_operasional || 0).toLocaleString("id-ID")}</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end pt-2">

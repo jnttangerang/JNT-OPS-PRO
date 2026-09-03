@@ -132,27 +132,19 @@ export function calculateFinancialSummary(tx: any): any {
   const isDfod = String(paymentMethod).trim().toUpperCase().includes("DFOD");
 
   // Pure inputs
-  const hasYoyiData = tx.ongkir_yoyi !== undefined || tx.biaya_lain_yoyi !== undefined;
-  
-  let ongkir_customer = safeNum(tx.ongkir_yoyi ?? tx.ongkir_customer ?? tx.ongkir_dasar ?? tx.biaya_kirim ?? tx.biaya_ongkir ?? tx.ongkir);
-  const asuransi = safeNum(tx.asuransi ?? tx.biaya_asuransi);
-  let biaya_lain = safeNum(tx.biaya_lain);
+  let ongkir_customer = safeNum(tx.ongkir_customer ?? tx.ongkir_dasar ?? tx.ongkir ?? tx.biaya_kirim ?? tx.biaya_ongkir ?? tx.ongkir_yoyi);
+  const asuransi = safeNum(tx.biaya_asuransi ?? tx.asuransi);
+  let biaya_lain = safeNum(tx.biaya_lain !== undefined && tx.biaya_lain !== null && tx.biaya_lain !== "" ? tx.biaya_lain : tx.biaya_lain_yoyi);
 
-  if (hasYoyiData) {
-    biaya_lain = safeNum(tx.biaya_lain_yoyi ?? 0);
-  } else {
-    const rawBiayaLain = safeNum(tx.biaya_lain);
-    biaya_lain = rawBiayaLain;
-    if (isDoc && biaya_lain === 0) {
-      const refWajibSetor = safeNum(tx.wajib_setor_owner ?? tx.setoran_ke_owner ?? tx.setoran_owner ?? 0);
-      const currentSum = ongkir_customer + asuransi;
-      if (refWajibSetor > 0) {
-        if (currentSum + 1000 === refWajibSetor) {
-          biaya_lain = 1000;
-        }
-      } else {
+  if (isDoc && biaya_lain === 0) {
+    const refWajibSetor = safeNum(tx.wajib_setor_owner ?? tx.setoran_ke_owner ?? tx.setoran_owner ?? 0);
+    const currentSum = ongkir_customer + asuransi;
+    if (refWajibSetor > 0) {
+      if (currentSum + 1000 === refWajibSetor) {
         biaya_lain = 1000;
       }
+    } else {
+      biaya_lain = 1000;
     }
   }
 

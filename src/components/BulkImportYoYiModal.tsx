@@ -40,6 +40,7 @@ interface ParsedRow {
   kode_outlet: string;
   tipe_produk: string;
   metode_bayar: string;
+  metode_bayar_tambahan?: string;
   
   // Validation State
   is_valid: boolean;
@@ -58,6 +59,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
+  const [metodeBayarTambahanDefault, setMetodeBayarTambahanDefault] = useState<string>("QRIS");
   
   // Summary
   const totalRows = parsedData.length;
@@ -182,6 +184,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         const tipeAsuransi = getColValue(row, ["Tipe Asuransi", "Asuransi Tipe", "Jenis Asuransi"]);
         const tipeProduk = getColValue(row, ["Tipe Produk", "Tipe", "Layanan", "Jenis Layanan"]);
         const rawMetode = getColValue(row, ["Metode Pembayaran", "Pembayaran", "Metode Bayar", "Payment Method", "Tipe Pembayaran", "Cara Bayar"]);
+        const rawMetodeTambahan = getColValue(row, ["Metode Bayar Tambahan", "Metode Pembayaran Tambahan", "Cara Bayar Tambahan", "Payment Method Tambahan", "Metode Tambahan"]);
         const isDfodDetected = String(rawMetode).toUpperCase().includes("DFOD") || String(tipeProduk).toUpperCase().includes("DFOD") || String(sumber).toUpperCase().includes("DFOD");
         const metodeBayar = isDfodDetected ? "DFOD" : (rawMetode || "Tunai");
         
@@ -242,6 +245,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
           mapped_outlet_id,
           tipe_produk: String(tipeProduk).trim() || "EZ",
           metode_bayar: String(metodeBayar).trim(),
+          metode_bayar_tambahan: rawMetodeTambahan ? String(rawMetodeTambahan).trim() : undefined,
           is_valid: !is_skipped,
           is_duplicate: false,
           is_skipped,
@@ -315,6 +319,11 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
       const biayaPacking = 0;
       const biayaLain = (isDoc && row.biaya_lain === 0) ? 1000 : row.biaya_lain;
 
+      const metodeBayarOngkir = isDfod ? "DFOD" : (row.metode_bayar || "Tunai");
+      const resolvedMetodeTambahan = row.metode_bayar_tambahan || 
+        (metodeBayarTambahanDefault === "IKUT_ONGKIR" ? (isDfod ? "Tunai" : metodeBayarOngkir) : metodeBayarTambahanDefault) || 
+        "QRIS";
+
       const summary = calculateFinancialSummary({
         ...row,
         ongkir_dasar: row.ongkir,
@@ -322,8 +331,12 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         biaya_lain: biayaLain,
         biaya_amplop: biayaAmplop,
         biaya_packing: biayaPacking,
-        metode_bayar: isDfod ? "DFOD" : (row.metode_bayar || "Tunai")
+        pembulatan: 0,
+        metode_bayar: metodeBayarOngkir,
+        metode_bayar_tambahan: resolvedMetodeTambahan
       });
+
+      const setoranKeOwner = isDfod ? 0 : summary.owner_deposit;
       
       let resolvedAdminId = adminId;
       if (row.operator && users && users.length > 0) {
@@ -348,10 +361,15 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         biaya_lain: biayaLain,
         biaya_amplop: biayaAmplop,
         biaya_packing: biayaPacking,
-        metode_bayar_ongkir: isDfod ? "DFOD" : (row.metode_bayar || "Tunai"),
-        jumlah_dibayar_customer: isDfod ? 0 : (Number(row.ongkir || 0) + Number(row.asuransi || 0) + biayaLain),
+        metode_bayar: metodeBayarOngkir,
+        metode_bayar_ongkir: metodeBayarOngkir,
+        metode_pembayaran_ongkir: metodeBayarOngkir,
+        metode_bayar_tambahan: resolvedMetodeTambahan,
+        metode_pembayaran_tambahan: resolvedMetodeTambahan,
+        pembulatan: summary.rounding || 0,
+        jumlah_dibayar_customer: isDfod ? 0 : (Number(row.ongkir || 0) + Number(row.asuransi || 0) + biayaLain + (summary.rounding || 0)),
         grand_total: summary.customer_payment,
-        setoran_ke_owner: summary.owner_deposit,
+        setoran_ke_owner: setoranKeOwner,
         kas_operasional: summary.outlet_cash,
         kas_outlet: summary.outlet_cash,
         nama_pengirim: row.pengirim,
@@ -480,11 +498,34 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
                 </div>
               </div>
 
+              {/* Settings and Options */}
+              <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold text-amber-900">Metode Bayar Tambahan (Amplop / Packing)</p>
+                  <p className="text-[11px] text-amber-700">Pilih metode pembayaran default untuk biaya amplop dokumen & packing:</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={metodeBayarTambahanDefault}
+                    onChange={(e) => setMetodeBayarTambahanDefault(e.target.value)}
+                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-bold text-gray-800 shadow-xs focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                  >
+                    <option value="QRIS">QRIS (Default)</option>
+                    <option value="Tunai">Tunai (Cash)</option>
+                    <option value="Transfer">Transfer Bank</option>
+                    <option value="IKUT_ONGKIR">Sama dengan Metode Ongkir</option>
+                  </select>
+                </div>
+              </div>
+
               {/* Preview Table */}
               <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center gap-2">
-                  <TableIcon className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm font-bold text-gray-800">Data Preview (50 Baris Pertama)</span>
+                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <TableIcon className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm font-bold text-gray-800">Data Preview (50 Baris Pertama)</span>
+                  </div>
+                  <span className="text-xs text-gray-500 font-medium">Metode Tambahan: <span className="font-bold text-indigo-600 font-mono">{metodeBayarTambahanDefault}</span></span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs whitespace-nowrap">
@@ -494,10 +535,11 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
                         <th className="px-4 py-3 font-semibold">No Resi</th>
                         <th className="px-4 py-3 font-semibold">Tanggal</th>
                         <th className="px-4 py-3 font-semibold">Outlet</th>
-                        <th className="px-4 py-3 font-semibold">Sumber</th>
+                        <th className="px-4 py-3 font-semibold">Layanan</th>
+                        <th className="px-4 py-3 font-semibold">Metode Ongkir</th>
+                        <th className="px-4 py-3 font-semibold">Metode Tambahan</th>
+                        <th className="px-4 py-3 font-semibold">Ongkir</th>
                         <th className="px-4 py-3 font-semibold">Operator</th>
-                        <th className="px-4 py-3 font-semibold">Customer (Pengirim)</th>
-                        <th className="px-4 py-3 font-semibold">Financial (Ongkir)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
@@ -517,17 +559,21 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
                           <td className="px-4 py-3 font-mono font-bold text-gray-800">{row.resi_id}</td>
                           <td className="px-4 py-3 text-gray-600">{row.tanggal_transaksi}</td>
                           <td className="px-4 py-3 text-gray-600">{row.mapped_outlet_id}</td>
-                          <td className="px-4 py-3 text-gray-600">{row.sumber}</td>
-                          <td className="px-4 py-3 text-gray-600 font-semibold">{row.operator || "-"}</td>
+                          <td className="px-4 py-3 text-gray-600 font-semibold">{row.tipe_produk}</td>
                           <td className="px-4 py-3">
-                            <div className="flex flex-col">
-                              <span className="font-semibold text-gray-800">{row.pengirim}</span>
-                              <span className="text-[10px] text-gray-500">{row.hp_pengirim}</span>
-                            </div>
+                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold text-[11px]">
+                              {row.metode_bayar}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-semibold text-[11px]">
+                              {row.metode_bayar_tambahan || (metodeBayarTambahanDefault === "IKUT_ONGKIR" ? row.metode_bayar : metodeBayarTambahanDefault)}
+                            </span>
                           </td>
                           <td className="px-4 py-3 font-mono font-bold text-gray-800">
                             Rp {row.ongkir.toLocaleString("id-ID")}
                           </td>
+                          <td className="px-4 py-3 text-gray-600 font-semibold">{row.operator || "-"}</td>
                         </tr>
                       ))}
                     </tbody>

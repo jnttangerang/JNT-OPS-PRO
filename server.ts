@@ -799,6 +799,8 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
   jumlah_dibayar_customer?: number;
   ongkir_yoyi?: number;
   asuransi?: number;
+  biaya_asuransi?: number;
+  pembulatan?: number;
   biaya_lain_yoyi?: number;
   wajib_setor_owner?: number;
   kas_outlet?: number;
@@ -894,10 +896,16 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
     if (params.ongkir_customer !== undefined) existingTx.ongkir_customer = Number(params.ongkir_customer);
     if (params.packing !== undefined) existingTx.packing = Number(params.packing);
     if (params.amplop !== undefined) existingTx.amplop = Number(params.amplop);
+    if (params.biaya_packing !== undefined) existingTx.biaya_packing = Number(params.biaya_packing);
+    if (params.biaya_amplop !== undefined) existingTx.biaya_amplop = Number(params.biaya_amplop);
     if (params.biaya_lain !== undefined) existingTx.biaya_lain = Number(params.biaya_lain);
     if (params.total_customer !== undefined) existingTx.total_customer = Number(params.total_customer);
+    if (params.jumlah_dibayar_customer !== undefined) existingTx.jumlah_dibayar_customer = Number(params.jumlah_dibayar_customer);
     if (params.ongkir_yoyi !== undefined) existingTx.ongkir_yoyi = Number(params.ongkir_yoyi);
     if (params.asuransi !== undefined) existingTx.asuransi = Number(params.asuransi);
+    if (params.biaya_asuransi !== undefined) existingTx.biaya_asuransi = Number(params.biaya_asuransi);
+    if (params.pembulatan !== undefined) existingTx.pembulatan = Number(params.pembulatan);
+    if (params.metode_pembayaran_tambahan) existingTx.metode_pembayaran_tambahan = params.metode_pembayaran_tambahan;
     if (params.biaya_lain_yoyi !== undefined) existingTx.biaya_lain_yoyi = Number(params.biaya_lain_yoyi);
     if (params.wajib_setor_owner !== undefined) existingTx.wajib_setor_owner = Number(params.wajib_setor_owner);
     if (params.kas_outlet !== undefined) existingTx.kas_outlet = Number(params.kas_outlet);
@@ -940,13 +948,20 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
       nilai_barang: Number(params.nilai_barang) || 0,
       jumlah_paket: Number(params.jumlah_paket) || 1,
       metode_bayar: params.metode_bayar || "",
+      metode_pembayaran_ongkir: params.metode_pembayaran_ongkir || params.metode_bayar || "",
+      metode_pembayaran_tambahan: params.metode_pembayaran_tambahan || "",
       ongkir_customer: Number(params.ongkir_customer) || 0,
-      packing: Number(params.packing) || 0,
-      amplop: Number(params.amplop) || 0,
+      packing: Number(params.packing || params.biaya_packing) || 0,
+      amplop: Number(params.amplop || params.biaya_amplop) || 0,
+      biaya_packing: Number(params.biaya_packing || params.packing) || 0,
+      biaya_amplop: Number(params.biaya_amplop || params.amplop) || 0,
       biaya_lain: Number(params.biaya_lain) || 0,
       total_customer: Number(params.total_customer) || 0,
+      jumlah_dibayar_customer: Number(params.jumlah_dibayar_customer) || 0,
       ongkir_yoyi: Number(params.ongkir_yoyi) || 0,
-      asuransi: Number(params.asuransi) || 0,
+      asuransi: Number(params.asuransi || params.biaya_asuransi) || 0,
+      biaya_asuransi: Number(params.biaya_asuransi || params.asuransi) || 0,
+      pembulatan: Number(params.pembulatan) || 0,
       biaya_lain_yoyi: Number(params.biaya_lain_yoyi) || 0,
       wajib_setor_owner: Number(params.wajib_setor_owner) || 0,
       kas_outlet: Number(params.kas_outlet) || 0,
@@ -2790,6 +2805,8 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
     const isDoc = isDocumentTransaction(data);
     const metodeBayarOngkir = data.metode_pembayaran_ongkir || data.metode_bayar || data.metode_bayar_ongkir || "Tunai";
     const metodeBayarTambahan = data.metode_pembayaran_tambahan || data.metode_bayar_tambahan || "";
+    const isDfod = String(metodeBayarOngkir).toUpperCase().includes("DFOD");
+
     let biayaAmplop = Number(data.biaya_amplop ?? data.biayaAmplop ?? data.amplop) || 0;
     if (isDoc && biayaAmplop === 0) {
       biayaAmplop = 2000;
@@ -2799,10 +2816,27 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       biayaLain = 1000;
     }
     const biayaPacking = Number(data.biaya_packing ?? data.biayaPacking ?? data.packing) || 0;
-    const jumlahDibayarCustomer = Number(data.jumlah_dibayar_customer ?? data.total_dibayar_customer ?? data.jumlah_dibayar ?? data.grand_total) || 0;
-    const grandTotal = Number(data.grand_total ?? data.total_dibayar_customer ?? data.jumlah_dibayar_customer) || 0;
-    const setoranKeOwner = Number(data.setoran_ke_owner) || 0;
-    const kasOperasional = Number(data.kas_operasional ?? data.kas_outlet) || (biayaAmplop + biayaPacking);
+    const biayaAsuransi = Number(data.biaya_asuransi ?? data.asuransi) || 0;
+    const ongkirDasar = Number(data.ongkir_dasar ?? data.ongkir_customer ?? data.ongkir) || 0;
+    const pembulatan = Number(data.pembulatan) || 0;
+
+    // Financial Engine SSOT
+    const summary = calculateFinancialSummary({
+      ...data,
+      ongkir_dasar: ongkirDasar,
+      biaya_asuransi: biayaAsuransi,
+      biaya_lain: biayaLain,
+      biaya_amplop: biayaAmplop,
+      biaya_packing: biayaPacking,
+      pembulatan: pembulatan,
+      metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
+      metode_bayar_tambahan: metodeBayarTambahan
+    });
+
+    const setoranKeOwner = isDfod ? 0 : (data.setoran_ke_owner !== undefined && Number(data.setoran_ke_owner) > 0 ? Number(data.setoran_ke_owner) : summary.owner_deposit);
+    const grandTotal = Number(data.grand_total) || summary.customer_payment;
+    const jumlahDibayarCustomer = Number(data.jumlah_dibayar_customer) || (isDfod ? 0 : summary.customer_payment);
+    const kasOperasional = Number(data.kas_operasional ?? data.kas_outlet) || summary.outlet_cash;
 
     const transId = data.transaksi_id || ("TRX-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5));
     const outletId = data.outlet_id_input || data.activeOutletId || data.outlet_id;
@@ -2998,19 +3032,21 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         berat_barang: Number(data.berat_kg) || Number(pre?.berat_kg) || 0,
         volume_barang: data.volume || pre?.volume || "0 x 0 x 0",
         nilai_barang: Number(data.nilai_barang) || Number(pre?.nilai_barang) || 0,
-        metode_bayar: metodeBayarOngkir,
-        metode_pembayaran_ongkir: metodeBayarOngkir,
+        metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
+        metode_pembayaran_ongkir: isDfod ? "DFOD" : metodeBayarOngkir,
         metode_pembayaran_tambahan: metodeBayarTambahan,
-        ongkir_customer: Number(data.ongkir_dasar) || 0,
+        ongkir_customer: ongkirDasar,
         packing: biayaPacking,
         amplop: biayaAmplop,
         biaya_packing: biayaPacking,
         biaya_amplop: biayaAmplop,
-        biaya_lain: Number(data.biaya_lain) || 0,
-        total_customer: jumlahDibayarCustomer || grandTotal,
+        biaya_lain: biayaLain,
+        total_customer: grandTotal,
         jumlah_dibayar_customer: jumlahDibayarCustomer,
         ongkir_yoyi: Number(data.biaya_yoyi) || 0,
-        asuransi: Number(data.biaya_asuransi) || 0,
+        asuransi: biayaAsuransi,
+        biaya_asuransi: biayaAsuransi,
+        pembulatan: pembulatan,
         biaya_lain_yoyi: Number(data.biaya_jtc) || 0,
         wajib_setor_owner: setoranKeOwner,
         kas_outlet: kasOperasional,
@@ -3032,8 +3068,8 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-207" || k.kategori_id === "KAT-102" || k.deskripsi?.includes("Packing"))
       );
       if (!hasPacking) {
-        const mBayar = (data.metode_bayar || data.metode_pembayaran_ongkir || data.metode_bayar_ongkir || "").toUpperCase();
-        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
+        const mBayar = (data.metode_pembayaran_tambahan || data.metode_bayar_tambahan || data.metode_bayar || data.metode_pembayaran_ongkir || data.metode_bayar_ongkir || "").toUpperCase();
+        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP";
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now()}-P`,
           tanggal: txDateStr,
@@ -3057,8 +3093,8 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-208" || k.kategori_id === "KAT-103" || k.deskripsi?.includes("Amplop"))
       );
       if (!hasAmplop) {
-        const mBayar = (data.metode_bayar || data.metode_pembayaran_ongkir || data.metode_bayar_ongkir || "").toUpperCase();
-        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
+        const mBayar = (data.metode_pembayaran_tambahan || data.metode_bayar_tambahan || data.metode_bayar || data.metode_pembayaran_ongkir || data.metode_bayar_ongkir || "").toUpperCase();
+        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP";
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now() + 1}-A`,
           tanggal: txDateStr,
@@ -3199,22 +3235,38 @@ app.post("/api/importYoYi", async (req, res) => {
   if (isDoc && biayaLain === 0) {
     biayaLain = 1000;
   }
-  const metodeBayarOngkir = input.metode_bayar_ongkir || "Tunai";
-  
-  const biayaDasarLayanan = ongkirDasar + biayaAsuransi + biayaLain;
-  const biayaDitagihkan = metodeBayarOngkir === "DFOD" ? 0 : biayaDasarLayanan;
-  const jumlahDibayar = Number(input.jumlah_dibayar) || 0;
-  const pembulatan = jumlahDibayar > 0 ? (jumlahDibayar - biayaDitagihkan) : 0;
+  const metodeBayarOngkir = input.metode_bayar_ongkir || input.metode_bayar || parsed.metode_bayar || "Tunai";
+  const metodeBayarTambahan = input.metode_bayar_tambahan || input.metode_pembayaran_tambahan || "QRIS";
+  const isDfod = String(metodeBayarOngkir).toUpperCase().includes("DFOD");
+
   let biayaAmplop = Number(input.biaya_amplop) || 0;
   if (isDoc && biayaAmplop === 0) {
     biayaAmplop = 2000;
   }
   const biayaPacking = Number(input.biaya_packing) || 0;
   const biayaTambahan = biayaAmplop + biayaPacking;
-  
-  const grandTotal = biayaDitagihkan + pembulatan + biayaTambahan;
-  const setoranOwner = biayaDitagihkan + pembulatan;
-  const kasOperasional = biayaTambahan;
+  const jumlahDibayar = Number(input.jumlah_dibayar) || 0;
+  const biayaDasarLayanan = ongkirDasar + biayaAsuransi + biayaLain;
+  const biayaDitagihkan = isDfod ? 0 : biayaDasarLayanan;
+  const pembulatan = Number(input.pembulatan) || (jumlahDibayar > 0 ? (jumlahDibayar - biayaDitagihkan) : 0);
+
+  // Financial Engine SSOT
+  const summary = calculateFinancialSummary({
+    ...parsed,
+    ...input,
+    ongkir_dasar: ongkirDasar,
+    biaya_asuransi: biayaAsuransi,
+    biaya_lain: biayaLain,
+    biaya_amplop: biayaAmplop,
+    biaya_packing: biayaPacking,
+    pembulatan: pembulatan,
+    metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
+    metode_bayar_tambahan: metodeBayarTambahan
+  });
+
+  const grandTotal = summary.customer_payment;
+  const setoranOwner = isDfod ? 0 : summary.owner_deposit;
+  const kasOperasional = summary.outlet_cash;
 
   // 1. Create PreInput_Backup record so that Riwayat Transaksi and Customer joins work
   const preBackup = {
@@ -3261,13 +3313,15 @@ app.post("/api/importYoYi", async (req, res) => {
     biaya_asuransi: biayaAsuransi,
     ongkir_dasar: ongkirDasar,
     biaya_yoyi: Number(parsed.total_yoyi) || 0,
-    total_dibayar_customer: jumlahDibayar,
+    total_dibayar_customer: isDfod ? 0 : (jumlahDibayar || grandTotal),
     pembulatan,
-    metode_bayar: metodeBayarOngkir,
+    metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
+    metode_pembayaran_ongkir: isDfod ? "DFOD" : metodeBayarOngkir,
     bukti_bayar_url: "",
     biaya_amplop: biayaAmplop,
     biaya_packing: biayaPacking,
-    metode_bayar_tambahan: input.metode_bayar_tambahan || "Tunai",
+    metode_bayar_tambahan: metodeBayarTambahan,
+    metode_pembayaran_tambahan: metodeBayarTambahan,
     bukti_tambahan_url: "",
     grand_total: grandTotal,
     setoran_ke_owner: setoranOwner,
@@ -3312,14 +3366,21 @@ app.post("/api/importYoYi", async (req, res) => {
     berat_barang: Number(parsed.berat_kg) || 0,
     volume_barang: "0 x 0 x 0",
     nilai_barang: 0,
-    metode_bayar: metodeBayarOngkir,
+    metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
+    metode_pembayaran_ongkir: isDfod ? "DFOD" : metodeBayarOngkir,
+    metode_pembayaran_tambahan: metodeBayarTambahan,
     ongkir_customer: ongkirDasar,
     packing: biayaPacking,
     amplop: biayaAmplop,
+    biaya_packing: biayaPacking,
+    biaya_amplop: biayaAmplop,
     biaya_lain: biayaLain,
-    total_customer: jumlahDibayar || grandTotal,
+    total_customer: grandTotal,
+    jumlah_dibayar_customer: isDfod ? 0 : (jumlahDibayar || grandTotal),
     ongkir_yoyi: Number(parsed.total_yoyi) || 0,
     asuransi: biayaAsuransi,
+    biaya_asuransi: biayaAsuransi,
+    pembulatan: pembulatan,
     biaya_lain_yoyi: 0,
     wajib_setor_owner: setoranOwner,
     kas_outlet: kasOperasional,
@@ -3328,6 +3389,44 @@ app.post("/api/importYoYi", async (req, res) => {
     status_transaksi: "SELESAI",
     sumber_data: "YoYi Import"
   });
+
+  // 4b. Auto-record to KeuanganOutlet for Packing and Amplop
+  if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
+  const isAddDigital = (metodeBayarTambahan === "QRIS" || metodeBayarTambahan === "TRANSFER" || metodeBayarTambahan === "APP" || metodeBayarTambahan === "ORDER BY APP");
+  if (biayaPacking > 0) {
+    db.KeuanganOutlet.unshift({
+      id: `KNG-${Date.now()}-YY-P`,
+      tanggal: txDate,
+      outlet_id: outletId,
+      jenis: "PEMASUKAN",
+      kategori_id: "KAT-207",
+      nominal: biayaPacking,
+      deskripsi: `Biaya Packing untuk resi YoYi ${rid}`,
+      bukti_url: "",
+      dibuat_oleh: adminId,
+      created_at: timestamp,
+      aktif: true,
+      resi_id: rid,
+      lokasi_uang: isAddDigital ? "OWNER" : "ADMIN"
+    });
+  }
+  if (biayaAmplop > 0) {
+    db.KeuanganOutlet.unshift({
+      id: `KNG-${Date.now() + 1}-YY-A`,
+      tanggal: txDate,
+      outlet_id: outletId,
+      jenis: "PEMASUKAN",
+      kategori_id: "KAT-208",
+      nominal: biayaAmplop,
+      deskripsi: `Biaya Amplop untuk resi YoYi ${rid}`,
+      bukti_url: "",
+      dibuat_oleh: adminId,
+      created_at: timestamp,
+      aktif: true,
+      resi_id: rid,
+      lokasi_uang: isAddDigital ? "OWNER" : "ADMIN"
+    });
+  }
 
   writeDb(db);
 
@@ -4586,6 +4685,14 @@ app.post("/api/getRiwayatTransaksi", async (req, res) => {
 
     const seenKeys = new Set<string>();
 
+    const formatWibImportedAt = (raw?: string) => {
+      if (!raw) return undefined;
+      if (raw.includes("Z") || (raw.includes("T") && raw.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/))) {
+        return `${getWIBDate(raw)} ${getWIBTime(raw)}`;
+      }
+      return raw;
+    };
+
     const transaksiList = filtered.map((tx: any) => {
       const sum = calculateFinancialSummary(tx);
       const txId = tx.id || tx.transaksi_id || "";
@@ -4602,7 +4709,8 @@ app.post("/api/getRiwayatTransaksi", async (req, res) => {
       const txTime = tx.jam_transaksi || p?.jam_transaksi || tx.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
       const displayTime = `${txDate} ${txTime}`;
       const txTimestamp = `${txDate}T${txTime}`;
-      const importedAt = tx.imported_at || p?.imported_at || tx.created_at || tx.timestamp;
+      const rawImported = tx.imported_at || p?.imported_at || tx.created_at || tx.timestamp;
+      const importedAt = formatWibImportedAt(rawImported);
 
       const txOutlet = tx.outlet_id || tx.outlet_id_input || tx.outlet_id_tugas || "";
       const txAdmin = tx.admin_id || tx.admin_pembuat || tx.user_id || tx.admin_id_pencatat || "";
@@ -4621,6 +4729,15 @@ app.post("/api/getRiwayatTransaksi", async (req, res) => {
         tipe_produk: tipeProduk,
         jenis_barang: jenisBarang,
         metode_bayar: metodeBayar,
+        metode_bayar_tambahan: tx.metode_pembayaran_tambahan || tx.metode_bayar_tambahan || "",
+        ongkir_dasar: Number(tx.ongkir_customer || tx.ongkir_dasar || 0),
+        biaya_asuransi: Number(tx.asuransi || tx.biaya_asuransi || 0),
+        biaya_lain: Number(tx.biaya_lain || 0),
+        biaya_amplop: Number(tx.biaya_amplop || tx.amplop || 0),
+        biaya_packing: Number(tx.biaya_packing || tx.packing || 0),
+        pembulatan: Number(tx.pembulatan || 0),
+        wajib_setor_owner: Number(tx.wajib_setor_owner || sum.owner_deposit || 0),
+        kas_operasional: Number(tx.kas_outlet || sum.outlet_cash || 0),
         grand_total: sum.customer_payment || Number(tx.total_customer) || Number(tx.grand_total) || Number(tx.jumlah_dibayar_customer) || 0,
         pengirim: tx.snapshot_nama_pengirim || tx.nama_pengirim || tx.pengirim || p?.nama_pengirim || "",
         penerima: tx.snapshot_nama_penerima || tx.nama_penerima || tx.penerima || p?.nama_penerima || "",
@@ -4853,7 +4970,42 @@ app.post("/api/getDetailTransaksi", (req, res) => {
   const txDate = extractBusinessDate(masterTx) || extractBusinessDate(pre) || extractBusinessDate(resiObj) || getTodayWIB();
   const txTime = masterTx?.jam_transaksi || pre?.jam_transaksi || resiObj?.jam_transaksi || masterTx?.timestamp?.split("T")[1]?.slice(0, 8) || resiObj?.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
   const displayTime = `${txDate} ${txTime}`;
-  const importedAt = masterTx?.imported_at || resiObj?.imported_at || pre?.imported_at || masterTx?.created_at || resiObj?.timestamp || pre?.timestamp;
+  const rawImported = masterTx?.imported_at || resiObj?.imported_at || pre?.imported_at;
+  const importedAt = rawImported 
+    ? ((rawImported.includes("Z") || (rawImported.includes("T") && rawImported.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/))) ? `${getWIBDate(rawImported)} ${getWIBTime(rawImported)}` : rawImported)
+    : undefined;
+
+  const isDoc = isDocumentTransaction(masterTx || resiObj || pre);
+  const ongkirDasar = Number(resiObj?.ongkir_dasar ?? masterTx?.ongkir_customer ?? 0);
+  const biayaAsuransi = Number(resiObj?.biaya_asuransi ?? masterTx?.asuransi ?? masterTx?.biaya_asuransi ?? 0);
+  const rawBiayaLain = Number(resiObj?.biaya_lain ?? masterTx?.biaya_lain ?? 0);
+  const biayaLain = (isDoc && rawBiayaLain === 0) ? 1000 : rawBiayaLain;
+  let biayaAmplop = Number(resiObj?.biaya_amplop ?? masterTx?.amplop ?? masterTx?.biaya_amplop ?? 0);
+  if (isDoc && biayaAmplop === 0) {
+    biayaAmplop = 2000;
+  }
+  const biayaPacking = Number(resiObj?.biaya_packing ?? masterTx?.packing ?? masterTx?.biaya_packing ?? 0);
+  const pembulatan = Number(resiObj?.pembulatan ?? masterTx?.pembulatan ?? 0);
+  const metodeBayar = resiObj?.metode_bayar || masterTx?.metode_bayar || "Tunai";
+  const metodeBayarTambahan = resiObj?.metode_bayar_tambahan || resiObj?.metode_pembayaran_tambahan || masterTx?.metode_pembayaran_tambahan || "";
+  const isDfod = String(metodeBayar).toUpperCase().includes("DFOD");
+
+  const summary = calculateFinancialSummary({
+    ...(masterTx || {}),
+    ...(resiObj || {}),
+    ongkir_dasar: ongkirDasar,
+    biaya_asuransi: biayaAsuransi,
+    biaya_lain: biayaLain,
+    biaya_amplop: biayaAmplop,
+    biaya_packing: biayaPacking,
+    pembulatan: pembulatan,
+    metode_bayar: isDfod ? "DFOD" : metodeBayar,
+    metode_bayar_tambahan: metodeBayarTambahan
+  });
+
+  const grandTotal = Number(resiObj?.grand_total ?? masterTx?.total_customer) || summary.customer_payment;
+  const setoranKeOwner = isDfod ? 0 : (Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner) > ongkirDasar ? Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner) : summary.owner_deposit);
+  const kasOperasional = Number(resiObj?.kas_operasional ?? masterTx?.kas_outlet) || summary.outlet_cash;
 
   const detail = {
     resi_id: resiObj?.resi_id || masterTx?.no_resi || resi_id || "",
@@ -4878,15 +5030,17 @@ app.post("/api/getDetailTransaksi", (req, res) => {
     jenis_barang: masterTx?.jenis_barang || pre?.jenis_barang || (resiObj as any)?.jenis_barang || (masterTx?.tipe_produk === "DOC" || resiObj?.tipe_produk === "DOC" ? "DOKUMEN" : "BARANG"),
     nama_barang: (masterTx?.nama_barang && masterTx.nama_barang !== "Paket" && masterTx.nama_barang !== "Paket Standard" ? masterTx.nama_barang : (pre?.nama_barang || masterTx?.nama_barang || "")),
     berat_kg: Number(resiObj?.berat_kg ?? pre?.berat_kg ?? masterTx?.berat_barang ?? 1),
-    ongkir_dasar: Number(resiObj?.ongkir_dasar ?? masterTx?.ongkir_customer ?? 0),
-    biaya_asuransi: Number(resiObj?.biaya_asuransi ?? masterTx?.asuransi ?? 0),
-    biaya_packing: Number(resiObj?.biaya_packing ?? masterTx?.packing ?? 0),
-    biaya_amplop: Number(resiObj?.biaya_amplop ?? masterTx?.amplop ?? 0),
-    biaya_lain: Number(resiObj?.biaya_lain ?? masterTx?.biaya_lain ?? 0),
-    grand_total: Number(resiObj?.grand_total ?? masterTx?.total_customer ?? 0),
-    setoran_ke_owner: Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner ?? 0),
-    kas_operasional: Number(resiObj?.kas_operasional ?? masterTx?.kas_outlet ?? 0),
-    metode_bayar: resiObj?.metode_bayar || masterTx?.metode_bayar || "Tunai",
+    ongkir_dasar: ongkirDasar,
+    biaya_asuransi: biayaAsuransi,
+    biaya_packing: biayaPacking,
+    biaya_amplop: biayaAmplop,
+    biaya_lain: biayaLain,
+    pembulatan: pembulatan,
+    grand_total: grandTotal,
+    setoran_ke_owner: setoranKeOwner,
+    kas_operasional: kasOperasional,
+    metode_bayar: isDfod ? "DFOD" : metodeBayar,
+    metode_bayar_tambahan: metodeBayarTambahan,
     status_resi: resiObj?.status || resiObj?.status_resi || masterTx?.status || "AKTIF",
     catatan: pre?.catatan_admin || masterTx?.catatan || "",
     foto_paket_url: pre?.foto_paket_url || resiObj?.foto_paket_url || masterTx?.foto_barang || "",
