@@ -1,64 +1,190 @@
-const fakeUsers = [
-  { user_id: "USR-003", username: "admin1", nama_lengkap: "FITRI FAJRIA" },
-  { user_id: "USR-005", username: "admin3", nama_lengkap: "RISKA AMUDIA" },
-];
+import { generateClosingId, validateDailyClosing } from "./src/lib/dailyClosingEngine.js";
+import type { ActorInfo, DailyClosingRecord } from "./src/lib/dailyClosingEngine.js";
 
-function isResolvedUserId(id: string, users: any[]): boolean {
-  return users.some((u: any) => u.user_id === id);
+function getDailyClosingRecord(db: any, outletId: string, tanggal: string) {
+  const list = db.DailyClosing || [];
+  const closingId = generateClosingId(outletId, tanggal);
+  const found = list.find((item: any) => item.closing_id === closingId || (item.outlet_id === outletId && item.tanggal === tanggal));
+  return found || null;
 }
 
-function resolveAdmin(tx: any, localTx: any, users: any[]): string {
-  const rawAdmin = tx.admin_id_pencatat || tx.admin_id || tx.admin || tx.user_id || tx.dibuat_oleh || tx.admin_pembuat || tx.created_by;
-  let finalAdminId = rawAdmin;
-  
-  if (rawAdmin && String(rawAdmin).trim() !== "" && rawAdmin !== "SYSTEM") {
-    const cleanAdmin = String(rawAdmin).trim();
-    const matchedUser = (users || []).find((u: any) => 
-      u.user_id === cleanAdmin || 
-      u.username === cleanAdmin || 
-      (u.nama_lengkap && u.nama_lengkap.trim().toUpperCase() === cleanAdmin.toUpperCase())
-    );
-    if (matchedUser) {
-      finalAdminId = matchedUser.user_id;
+export function getDailyClosingStatus(db: any, outletId: string, tanggal: string) {
+  const existing = getDailyClosingRecord(db, outletId, tanggal);
+  const dummyActor: ActorInfo = { actor_id: "SYSTEM", actor_role: "SYSTEM" };
+
+  if (existing && existing.status === "CLOSED") {
+    const closingId = generateClosingId(outletId, tanggal);
+    const dbClone = { ...db };
+    dbClone.DailyClosing = (db.DailyClosing || []).filter((r: any) => r.closing_id !== closingId);
+    if (db.DailyClosings) {
+      dbClone.DailyClosings = dbClone.DailyClosing;
     }
+
+    const valRes = validateDailyClosing(dbClone, { outlet_id: outletId, tanggal, actor: dummyActor }, { isDryRun: true });
+
+    if (valRes.status === "error" || !valRes.data) {
+      return {
+        status: "success",
+        data: existing,
+        late_info: null
+      };
+    }
+
+    const fresh = valRes.data;
+    let late_info = null;
+
+    if (fresh.transaction_count > existing.transaction_count) {
+      late_info = {
+        has_late_transactions: true,
+        late_transaction_count: Math.max(0, fresh.transaction_count - existing.transaction_count),
+        late_owner_deposit: Math.max(0, fresh.total_owner_deposit - existing.total_owner_deposit),
+        late_cash_payment: Math.max(0, (fresh.total_cash_payment ?? 0) - (existing.total_cash_payment ?? 0))
+      };
+    }
+
+    return { 
+      status: "success", 
+      data: existing,
+      late_info 
+    };
   }
 
-  // Jika finalAdminId masih nama mentah (bukan valid user_id dari Users),
-  // cek apakah local sudah punya ownership yang valid
-  if (!isResolvedUserId(finalAdminId, users || [])) {
-    const localOwner = localTx?.admin_id;
-    if (localOwner && localOwner !== "SYSTEM" && localOwner !== "UNKNOWN" && localOwner !== "") {
-      finalAdminId = localOwner;  // preserve local valid ownership
-    } else if (!finalAdminId || finalAdminId === "SYSTEM") {
-      finalAdminId = "SYSTEM";    // final fallback, sama seperti sekarang
+  const valRes = validateDailyClosing(db, { outlet_id: outletId, tanggal, actor: dummyActor }, { isDryRun: true });
+  return { status: "success", data: valRes.data };
+}
+
+// CASE A: CLOSED + LATE TRANSACTION
+const dbA = {
+  DailyClosing: [
+    {
+      closing_id: "CLS-OUT-002-2026-08-30",
+      outlet_id: "OUT-002",
+      tanggal: "2026-08-30",
+      status: "CLOSED",
+      transaction_count: 0,
+      total_owner_deposit: 0,
+      total_cash_payment: 0
     }
-    // else: biarkan rawAdmin (nama mentah) daripada hilang total
-  }
+  ],
+  MASTER_TRANSAKSI: [
+    {
+      resi_id: "LATE001",
+      outlet_id: "OUT-002",
+      tanggal: "2026-08-30",
+      tanggal_transaksi: "2026-08-30",
+      status_transaksi: "PAID",
+      status_resi: "OK",
+      status: "OK",
+      metode_bayar: "Tunai",
+      ongkir_customer: 10000,
+      total_dibayar_customer: 10000,
+      admin_id: "SYS"
+    }
+  ],
+  Master_Setoran: []
+};
 
-  return finalAdminId;
+// CASE B: CLOSED TANPA LATE TRANSACTION
+const dbB = {
+  DailyClosing: [
+    {
+      closing_id: "CLS-OUT-002-2026-08-30",
+      outlet_id: "OUT-002",
+      tanggal: "2026-08-30",
+      status: "CLOSED",
+      transaction_count: 2,
+      total_owner_deposit: 20000,
+      total_cash_payment: 20000
+    }
+  ],
+  MASTER_TRANSAKSI: [
+    {
+      resi_id: "TRX001",
+      outlet_id: "OUT-002",
+      tanggal: "2026-08-30",
+      tanggal_transaksi: "2026-08-30",
+      status_transaksi: "PAID",
+      status_resi: "OK",
+      status: "OK",
+      metode_bayar: "Tunai",
+      ongkir_customer: 10000,
+      total_dibayar_customer: 10000,
+      admin_id: "SYS"
+    },
+    {
+      resi_id: "TRX002",
+      outlet_id: "OUT-002",
+      tanggal: "2026-08-30",
+      tanggal_transaksi: "2026-08-30",
+      status_transaksi: "PAID",
+      status_resi: "OK",
+      status: "OK",
+      metode_bayar: "Tunai",
+      ongkir_customer: 10000,
+      total_dibayar_customer: 10000,
+      admin_id: "SYS"
+    }
+  ],
+  Master_Setoran: []
+};
+
+// CASE C: NON-CLOSED
+const dbC = {
+  DailyClosing: [],
+  MASTER_TRANSAKSI: [
+    {
+      resi_id: "TRX003",
+      outlet_id: "OUT-002",
+      tanggal: "2026-08-30",
+      tanggal_transaksi: "2026-08-30",
+      status_transaksi: "PAID",
+      status_resi: "OK",
+      status: "OK",
+      metode_bayar: "Tunai",
+      ongkir_customer: 15000,
+      total_dibayar_customer: 15000,
+      admin_id: "SYS"
+    }
+  ],
+  Master_Setoran: []
+};
+
+function check(name: string, condition: boolean) {
+  console.log(`${condition ? 'PASS' : 'FAIL'} - ${name}`);
 }
 
-const cases = [
-  // [desc, tx.admin_id_pencatat, localTx.admin_id, expected]
-  ["remote=nama, local=USR-003", "FITRI FAJRIA", "USR-003", "USR-003"],
-  ["remote=user_id valid",       "USR-003",      "USR-005", "USR-003"],
-  ["remote=kosong, local valid", "",             "USR-003", "USR-003"],
-  ["remote=SYSTEM, local valid", "SYSTEM",       "USR-003", "USR-003"],
-  ["remote=USR-005, local=003",  "USR-005",      "USR-003", "USR-005"],
-  ["keduanya kosong/SYSTEM",     "",             "SYSTEM",  "SYSTEM" ],
-  ["remote nama salah eja",      "FITRI FAJRIAH","USR-003", "USR-003"],
-];
+const resA = getDailyClosingStatus(dbA, "OUT-002", "2026-08-30");
+check("CASE A — CLOSED + late transaction", 
+  resA.data.status === "CLOSED" && 
+  resA.late_info?.has_late_transactions === true &&
+  resA.late_info?.late_transaction_count === 1 &&
+  resA.late_info?.late_owner_deposit > 0 &&
+  resA.data.transaction_count === 0
+);
 
-let allPass = true;
-for (const [desc, remoteAdmin, localAdmin, expected] of cases) {
-  const tx = { admin_id_pencatat: remoteAdmin };
-  const localTx = { admin_id: localAdmin };
-  const result = resolveAdmin(tx, localTx, fakeUsers);
-  const pass = result === expected ? "PASS" : "FAIL";
-  console.log(`${pass} [${desc}] → ${result} (expected: ${expected})`);
-  if (result !== expected) allPass = false;
-}
+const resB = getDailyClosingStatus(dbB, "OUT-002", "2026-08-30");
+check("CASE B — CLOSED tanpa late transaction",
+  resB.data.status === "CLOSED" &&
+  resB.late_info === null
+);
 
-if (!allPass) {
-  process.exit(1);
-}
+const resC = getDailyClosingStatus(dbC, "OUT-002", "2026-08-30");
+check("CASE C — NON-CLOSED",
+  resC.data && resC.data.status !== "CLOSED" &&
+  resC.data.transaction_count === 1 &&
+  !("late_info" in resC)
+);
+
+check("Frozen snapshot preservation",
+  resA.data === dbA.DailyClosing[0] &&
+  resA.data.transaction_count === 0
+);
+
+const dbNegative = JSON.parse(JSON.stringify(dbA));
+dbNegative.DailyClosing[0].transaction_count = 5;
+dbNegative.DailyClosing[0].total_owner_deposit = 50000;
+dbNegative.DailyClosing[0].total_cash_payment = 50000;
+const resNeg = getDailyClosingStatus(dbNegative, "OUT-002", "2026-08-30");
+check("Negative delta protection",
+  resNeg.late_info === null
+);

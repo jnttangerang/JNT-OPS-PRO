@@ -664,11 +664,47 @@ export function reopenDailyClosing(
 
 export function getDailyClosingStatus(db: any, outletId: string, tanggal: string) {
   const existing = getDailyClosingRecord(db, outletId, tanggal);
-  if (existing && existing.status === "CLOSED") {
-    return { status: "success", data: existing };
-  }
-  // Dry run validation to calculate fresh financial snapshot without mutating DB or logging
   const dummyActor: ActorInfo = { actor_id: "SYSTEM", actor_role: "SYSTEM" };
+
+  if (existing && existing.status === "CLOSED") {
+    // Clone db to bypass the 'already closed' check in validateDailyClosing
+    const closingId = generateClosingId(outletId, tanggal);
+    const dbClone = { ...db };
+    dbClone.DailyClosing = (db.DailyClosing || []).filter((r: any) => r.closing_id !== closingId);
+    if (db.DailyClosings) {
+      dbClone.DailyClosings = dbClone.DailyClosing;
+    }
+
+    const valRes = validateDailyClosing(dbClone, { outlet_id: outletId, tanggal, actor: dummyActor }, { isDryRun: true });
+
+    if (valRes.status === "error" || !valRes.data) {
+      return {
+        status: "success",
+        data: existing,
+        late_info: null
+      };
+    }
+
+    const fresh = valRes.data;
+    let late_info = null;
+
+    if (fresh.transaction_count > existing.transaction_count) {
+      late_info = {
+        has_late_transactions: true,
+        late_transaction_count: Math.max(0, fresh.transaction_count - existing.transaction_count),
+        late_owner_deposit: Math.max(0, fresh.total_owner_deposit - existing.total_owner_deposit),
+        late_cash_payment: Math.max(0, (fresh.total_cash_payment ?? 0) - (existing.total_cash_payment ?? 0))
+      };
+    }
+
+    return { 
+      status: "success", 
+      data: existing,
+      late_info 
+    };
+  }
+
+  // Dry run validation to calculate fresh financial snapshot without mutating DB or logging
   const valRes = validateDailyClosing(db, { outlet_id: outletId, tanggal, actor: dummyActor }, { isDryRun: true });
   return { status: "success", data: valRes.data };
 }
