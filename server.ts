@@ -7695,8 +7695,17 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
             }
           }
           
-          if (!finalAdminId || finalAdminId === "SYSTEM") {
-            finalAdminId = (localTx && localTx.admin_id && localTx.admin_id !== "SYSTEM") ? localTx.admin_id : "SYSTEM";
+          function isResolvedUserId(id: string, users: any[]): boolean {
+            return users.some((u: any) => u.user_id === id);
+          }
+
+          if (!isResolvedUserId(finalAdminId, db.Users || [])) {
+            const localOwner = localTx?.admin_id;
+            if (localOwner && localOwner !== "SYSTEM" && localOwner !== "UNKNOWN" && localOwner !== "") {
+              finalAdminId = localOwner;
+            } else if (!finalAdminId || finalAdminId === "SYSTEM") {
+              finalAdminId = "SYSTEM";
+            }
           }
 
           // Resolve Outlet identity with code / name mapping fallback
