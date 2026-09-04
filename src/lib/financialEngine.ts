@@ -32,10 +32,24 @@ export function isTransactionValidForFinance(tx: any): boolean {
   return true;
 }
 
-function classifyPayment(owner_deposit: number, outlet_cash: number, rawMethodInput?: string, dfodNominal: number = 0) {
+function classifyPayment(owner_deposit: number, outlet_cash: number, rawMethodInput?: string, dfodNominal: number = 0, outletMethod?: string) {
   const rawMethod = String(rawMethodInput || "").trim().toUpperCase();
-  const isDigital = rawMethod === "QRIS" || rawMethod === "TRANSFER" || rawMethod === "ORDER BY APP" || rawMethod === "ORDER_BY_APP" || rawMethod === "APP";
+  const isDigitalOwner = rawMethod === "QRIS" || rawMethod === "TRANSFER" || rawMethod === "ORDER BY APP" || rawMethod === "ORDER_BY_APP" || rawMethod === "APP";
   const isDfod = rawMethod === "DFOD" || rawMethod.includes("DFOD");
+
+  const rawOutletMethod = String(outletMethod || "").trim().toUpperCase();
+  const isDigitalOutlet = rawOutletMethod === "QRIS" || rawOutletMethod === "TRANSFER" || rawOutletMethod === "ORDER BY APP" || rawOutletMethod === "ORDER_BY_APP" || rawOutletMethod === "APP";
+
+  let outlet_right_admin = 0;
+  let outlet_right_owner = 0;
+
+  if (isDigitalOutlet) {
+    outlet_right_owner = outlet_cash;
+    outlet_right_admin = 0;
+  } else {
+    outlet_right_admin = outlet_cash;
+    outlet_right_owner = 0;
+  }
 
   if (isDfod) {
     return {
@@ -47,13 +61,13 @@ function classifyPayment(owner_deposit: number, outlet_cash: number, rawMethodIn
     };
   }
 
-  if (isDigital) {
+  if (isDigitalOwner) {
     return {
       cash_payment: 0,
       digital_payment: owner_deposit,
       dfod_outstanding: 0,
-      outlet_right_admin: 0,
-      outlet_right_owner: outlet_cash
+      outlet_right_admin,
+      outlet_right_owner
     };
   }
 
@@ -61,8 +75,8 @@ function classifyPayment(owner_deposit: number, outlet_cash: number, rawMethodIn
     cash_payment: owner_deposit,
     digital_payment: 0,
     dfod_outstanding: 0,
-    outlet_right_admin: outlet_cash,
-    outlet_right_owner: 0
+    outlet_right_admin,
+    outlet_right_owner
   };
 }
 
@@ -90,6 +104,8 @@ export interface DailyFinancialSummary {
   jumlah_cargo: number;
   total_outlet_admin: number;
   total_outlet_owner: number;
+  total_outlet_right_admin: number;
+  total_outlet_right_owner: number;
 }
 
 export function calculateFinancialSummary(tx: any[]): DailyFinancialSummary;
@@ -188,7 +204,8 @@ export function calculateFinancialSummary(tx: any): any {
   const outlet_cash = biayaTambahan;
   const customer_payment = isDfod ? outlet_cash : (owner_deposit + outlet_cash);
   
-  const classification = classifyPayment(owner_deposit, outlet_cash, paymentMethod, isDfod ? (biayaDasarLayanan + rounding) : 0);
+  const outletMethod = tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || "";
+  const classification = classifyPayment(owner_deposit, outlet_cash, paymentMethod, isDfod ? (biayaDasarLayanan + rounding) : 0, outletMethod);
   
   return {
     customer_payment: customer_payment,
@@ -212,6 +229,8 @@ export function calculateDailyFinancial(transactions: any[]) {
   let total_dfod_outstanding = 0;
   let total_outlet_admin = 0;
   let total_outlet_owner = 0;
+  let total_outlet_right_admin = 0;
+  let total_outlet_right_owner = 0;
   let jumlah_transaksi = 0;
   let jumlah_express = 0;
   let jumlah_cargo = 0;
@@ -228,6 +247,8 @@ export function calculateDailyFinancial(transactions: any[]) {
     total_dfod_outstanding += summary.dfod_outstanding;
     total_outlet_admin += summary.outlet_right_admin;
     total_outlet_owner += summary.outlet_right_owner;
+    total_outlet_right_admin += summary.outlet_right_admin;
+    total_outlet_right_owner += summary.outlet_right_owner;
     jumlah_transaksi++;
 
     const eks = (tx.ekspedisi || "").toUpperCase();
@@ -244,6 +265,8 @@ export function calculateDailyFinancial(transactions: any[]) {
     total_dfod_outstanding,
     total_outlet_admin,
     total_outlet_owner,
+    total_outlet_right_admin,
+    total_outlet_right_owner,
     jumlah_transaksi,
     jumlah_express,
     jumlah_cargo
@@ -264,7 +287,9 @@ export function calculateAdminFinancial(transactions: any[]) {
         cash_payment: 0,
         digital_payment: 0,
         dfod_outstanding: 0,
-        jumlah_resi: 0
+        jumlah_resi: 0,
+        outlet_right_admin: 0,
+        outlet_right_owner: 0
       };
     }
     const summary = calculateFinancialSummary(tx);
@@ -274,6 +299,8 @@ export function calculateAdminFinancial(transactions: any[]) {
     result[admin].cash_payment += summary.cash_payment;
     result[admin].digital_payment += summary.digital_payment;
     result[admin].dfod_outstanding += summary.dfod_outstanding;
+    result[admin].outlet_right_admin += summary.outlet_right_admin;
+    result[admin].outlet_right_owner += summary.outlet_right_owner;
     result[admin].jumlah_resi++;
   }
   return Object.values(result);
@@ -295,7 +322,9 @@ export function calculateOutletFinancial(transactions: any[]) {
         dfod_outstanding: 0,
         jumlah_resi: 0,
         jumlah_express: 0,
-        jumlah_cargo: 0
+        jumlah_cargo: 0,
+        outlet_right_admin: 0,
+        outlet_right_owner: 0
       };
     }
     const summary = calculateFinancialSummary(tx);
@@ -305,6 +334,8 @@ export function calculateOutletFinancial(transactions: any[]) {
     result[outlet].cash_payment += summary.cash_payment;
     result[outlet].digital_payment += summary.digital_payment;
     result[outlet].dfod_outstanding += summary.dfod_outstanding;
+    result[outlet].outlet_right_admin += summary.outlet_right_admin;
+    result[outlet].outlet_right_owner += summary.outlet_right_owner;
     result[outlet].jumlah_resi++;
 
     const eks = (tx.ekspedisi || "").toUpperCase();
