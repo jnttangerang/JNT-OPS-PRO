@@ -3059,64 +3059,6 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       require("fs").writeFileSync("error.log", upsertErr.toString() + "\n" + (upsertErr as any).stack);
     }
 
-    function classifyOutletItem(nominal: number, metode: string): "OWNER" | "ADMIN" {
-      if (nominal <= 0) return "ADMIN";
-      const m = String(metode || "").trim().toUpperCase();
-      const isDigital = m === "QRIS" || m === "TRANSFER" || m === "ORDER BY APP" || m === "ORDER_BY_APP" || m === "APP";
-      return isDigital ? "OWNER" : "ADMIN";
-    }
-
-    // Auto-record to KeuanganOutlet for Packing and Amplop
-    if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
-    const txDateStr = data.tanggal_transaksi || getWIBDate(timestamp);
-    if (biayaPacking > 0) {
-      const hasPacking = db.KeuanganOutlet.some((k: any) =>
-        ((k.resi_id && k.resi_id.toUpperCase() === rid) || (k.deskripsi && k.deskripsi.includes(rid))) &&
-        (k.kategori_id === "KAT-207" || k.kategori_id === "KAT-102" || k.deskripsi?.includes("Packing"))
-      );
-      if (!hasPacking) {
-        const resolvedTambahan = String(data.metode_bayar_tambahan || data.metode_pembayaran_tambahan || "").trim() || (biayaPacking > 0 ? "Tunai" : "");
-        db.KeuanganOutlet.unshift({
-          id: `KNG-${Date.now()}-P`,
-          tanggal: txDateStr,
-          outlet_id: outletId,
-          jenis: "PEMASUKAN",
-          kategori_id: "KAT-207",
-          nominal: biayaPacking,
-          deskripsi: `Biaya Packing untuk resi ${rid}`,
-          bukti_url: "",
-          dibuat_oleh: adminId,
-          created_at: timestamp,
-          aktif: true,
-          resi_id: rid,
-          lokasi_uang: classifyOutletItem(biayaPacking, resolvedTambahan)
-        });
-      }
-    }
-    if (biayaAmplop > 0) {
-      const hasAmplop = db.KeuanganOutlet.some((k: any) =>
-        ((k.resi_id && k.resi_id.toUpperCase() === rid) || (k.deskripsi && k.deskripsi.includes(rid))) &&
-        (k.kategori_id === "KAT-208" || k.kategori_id === "KAT-103" || k.deskripsi?.includes("Amplop"))
-      );
-      if (!hasAmplop) {
-        const resolvedTambahan = String(data.metode_bayar_tambahan || data.metode_pembayaran_tambahan || "").trim() || (biayaAmplop > 0 ? "Tunai" : "");
-        db.KeuanganOutlet.unshift({
-          id: `KNG-${Date.now() + 1}-A`,
-          tanggal: txDateStr,
-          outlet_id: outletId,
-          jenis: "PEMASUKAN",
-          kategori_id: "KAT-208",
-          nominal: biayaAmplop,
-          deskripsi: `Biaya Amplop untuk resi ${rid}`,
-          bukti_url: "",
-          dibuat_oleh: adminId,
-          created_at: timestamp,
-          aktif: true,
-          resi_id: rid,
-          lokasi_uang: classifyOutletItem(biayaAmplop, resolvedTambahan)
-        });
-      }
-    }
 
     writeDb(db);
     invalidateSyncCache();
@@ -3400,49 +3342,6 @@ app.post("/api/importYoYi", async (req, res) => {
     sumber_data: "YoYi Import"
   });
 
-  function classifyOutletItem(nominal: number, metode: string): "OWNER" | "ADMIN" {
-    if (nominal <= 0) return "ADMIN";
-    const m = String(metode || "").trim().toUpperCase();
-    const isDigital = m === "QRIS" || m === "TRANSFER" || m === "ORDER BY APP" || m === "ORDER_BY_APP" || m === "APP";
-    return isDigital ? "OWNER" : "ADMIN";
-  }
-
-  // 4b. Auto-record to KeuanganOutlet for Packing and Amplop
-  if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
-  if (biayaPacking > 0) {
-    db.KeuanganOutlet.unshift({
-      id: `KNG-${Date.now()}-YY-P`,
-      tanggal: txDate,
-      outlet_id: outletId,
-      jenis: "PEMASUKAN",
-      kategori_id: "KAT-207",
-      nominal: biayaPacking,
-      deskripsi: `Biaya Packing untuk resi YoYi ${rid}`,
-      bukti_url: "",
-      dibuat_oleh: adminId,
-      created_at: timestamp,
-      aktif: true,
-      resi_id: rid,
-      lokasi_uang: classifyOutletItem(biayaPacking, resolvedMetodeTambahan)
-    });
-  }
-  if (biayaAmplop > 0) {
-    db.KeuanganOutlet.unshift({
-      id: `KNG-${Date.now() + 1}-YY-A`,
-      tanggal: txDate,
-      outlet_id: outletId,
-      jenis: "PEMASUKAN",
-      kategori_id: "KAT-208",
-      nominal: biayaAmplop,
-      deskripsi: `Biaya Amplop untuk resi YoYi ${rid}`,
-      bukti_url: "",
-      dibuat_oleh: adminId,
-      created_at: timestamp,
-      aktif: true,
-      resi_id: rid,
-      lokasi_uang: classifyOutletItem(biayaAmplop, resolvedMetodeTambahan)
-    });
-  }
 
   writeDb(db);
 
@@ -7367,62 +7266,6 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
     const outletId = tx.outlet_id || "OUT-001";
     const adminId = tx.admin_id || "SYSTEM";
 
-    function classifyOutletItem(nominal: number, metode: string): "OWNER" | "ADMIN" {
-      if (nominal <= 0) return "ADMIN";
-      const m = String(metode || "").trim().toUpperCase();
-      const isDigital = m === "QRIS" || m === "TRANSFER" || m === "ORDER BY APP" || m === "ORDER_BY_APP" || m === "APP";
-      return isDigital ? "OWNER" : "ADMIN";
-    }
-
-    if (tx.packing > 0) {
-      const descP = `Biaya Packing untuk resi ${resiId}`;
-      if (!existingEntries[`${resiId}_KAT-207`] && !existingEntries[`${resiId}_KAT-102`] && !existingEntries[descP]) {
-        const resolvedTambahan = String(tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || "").trim() || (tx.packing > 0 ? "Tunai" : "");
-        db.KeuanganOutlet.unshift({
-          id: `KNG-${Date.now()}-${idx}-P`,
-          tanggal: txDate,
-          outlet_id: outletId,
-          jenis: "PEMASUKAN",
-          kategori_id: "KAT-207",
-          nominal: tx.packing,
-          deskripsi: descP,
-          bukti_url: "",
-          dibuat_oleh: adminId,
-          created_at: tx.created_at || new Date().toISOString(),
-          aktif: true,
-          resi_id: resiId,
-          lokasi_uang: classifyOutletItem(tx.packing, resolvedTambahan)
-        });
-        existingEntries[`${resiId}_KAT-207`] = true;
-        existingEntries[descP] = true;
-        createdCount++;
-      }
-    }
-
-    if (tx.amplop > 0) {
-      const descA = `Biaya Amplop untuk resi ${resiId}`;
-      if (!existingEntries[`${resiId}_KAT-208`] && !existingEntries[`${resiId}_KAT-103`] && !existingEntries[descA]) {
-        const resolvedTambahan = String(tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || "").trim() || (tx.amplop > 0 ? "Tunai" : "");
-        db.KeuanganOutlet.unshift({
-          id: `KNG-${Date.now() + 1}-${idx}-A`,
-          tanggal: txDate,
-          outlet_id: outletId,
-          jenis: "PEMASUKAN",
-          kategori_id: "KAT-208",
-          nominal: tx.amplop,
-          deskripsi: descA,
-          bukti_url: "",
-          dibuat_oleh: adminId,
-          created_at: tx.created_at || new Date().toISOString(),
-          aktif: true,
-          resi_id: resiId,
-          lokasi_uang: classifyOutletItem(tx.amplop, resolvedTambahan)
-        });
-        existingEntries[`${resiId}_KAT-208`] = true;
-        existingEntries[descA] = true;
-        createdCount++;
-      }
-    }
   });
 
   if (createdCount > 0) {
