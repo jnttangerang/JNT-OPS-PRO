@@ -7701,16 +7701,12 @@ const resJam =
 
           const status = (l.status_transaksi || l.status || "").toUpperCase();
           const isDraft = status === "DRAFT" || status === "PENDING";
-          if (isDraft) return true;
+          
+          // Pastikan data yang baru diimport/dibuat (dalam 15 menit terakhir) tidak dihapus
+          const createdMs = getCreatedTimeMs(l);
+          const isRecent = createdMs > 0 && (syncNow - createdMs < GRACE_PERIOD_MS);
 
-          const isPaid = status === "PAID" || status === "SELESAI";
-          if (isPaid) {
-            const createdMs = getCreatedTimeMs(l);
-            const isWithinGracePeriod = createdMs > 0 && (syncNow - createdMs < GRACE_PERIOD_MS);
-            return isWithinGracePeriod;
-          }
-
-          return false;
+          return isDraft || isRecent;
         });
 
         // Data lokal yang PAID/SELESAI tetapi tidak ada di remote dan lebih dari 15 menit → dihapus
