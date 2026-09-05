@@ -1,3 +1,7 @@
+// Mock setup
+const React = require('react');
+
+// The function we are testing
 function mapResponse(json: any) {
   const closingStatusMap: Record<string, any> = {};
   const o = { outlet_id: "OUT-001" };

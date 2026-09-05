@@ -90,7 +90,11 @@ export default function OwnerDailyClosingDashboard({
             const res = await fetch(`/api/dailyClosing/status?outlet_id=${encodeURIComponent(o.outlet_id)}&tanggal=${closingDate}`);
             if (res.ok) {
               const json = await res.json();
-              closingStatusMap[o.outlet_id] = json.data || json;
+              const record = json.data || json;
+              closingStatusMap[o.outlet_id] = {
+                ...record,
+                late_info: json.late_info ?? null,
+              };
             }
           } catch {
             // ignore individual outlet fetch errors
@@ -254,10 +258,16 @@ export default function OwnerDailyClosingDashboard({
 
       const json = await res.json();
       if (res.ok && (json.status === "success" || json.status === "blocked")) {
-        setOutletClosingRecords((prev) => ({
-          ...prev,
-          [outletId]: json.data || json
-        }));
+        setOutletClosingRecords((prev) => {
+          const record = json.data || json;
+          return {
+            ...prev,
+            [outletId]: {
+              ...record,
+              late_info: json.late_info ?? null,
+            }
+          };
+        });
         if (json.status === "success") {
           toast.success(json.message || `Status outlet '${outletName}' SIAP TUTUP BUKU.`);
         } else {
@@ -931,6 +941,38 @@ export default function OwnerDailyClosingDashboard({
                       </div>
                     )}
                   </div>
+                  
+                  {bookStatus === "CLOSED" && closingRec?.late_info?.has_late_transactions === true && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl mt-3">
+                      <div className="flex items-start gap-2 mb-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="text-[11px] font-bold text-amber-900 block leading-tight">
+                            ⚠ Ada Transaksi Setelah Tutup Buku
+                          </span>
+                          <span className="text-[10px] text-amber-700">
+                            {closingRec.late_info.late_transaction_count} transaksi terlambat
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-[10px] text-amber-800 space-y-0.5 mb-2 pl-6">
+                        <div className="flex justify-between">
+                          <span>Setoran Owner:</span>
+                          <span className="font-bold">Rp {Number(closingRec.late_info.late_owner_deposit).toLocaleString("id-ID")}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Kas Outlet:</span>
+                          <span className="font-bold">Rp {Number(closingRec.late_info.late_cash_payment).toLocaleString("id-ID")}</span>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => handleOpenReopenModal(o.outlet_id, o.nama_outlet)}
+                        className="w-full py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 text-[10px] font-bold rounded-lg border border-amber-300 transition-colors cursor-pointer"
+                      >
+                        Reopen untuk Rekonsiliasi
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Control Action Buttons */}
