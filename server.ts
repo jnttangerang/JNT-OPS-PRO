@@ -2388,18 +2388,19 @@ app.post("/api/getRiwayatPenerima", (req, res) => {
 
 // 6. CHECK DUPLICATE RESI
 app.post("/api/checkDuplicateResi", (req, res) => {
-  const { resi_id } = req.body;
-  if (!resi_id) {
+  const rawResi = req.body.resi_id || req.body.resi || req.body.nomor_resi;
+  if (!rawResi) {
     return res.json({ status: "success", isDuplicate: false });
   }
 
   const db = readDb();
-  const rid = String(resi_id).trim().toUpperCase();
+  const rid = String(rawResi).trim().toUpperCase();
 
-  const inExp = db.EXP_Resi.some((r: any) => r.resi_id.toUpperCase() === rid);
-  const inCrg = db.CRG_Resi.some((r: any) => r.resi_id.toUpperCase() === rid);
+  const inExp = (db.EXP_Resi || []).some((r: any) => (r.resi_id || "").toUpperCase() === rid && (r.status || "").toUpperCase() !== "BATAL");
+  const inCrg = (db.CRG_Resi || []).some((r: any) => (r.resi_id || "").toUpperCase() === rid && (r.status || "").toUpperCase() !== "BATAL");
+  const inMaster = (db.MASTER_TRANSAKSI || []).some((r: any) => (r.no_resi || r.resi_id || "").toUpperCase() === rid && (r.status_transaksi || "").toUpperCase() !== "BATAL");
 
-  return res.json({ status: "success", isDuplicate: inExp || inCrg });
+  return res.json({ status: "success", isDuplicate: inExp || inCrg || inMaster });
 });
 
 // 7. SAVE DATA PREINPUT
@@ -2783,7 +2784,21 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
         body: JSON.stringify({ action: "saveTransaksi", data: req.body || {} })
-      }).catch((err) => console.warn("Background Apps Script sync note:", err.message));
+      })
+      .then(async (res) => {
+        const text = await res.text();
+        try {
+          const json = JSON.parse(text);
+          if (json.status === "error") {
+            console.warn(`[Background Sync Error] saveTransaksi: ${json.message}`);
+          } else {
+            console.log(`[Background Sync Success] saveTransaksi: ${json.message || "OK"}`);
+          }
+        } catch (e) {
+          console.warn("[Background Sync Error] Non-JSON response:", text.substring(0, 200));
+        }
+      })
+      .catch((err) => console.warn("Background Apps Script sync note:", err.message));
     }
 
     let timestamp = new Date().toISOString();
@@ -2799,9 +2814,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
     const txJam = data.jam_transaksi || (timestamp.includes("T") ? timestamp.split("T")[1].replace("Z", "").split(".")[0] : getWIBTime(timestamp));
     const importedAt = (data.imported_at && !data.imported_at.includes("T") && !data.imported_at.includes("Z"))
       ? data.imported_at
-      : (data.sumber_data === "Import YoYi" || data.transaksi_id?.startsWith("TRX-YY-") || data.imported_at
-          ? `${getWIBDate(new Date())} ${getWIBTime(new Date())}`
-          : undefined);
+      : new Date().toISOString();
 
     const isDoc = isDocumentTransaction(data);
     const metodeBayarOngkir = data.metode_pembayaran_ongkir || data.metode_bayar || data.metode_bayar_ongkir || "Tunai";
@@ -3126,6 +3139,7 @@ app.post("/api/importYoYi", async (req, res) => {
             return res.status(400).json(json);
           }
         } else {
+          invalidateSyncCache();
           return res.json(json);
         }
       }
@@ -7307,6 +7321,19 @@ app.post("/api/apps-script", async (req, res) => {
     const text = await response.text();
     try {
       const json = JSON.parse(text);
+      
+      // Auto-invalidate sync cache on successful mutative operations
+      const mutativeActions = [
+        "importYoYi", "saveTransaksi", "updateTransaksi", "deleteTransaksi",
+        "saveKeuanganOutlet", "updateKeuanganOutlet", "deleteKeuanganOutlet",
+        "saveDataPreInput", "deletePreInputDraft",
+        "createSetoran", "approveSetoran", "rejectSetoran",
+        "updateAuditDecision", "executeClosing", "reopenException", "forceSync"
+      ];
+      if (json && json.status === "success" && mutativeActions.includes(action)) {
+        invalidateSyncCache();
+      }
+
       return res.json(json);
     } catch {
       return res.status(502).json({

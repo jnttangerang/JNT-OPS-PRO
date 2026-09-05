@@ -612,10 +612,6 @@ function apiImportYoYi(params) {
     }
 
     const jumlahDibayar = Number(input.jumlah_dibayar) || 0;
-    if (jumlahDibayar <= 0) {
-      Logger.log("[apiImportYoYi] Error: Jumlah dibayar <= 0 (" + jumlahDibayar + ")");
-      return { status: "error", message: "Jumlah dibayar customer wajib diisi dan > 0" };
-    }
     
     // 2. Validasi outlet & admin
     if (!input.outlet_id) {

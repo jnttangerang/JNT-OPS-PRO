@@ -269,7 +269,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
          for (let i = 0; i < resiListToCheck.length; i += chunkSize) {
             const chunk = resiListToCheck.slice(i, i + chunkSize);
             await Promise.all(chunk.map(async (rid) => {
-               const res = await callBackend("checkDuplicateResi", { resi: rid });
+               const res = await callBackend("checkDuplicateResi", { resi_id: rid });
                if (res?.isDuplicate) {
                  duplicateMap[rid] = true;
                }
