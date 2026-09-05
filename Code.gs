@@ -5151,7 +5151,9 @@ function apiGetKeuanganOutlet(params) {
         bukti_url: (obj.bukti_url || "").toString(),
         dibuat_oleh: (obj.dibuat_oleh || "").toString(),
         created_at: (obj.created_at || "").toString(),
-        aktif: isAktif
+        aktif: isAktif,
+        lokasi_uang: (obj.lokasi_uang || "").toString(),
+        resi_id: (obj.resi_id || "").toString()
       });
     }
 
