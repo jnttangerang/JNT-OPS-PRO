@@ -1465,6 +1465,7 @@ app.get("/api/test-connection", async (req, res) => {
 const PRODUCTION_MODE = true;
 
 const UTILITY_ACTIONS = new Set([
+  "getKeuanganOutlet",
   "ping",
   "testConnection",
   "test-connection",
