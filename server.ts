@@ -7778,7 +7778,7 @@ const resJam =
         
         const mergedKeuangan = keuanganRes.data.map((remoteK: any) => {
           const localK = localKeuangan.find((l: any) => l.id === remoteK.id);
-          let resolvedLokasiUang = remoteK.lokasi_uang || localK?.lokasi_uang;
+          let resolvedLokasiUang = remoteK.lokasi_uang || null;
 
           // Transaction-derived for Amplop/Packing (resi-based)
           if (!resolvedLokasiUang && (remoteK.resi_id || (remoteK.deskripsi && remoteK.deskripsi.toLowerCase().includes("resi")))) {
@@ -7811,7 +7811,7 @@ const resJam =
 
           // Fallback for manual ledger (stored)
           if (!resolvedLokasiUang) {
-            resolvedLokasiUang = "ADMIN";
+            resolvedLokasiUang = localK?.lokasi_uang || "ADMIN";
           }
 
           return { ...remoteK, lokasi_uang: resolvedLokasiUang };
