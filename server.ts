@@ -3059,6 +3059,13 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       require("fs").writeFileSync("error.log", upsertErr.toString() + "\n" + (upsertErr as any).stack);
     }
 
+    function classifyOutletItem(nominal: number, metode: string): "OWNER" | "ADMIN" {
+      if (nominal <= 0) return "ADMIN";
+      const m = String(metode || "").trim().toUpperCase();
+      const isDigital = m === "QRIS" || m === "TRANSFER" || m === "ORDER BY APP" || m === "ORDER_BY_APP" || m === "APP";
+      return isDigital ? "OWNER" : "ADMIN";
+    }
+
     // Auto-record to KeuanganOutlet for Packing and Amplop
     if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
     const txDateStr = data.tanggal_transaksi || getWIBDate(timestamp);
@@ -3068,8 +3075,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-207" || k.kategori_id === "KAT-102" || k.deskripsi?.includes("Packing"))
       );
       if (!hasPacking) {
-        const mBayar = (data.metode_pembayaran_tambahan || data.metode_bayar_tambahan || data.metode_bayar || data.metode_pembayaran_ongkir || data.metode_bayar_ongkir || "").toUpperCase();
-        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP";
+        const resolvedTambahan = String(data.metode_bayar_tambahan || data.metode_pembayaran_tambahan || "").trim() || (biayaPacking > 0 ? "Tunai" : "");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now()}-P`,
           tanggal: txDateStr,
@@ -3083,7 +3089,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
           created_at: timestamp,
           aktif: true,
           resi_id: rid,
-          lokasi_uang: isDigital ? "OWNER" : "ADMIN"
+          lokasi_uang: classifyOutletItem(biayaPacking, resolvedTambahan)
         });
       }
     }
@@ -3093,8 +3099,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         (k.kategori_id === "KAT-208" || k.kategori_id === "KAT-103" || k.deskripsi?.includes("Amplop"))
       );
       if (!hasAmplop) {
-        const mBayar = (data.metode_pembayaran_tambahan || data.metode_bayar_tambahan || data.metode_bayar || data.metode_pembayaran_ongkir || data.metode_bayar_ongkir || "").toUpperCase();
-        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP";
+        const resolvedTambahan = String(data.metode_bayar_tambahan || data.metode_pembayaran_tambahan || "").trim() || (biayaAmplop > 0 ? "Tunai" : "");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now() + 1}-A`,
           tanggal: txDateStr,
@@ -3108,7 +3113,7 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
           created_at: timestamp,
           aktif: true,
           resi_id: rid,
-          lokasi_uang: isDigital ? "OWNER" : "ADMIN"
+          lokasi_uang: classifyOutletItem(biayaAmplop, resolvedTambahan)
         });
       }
     }
@@ -3236,7 +3241,6 @@ app.post("/api/importYoYi", async (req, res) => {
     biayaLain = 1000;
   }
   const metodeBayarOngkir = input.metode_bayar_ongkir || input.metode_bayar || parsed.metode_bayar || "Tunai";
-  const metodeBayarTambahan = input.metode_bayar_tambahan || input.metode_pembayaran_tambahan || "QRIS";
   const isDfod = String(metodeBayarOngkir).toUpperCase().includes("DFOD");
 
   let biayaAmplop = Number(input.biaya_amplop) || 0;
@@ -3245,6 +3249,12 @@ app.post("/api/importYoYi", async (req, res) => {
   }
   const biayaPacking = Number(input.biaya_packing) || 0;
   const biayaTambahan = biayaAmplop + biayaPacking;
+  
+  const metodeBayarTambahan = String(
+    input.metode_bayar_tambahan || input.metode_pembayaran_tambahan || ""
+  ).trim();
+  const resolvedMetodeTambahan = metodeBayarTambahan || (biayaTambahan > 0 ? "Tunai" : "");
+
   const jumlahDibayar = Number(input.jumlah_dibayar) || 0;
   const biayaDasarLayanan = ongkirDasar + biayaAsuransi + biayaLain;
   const biayaDitagihkan = isDfod ? 0 : biayaDasarLayanan;
@@ -3390,9 +3400,15 @@ app.post("/api/importYoYi", async (req, res) => {
     sumber_data: "YoYi Import"
   });
 
+  function classifyOutletItem(nominal: number, metode: string): "OWNER" | "ADMIN" {
+    if (nominal <= 0) return "ADMIN";
+    const m = String(metode || "").trim().toUpperCase();
+    const isDigital = m === "QRIS" || m === "TRANSFER" || m === "ORDER BY APP" || m === "ORDER_BY_APP" || m === "APP";
+    return isDigital ? "OWNER" : "ADMIN";
+  }
+
   // 4b. Auto-record to KeuanganOutlet for Packing and Amplop
   if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
-  const isAddDigital = (metodeBayarTambahan === "QRIS" || metodeBayarTambahan === "TRANSFER" || metodeBayarTambahan === "APP" || metodeBayarTambahan === "ORDER BY APP");
   if (biayaPacking > 0) {
     db.KeuanganOutlet.unshift({
       id: `KNG-${Date.now()}-YY-P`,
@@ -3407,7 +3423,7 @@ app.post("/api/importYoYi", async (req, res) => {
       created_at: timestamp,
       aktif: true,
       resi_id: rid,
-      lokasi_uang: isAddDigital ? "OWNER" : "ADMIN"
+      lokasi_uang: classifyOutletItem(biayaPacking, resolvedMetodeTambahan)
     });
   }
   if (biayaAmplop > 0) {
@@ -3424,7 +3440,7 @@ app.post("/api/importYoYi", async (req, res) => {
       created_at: timestamp,
       aktif: true,
       resi_id: rid,
-      lokasi_uang: isAddDigital ? "OWNER" : "ADMIN"
+      lokasi_uang: classifyOutletItem(biayaAmplop, resolvedMetodeTambahan)
     });
   }
 
@@ -7351,11 +7367,17 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
     const outletId = tx.outlet_id || "OUT-001";
     const adminId = tx.admin_id || "SYSTEM";
 
+    function classifyOutletItem(nominal: number, metode: string): "OWNER" | "ADMIN" {
+      if (nominal <= 0) return "ADMIN";
+      const m = String(metode || "").trim().toUpperCase();
+      const isDigital = m === "QRIS" || m === "TRANSFER" || m === "ORDER BY APP" || m === "ORDER_BY_APP" || m === "APP";
+      return isDigital ? "OWNER" : "ADMIN";
+    }
+
     if (tx.packing > 0) {
       const descP = `Biaya Packing untuk resi ${resiId}`;
       if (!existingEntries[`${resiId}_KAT-207`] && !existingEntries[`${resiId}_KAT-102`] && !existingEntries[descP]) {
-        const mBayar = (tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "").toUpperCase();
-        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
+        const resolvedTambahan = String(tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || "").trim() || (tx.packing > 0 ? "Tunai" : "");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now()}-${idx}-P`,
           tanggal: txDate,
@@ -7369,7 +7391,7 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
           created_at: tx.created_at || new Date().toISOString(),
           aktif: true,
           resi_id: resiId,
-          lokasi_uang: isDigital ? "OWNER" : "ADMIN"
+          lokasi_uang: classifyOutletItem(tx.packing, resolvedTambahan)
         });
         existingEntries[`${resiId}_KAT-207`] = true;
         existingEntries[descP] = true;
@@ -7380,8 +7402,7 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
     if (tx.amplop > 0) {
       const descA = `Biaya Amplop untuk resi ${resiId}`;
       if (!existingEntries[`${resiId}_KAT-208`] && !existingEntries[`${resiId}_KAT-103`] && !existingEntries[descA]) {
-        const mBayar = (tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "").toUpperCase();
-        const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP" || mBayar.includes("DFOD");
+        const resolvedTambahan = String(tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || "").trim() || (tx.amplop > 0 ? "Tunai" : "");
         db.KeuanganOutlet.unshift({
           id: `KNG-${Date.now() + 1}-${idx}-A`,
           tanggal: txDate,
@@ -7395,7 +7416,7 @@ const handleBackfillKeuanganOutlet = (req: any, res: any) => {
           created_at: tx.created_at || new Date().toISOString(),
           aktif: true,
           resi_id: resiId,
-          lokasi_uang: isDigital ? "OWNER" : "ADMIN"
+          lokasi_uang: classifyOutletItem(tx.amplop, resolvedTambahan)
         });
         existingEntries[`${resiId}_KAT-208`] = true;
         existingEntries[descA] = true;

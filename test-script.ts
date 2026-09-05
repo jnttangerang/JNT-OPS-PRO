@@ -1,48 +1,33 @@
-function mapResponse(json: any) {
-  const closingStatusMap: Record<string, any> = {};
-  const o = { outlet_id: "OUT-001" };
-  
-  const record = json.data || json;
-  closingStatusMap[o.outlet_id] = {
-    ...record,
-    late_info: json.late_info ?? null,
-  };
-  return closingStatusMap;
+function classifyOutletItem(nominal: number, metode: string): "OWNER" | "ADMIN" {
+  if (nominal <= 0) return "ADMIN";
+  const m = String(metode || "").trim().toUpperCase();
+  const isDigital = m === "QRIS" || m === "TRANSFER"
+                 || m === "ORDER BY APP" || m === "ORDER_BY_APP" || m === "APP";
+  return isDigital ? "OWNER" : "ADMIN";
 }
 
-// Case A: CLOSED + late_info
-const resA = mapResponse({
-  status: "success",
-  data: { status: "CLOSED", transaction_count: 5 },
-  late_info: { has_late_transactions: true, late_transaction_count: 1, late_owner_deposit: 10000, late_cash_payment: 5000 }
-});
-console.assert(resA["OUT-001"].status === "CLOSED", "Case A failed status");
-console.assert(resA["OUT-001"].late_info.has_late_transactions === true, "Case A failed late_info");
+const matrix = [
+  // [owner_metode, outlet_metode, expectedLokasiUang]
+  ["Tunai", "Tunai",    "ADMIN"],  // uang outlet ada di kasir/admin
+  ["Tunai", "QRIS",     "OWNER"],  // outlet dibayar QRIS → masuk OWNER
+  ["QRIS",  "Tunai",    "ADMIN"],  // outlet tetap tunai
+  ["QRIS",  "QRIS",     "OWNER"],  // outlet QRIS → OWNER
+  ["Tunai", "",         "ADMIN"],  // tidak ada metode tambahan → default Tunai → ADMIN
+  ["QRIS",  "",         "ADMIN"],  // sama, default Tunai → ADMIN (conservative)
+  ["Tunai", "TRANSFER", "OWNER"],
+];
 
-// Case B: CLOSED without late_info (null)
-const resB = mapResponse({
-  status: "success",
-  data: { status: "CLOSED", transaction_count: 5 },
-  late_info: null
-});
-console.assert(resB["OUT-001"].late_info === null, "Case B failed late_info");
-
-// Case C: OPEN / No late info field
-const resC = mapResponse({
-  status: "success",
-  data: { status: "OPEN", transaction_count: 5 }
-});
-console.assert(resC["OUT-001"].late_info === null, "Case C failed late_info");
-
-// Test Logic for Alert UI
-function shouldShowAlert(closingRec: any) {
-  const bookStatus = closingRec?.status || "OPEN";
-  return bookStatus === "CLOSED" && closingRec?.late_info?.has_late_transactions === true;
+let allPass = true;
+for (const [ownerM, outletM, expected] of matrix) {
+  const resolved = outletM || (2000 > 0 ? "Tunai" : "");
+  const result = classifyOutletItem(2000, resolved);
+  const pass = result === expected ? "PASS" : "FAIL";
+  console.log(`${pass} owner=${ownerM} outlet=${outletM||"(kosong)"} → ${result}`);
+  if (result !== expected) {
+    allPass = false;
+  }
 }
 
-console.assert(shouldShowAlert(resA["OUT-001"]) === true, "Alert logic A failed");
-console.assert(shouldShowAlert(resB["OUT-001"]) === false, "Alert logic B failed");
-console.assert(shouldShowAlert(resC["OUT-001"]) === false, "Alert logic C failed");
-console.assert(shouldShowAlert({ status: "CLOSED", late_info: { has_late_transactions: false }}) === false, "Alert logic C(2) failed");
-
-console.log("All manual assertions passed.");
+if (!allPass) {
+  process.exit(1);
+}
