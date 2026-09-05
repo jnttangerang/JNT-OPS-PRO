@@ -7762,8 +7762,24 @@ const resJam =
             if (resiIdMatch) {
               const tx = (db.MASTER_TRANSAKSI || []).find((t: any) => t.resi_id === resiIdMatch || t.no_resi === resiIdMatch);
               if (tx) {
-                const mBayar = (tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "").toUpperCase();
-                const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER" || mBayar.includes("APP") || mBayar.includes("DFOD");
+                // Deteksi apakah entri ini untuk amplop/packing
+                const isAmplop = remoteK.kategori_id === "KAT-208" || remoteK.deskripsi?.toLowerCase().includes("amplop");
+                const isPacking = remoteK.kategori_id === "KAT-207" || remoteK.deskripsi?.toLowerCase().includes("packing");
+
+                let mBayar: string;
+                if (isAmplop || isPacking) {
+                  // Untuk amplop/packing: baca metode_bayar_tambahan dari EXP_Resi
+                  const resiRecord = (db.EXP_Resi || []).find((r: any) => r.resi_id === resiIdMatch);
+                  const metodeTambahan = (resiRecord?.metode_bayar_tambahan || "").trim();
+                  // Fallback ke "Tunai" (conservative) jika metode_bayar_tambahan kosong
+                  mBayar = metodeTambahan ? metodeTambahan.toUpperCase() : "TUNAI";
+                } else {
+                  // Untuk entri non-amplop/packing: tetap pakai metode ongkir
+                  mBayar = (tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "").toUpperCase();
+                }
+
+                const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER"
+                               || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP";
                 resolvedLokasiUang = isDigital ? "OWNER" : "ADMIN";
               }
             }
