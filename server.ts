@@ -7733,7 +7733,8 @@ const resJam =
           const createdMs = getCreatedTimeMs(l);
           const isRecent = createdMs > 0 && (syncNow - createdMs < GRACE_PERIOD_MS);
 
-          return isDraft || isRecent;
+          const isLocalOnly = (l.status_sync || "").toUpperCase() === "LOCAL";
+          return isDraft || isRecent || isLocalOnly;
         });
 
         // Data lokal yang PAID/SELESAI tetapi tidak ada di remote dan lebih dari 15 menit → dihapus
