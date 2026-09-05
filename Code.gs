@@ -2663,7 +2663,7 @@ var DB_SCHEMA = {
     "catatan_owner", "closing_status", "closing_at", "closing_by"],
   MASTER_KATEGORI_KEUANGAN: ["id", "jenis", "nama", "aktif", "urutan", "created_at", "updated_at", "created_by"],
   KEUANGAN_OUTLET: ["id", "tanggal", "outlet_id", "jenis", "kategori_id", "nominal", "deskripsi", "bukti_url",
-    "dibuat_oleh", "created_at", "aktif", "resi_id"],
+    "dibuat_oleh", "created_at", "aktif", "resi_id", "lokasi_uang"],
   // Sheet baru — belum ada di spreadsheet, akan dibuat oleh initializeDatabase().
   IMPORT_LOG: ["id", "created_at", "owner", "outlet_id", "outlet_name", "spreadsheet_id", "spreadsheet_name", "sheet_name",
     "total_preview", "total_new", "total_update", "total_skipped", "status", "completed_at", "frontend_version", "backend_version", "db_schema_version", "app_version"],
@@ -3842,6 +3842,17 @@ var TransactionService = {
     
     Logger.log("[saveTransaction] Checking ledger entries for resi: " + resiId + " | biaya_packing: " + fin.biaya_packing + " | biaya_amplop: " + fin.biaya_amplop + " | outlet: " + data.outlet_id_input);
     
+    function classifyOutletItem(nominal, metode) {
+      if (!nominal || nominal <= 0) return "ADMIN";
+      var m = String(metode || "").trim().toUpperCase();
+      var isDigital = m === "QRIS" || m === "TRANSFER"
+                   || m === "ORDER BY APP" || m === "ORDER_BY_APP" || m === "APP";
+      return isDigital ? "OWNER" : "ADMIN";
+    }
+
+    var resolvedMetodeTambahan = (data.metode_bayar_tambahan || "").trim()
+      || ((fin.biaya_packing > 0 || fin.biaya_amplop > 0) ? "Tunai" : "");
+
     // 1. Kas Outlet — Otomatis Catat Biaya Packing
     if (fin.biaya_packing > 0) {
       var deskripsiPacking = "Biaya Packing untuk resi " + resiId;
@@ -3876,7 +3887,8 @@ var TransactionService = {
           dibuat_oleh: data.admin_id_pencatat,
           created_at: timestamp,
           aktif: "TRUE",
-          resi_id: resiId
+          resi_id: resiId,
+          lokasi_uang: classifyOutletItem(fin.biaya_packing, resolvedMetodeTambahan)
         };
         DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntry);
         Logger.log("[saveTransaction] Successfully inserted KEUANGAN_OUTLET Packing entry for resi: " + resiId + " (Rp " + fin.biaya_packing + ")");
@@ -3919,7 +3931,8 @@ var TransactionService = {
           dibuat_oleh: data.admin_id_pencatat,
           created_at: timestamp,
           aktif: "TRUE",
-          resi_id: resiId
+          resi_id: resiId,
+          lokasi_uang: classifyOutletItem(fin.biaya_amplop, resolvedMetodeTambahan)
         };
         DatabaseService.insertRow("KEUANGAN_OUTLET", kasEntryAmplop);
         Logger.log("[saveTransaction] Successfully inserted KEUANGAN_OUTLET Amplop entry for resi: " + resiId + " (Rp " + fin.biaya_amplop + ")");
