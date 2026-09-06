@@ -379,43 +379,7 @@ const initialDb = {
   EXP_Resi: [],
   CRG_Resi: [],
   AuditLogs: [],
-  MASTER_TRANSAKSI: [
-    {
-      id: "PRE-YY-1788286355-1hp",
-      transaksi_id: "PRE-YY-1788286355-1hp",
-      no_resi: "JD0585369760",
-      outlet_id: "OUT-002",
-      admin_id: "USR_1786776882250",
-      admin_pembuat: "USR_1786776882250",
-      user_id: "USR_1786776882250",
-      tanggal_transaksi: "2026-08-31",
-      jam_transaksi: "09:39:13",
-      created_at: "2026-09-01T18:13:02.752Z",
-      ekspedisi: "Express",
-      tipe_produk: "DOC",
-      pengirim: "PT. PERWIRA ARTHABAJA PASIFIK",
-      snapshot_nama_pengirim: "PT. PERWIRA ARTHABAJA PASIFIK",
-      penerima: "IBU ERIN",
-      snapshot_nama_penerima: "IBU ERIN",
-      nama_barang: "Paket",
-      metode_bayar: "Tunai",
-      ongkir_customer: 18000,
-      ongkir_yoyi: 18000,
-      biaya_yoyi: 19000,
-      packing: 0,
-      amplop: 2000,
-      biaya_lain: 1000,
-      asuransi: 0,
-      pembulatan: 0,
-      total_customer: 19000,
-      grand_total: 21000,
-      wajib_setor_owner: 19000,
-      kas_outlet: 2000,
-      status_transaksi: "PAID",
-      status_setoran: "PENDING",
-      status_audit: "PENDING"
-    }
-  ],
+  MASTER_TRANSAKSI: [],
   MASTER_PENGIRIMAN: []
 };
 
@@ -1292,80 +1256,7 @@ function readDb() {
       }
     }
 
-    if (parsed.EXP_Resi.length === 0) {
-      const todayIso = new Date().toISOString();
-      parsed.EXP_Resi = [
-        {
-          resi_id: "JD0576839515",
-          timestamp: todayIso,
-          admin_id_pencatat: "USR-002",
-          outlet_id_input: "OUT-001",
-          nama_pengirim: "Budi Santoso",
-          no_hp_pengirim: "081298765432",
-          nama_penerima: "Dewi Lestari",
-          no_hp_penerima: "081312345678",
-          biaya_packing: 0,
-          biaya_amplop: 2000,
-          ongkir_dasar: 15000,
-          total_bayar: 17000,
-          metode_pembayaran_ongkir: "CASH",
-          status: "SELESAI",
-          status_resi: "VALID"
-        },
-        {
-          resi_id: "JD0578137440",
-          timestamp: todayIso,
-          admin_id_pencatat: "USR-002",
-          outlet_id_input: "OUT-001",
-          nama_pengirim: "Siti Rahma",
-          no_hp_pengirim: "081299887766",
-          nama_penerima: "Andi Wijaya",
-          no_hp_penerima: "081544332211",
-          biaya_packing: 0,
-          biaya_amplop: 2000,
-          ongkir_dasar: 12000,
-          total_bayar: 14000,
-          metode_pembayaran_ongkir: "CASH",
-          status: "SELESAI",
-          status_resi: "VALID"
-        },
-        {
-          resi_id: "JD0578248369",
-          timestamp: todayIso,
-          admin_id_pencatat: "USR-002",
-          outlet_id_input: "OUT-001",
-          nama_pengirim: "PT Jaya Mandiri",
-          no_hp_pengirim: "081122334455",
-          nama_penerima: "CV Sentosa",
-          no_hp_penerima: "081266778899",
-          biaya_packing: 15000,
-          biaya_amplop: 0,
-          ongkir_dasar: 45000,
-          total_bayar: 60000,
-          metode_pembayaran_ongkir: "CASH",
-          status: "SELESAI",
-          status_resi: "VALID"
-        },
-        {
-          resi_id: "JD0578077660",
-          timestamp: todayIso,
-          admin_id_pencatat: "USR-002",
-          outlet_id_input: "OUT-001",
-          nama_pengirim: "Rian Hidayat",
-          no_hp_pengirim: "081388990011",
-          nama_penerima: "Bambang Pamungkas",
-          no_hp_penerima: "081244556677",
-          biaya_packing: 15000,
-          biaya_amplop: 0,
-          ongkir_dasar: 30000,
-          total_bayar: 45000,
-          metode_pembayaran_ongkir: "CASH",
-          status: "SELESAI",
-          status_resi: "VALID"
-        }
-      ];
-      updated = true;
-    }
+    
     
     if (!parsed.Users || !Array.isArray(parsed.Users)) {
       parsed.Users = initialDb.Users;
