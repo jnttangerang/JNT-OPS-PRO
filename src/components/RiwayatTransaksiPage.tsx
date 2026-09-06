@@ -64,6 +64,8 @@ interface TransaksiItem {
   penerima: string;
   hp_pengirim?: string;
   hp_penerima?: string;
+  alamat_pengirim?: string;
+  alamat_penerima?: string;
   nama_barang: string;
   status_resi: string;
 }
@@ -422,10 +424,10 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           outlet_name: item.outlet,
           nama_pengirim: item.pengirim,
           hp_pengirim: item.hp_pengirim || "-",
-          alamat_pengirim: "-",
+          alamat_pengirim: item.alamat_pengirim || "-",
           nama_penerima: item.penerima,
           hp_penerima: item.hp_penerima || "-",
-          alamat_penerima: "-",
+          alamat_penerima: item.alamat_penerima || "-",
           nama_barang: item.nama_barang || "-",
           berat_kg: 1,
           ongkir_dasar: item.ongkir_dasar ?? item.grand_total,
@@ -473,11 +475,11 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           outlet_id: "",
           outlet_name: item.outlet,
           nama_pengirim: item.pengirim,
-          hp_pengirim: "",
-          alamat_pengirim: "",
+          hp_pengirim: item.hp_pengirim || "",
+          alamat_pengirim: item.alamat_pengirim || "",
           nama_penerima: item.penerima,
-          hp_penerima: "",
-          alamat_penerima: "",
+          hp_penerima: item.hp_penerima || "",
+          alamat_penerima: item.alamat_penerima || "",
           nama_barang: item.nama_barang || "",
           berat_kg: 1,
           ongkir_dasar: item.grand_total,
@@ -1151,6 +1153,20 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
 
             <form onSubmit={handleSaveEdit} className="space-y-4">
               
+              {/* SECTION: WAKTU TRANSAKSI & IMPORT */}
+              <div className="flex gap-4 text-xs">
+                <div>
+                  <span className="text-gray-500">Waktu Transaksi: </span>
+                  <span className="font-semibold text-gray-800">{formatDisplayTime(editItem.transaction_time || resolveItemTime(editItem))}</span>
+                </div>
+                {editItem.imported_at && (
+                  <div>
+                    <span className="text-indigo-500">Waktu Import (JNT OPS PRO): </span>
+                    <span className="font-semibold text-indigo-700">{formatDisplayTime(editItem.imported_at)}</span>
+                  </div>
+                )}
+              </div>
+
               {/* SECTION: NOMOR RESI & STATUS & LAYANAN */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-amber-50/40 p-3.5 rounded-xl border border-amber-100">
                 <div>

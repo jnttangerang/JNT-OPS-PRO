@@ -4117,6 +4117,8 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
         penerima: tx.snapshot_nama_penerima || tx.nama_penerima || tx.penerima || p?.nama_penerima || "",
         hp_pengirim: tx.snapshot_hp_pengirim || tx.hp_pengirim || p?.hp_pengirim || "",
         hp_penerima: tx.snapshot_hp_penerima || tx.hp_penerima || p?.hp_penerima || "",
+        alamat_pengirim: tx.snapshot_alamat_pengirim || tx.alamat_pengirim || p?.alamat_pengirim || "",
+        alamat_penerima: tx.snapshot_alamat_penerima || tx.alamat_penerima || p?.alamat_penerima || "",
         nama_barang: tx.nama_barang || p?.nama_barang || "-",
         status_resi: tx.status_resi || tx.status_transaksi || tx.status || "AKTIF"
       };
@@ -4164,6 +4166,8 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
           penerima: masterTx?.snapshot_nama_penerima || r.nama_penerima || p?.nama_penerima || "",
           hp_pengirim: masterTx?.snapshot_hp_pengirim || r.hp_pengirim || p?.hp_pengirim || "",
           hp_penerima: masterTx?.snapshot_hp_penerima || r.hp_penerima || p?.hp_penerima || "",
+          alamat_pengirim: masterTx?.snapshot_alamat_pengirim || r.alamat_pengirim || p?.alamat_pengirim || "",
+          alamat_penerima: masterTx?.snapshot_alamat_penerima || r.alamat_penerima || p?.alamat_penerima || "",
           nama_barang: masterTx?.nama_barang || r.nama_barang || p?.nama_barang || "-",
           status_resi: masterTx?.status_resi || masterTx?.status_transaksi || r.status_resi || r.status || "AKTIF"
         });
@@ -4213,6 +4217,8 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
           penerima: masterTx?.snapshot_nama_penerima || c.nama_penerima || p?.nama_penerima || "",
           hp_pengirim: masterTx?.snapshot_hp_pengirim || c.hp_pengirim || p?.hp_pengirim || "",
           hp_penerima: masterTx?.snapshot_hp_penerima || c.hp_penerima || p?.hp_penerima || "",
+          alamat_pengirim: masterTx?.snapshot_alamat_pengirim || c.alamat_pengirim || p?.alamat_pengirim || "",
+          alamat_penerima: masterTx?.snapshot_alamat_penerima || c.alamat_penerima || p?.alamat_penerima || "",
           nama_barang: masterTx?.nama_barang || c.nama_barang || p?.nama_barang || "-",
           status_resi: masterTx?.status_resi || masterTx?.status_transaksi || c.status_resi || c.status || "AKTIF"
         });
