@@ -7036,6 +7036,7 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
     let detailMsg = "";
     let isError = false;
     let totalPayload = 0;
+    let currentDb = db;
 
     try {
       const [txRes, setoranRes, keuanganRes] = await Promise.all([
@@ -7059,11 +7060,14 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
         }).then(r => r.json()).catch((e) => { detailMsg += `Keuangan Fail: ${e.message}; `; isError = true; return null; })
       ]);
 
+      const latestDb = readDb();
+      currentDb = latestDb;
+
       let hasChanged = false;
 
       if (txRes && txRes.status === "success" && Array.isArray(txRes.data)) {
         totalPayload += txRes.data.length;
-        const localTxs = db.MASTER_TRANSAKSI || [];
+        const localTxs = latestDb.MASTER_TRANSAKSI || [];
         const remoteMapped = txRes.data.map((tx: any) => {
           const id = tx.transaksi_id || tx.id || tx.resi_id;
           const localTx = localTxs.find((l: any) => 
@@ -7078,7 +7082,7 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
           
           if (rawAdmin && String(rawAdmin).trim() !== "" && rawAdmin !== "SYSTEM") {
             const cleanAdmin = String(rawAdmin).trim();
-            const matchedUser = (db.Users || []).find((u: any) => 
+            const matchedUser = (latestDb.Users || []).find((u: any) => 
               u.user_id === cleanAdmin || 
               u.username === cleanAdmin || 
               (u.nama_lengkap && u.nama_lengkap.trim().toUpperCase() === cleanAdmin.toUpperCase())
@@ -7092,7 +7096,7 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
             return users.some((u: any) => u.user_id === id);
           }
 
-          if (!isResolvedUserId(finalAdminId, db.Users || [])) {
+          if (!isResolvedUserId(finalAdminId, latestDb.Users || [])) {
             const localOwner = localTx?.admin_id;
             if (localOwner && localOwner !== "SYSTEM" && localOwner !== "UNKNOWN" && localOwner !== "") {
               finalAdminId = localOwner;
@@ -7106,7 +7110,7 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
           let finalOutletId = rawOutlet || "OUT-001";
           if (rawOutlet && String(rawOutlet).trim() !== "") {
             const cleanOutlet = String(rawOutlet).trim();
-            const matchedOutlet = (db.Outlets || []).find((o: any) =>
+            const matchedOutlet = (latestDb.Outlets || []).find((o: any) =>
               o.outlet_id === cleanOutlet ||
               (o.nama_outlet && o.nama_outlet.trim().toUpperCase() === cleanOutlet.toUpperCase()) ||
               (o.kode_outlet && o.kode_outlet.trim().toUpperCase() === cleanOutlet.toUpperCase())
@@ -7135,7 +7139,7 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
             return 0;
           };
 
-          const matchingPre = (db.PreInput_Backup || []).find((b: any) => 
+          const matchingPre = (latestDb.PreInput_Backup || []).find((b: any) => 
             (tx.resi_id && (b.no_resi === tx.resi_id || b.resi_id === tx.resi_id)) ||
             (tx.no_resi && (b.no_resi === tx.no_resi || b.resi_id === tx.no_resi)) ||
             (tx.transaksi_id && b.transaksi_id === tx.transaksi_id) ||
@@ -7198,7 +7202,13 @@ const resJam =
             grand_total: resolveNum(tx.grand_total, localTx?.grand_total ?? (Number(tx.total_dibayar_customer || 0) + Number(tx.biaya_packing || 0) + Number(tx.biaya_amplop || 0) + Number(tx.biaya_lain || 0))),
             wajib_setor_owner: resolveNum(tx.setoran_ke_owner ?? tx.wajib_setor_owner ?? tx.setoran_owner, localTx?.wajib_setor_owner ?? localTx?.setoran_owner ?? localTx?.setoran_ke_owner),
             kas_outlet: resolveNum(tx.kas_operasional ?? tx.kas_outlet, localTx?.kas_outlet ?? localTx?.kas_operasional),
-            status_transaksi: tx.status_resi === "BATAL" ? "CANCELLED" : (localTx?.status_transaksi || "PAID"),
+            status_transaksi: tx.status_resi === "BATAL" || tx.status_transaksi === "CANCELLED"
+              ? "CANCELLED"
+              : (tx.status_transaksi && tx.status_transaksi !== "DRAFT"
+                  ? tx.status_transaksi
+                  : (localTx?.status_transaksi && localTx.status_transaksi !== "DRAFT" && localTx.status_transaksi !== "PENDING"
+                      ? localTx.status_transaksi
+                      : "PAID")),
             status_setoran: tx.status_setoran || localTx?.status_setoran || "PENDING",
             status_audit: tx.status_audit || localTx?.status_audit || "PENDING"
           };
@@ -7257,25 +7267,25 @@ const resJam =
         }
 
         // Gabungkan: remote + localOnly (DRAFT/PENDING dan PAID/SELESAI dalam grace period 15 menit)
-        db.MASTER_TRANSAKSI = [...remoteMapped, ...localOnly];
+        latestDb.MASTER_TRANSAKSI = [...remoteMapped, ...localOnly];
         hasChanged = true;
       }
 
       if (setoranRes && setoranRes.status === "success" && Array.isArray(setoranRes.data)) {
         totalPayload += setoranRes.data.length;
-        const localSetoran = db.Master_Setoran || [];
+        const localSetoran = latestDb.Master_Setoran || [];
         const remoteSetoranIds = new Set(setoranRes.data.map((s: any) => s.id || s.setoran_id));
         const localOnlySetoran = localSetoran.filter((l: any) => {
           const lid = l.id || l.setoran_id;
           return lid && !remoteSetoranIds.has(lid);
         });
-        db.Master_Setoran = [...setoranRes.data, ...localOnlySetoran];
+        latestDb.Master_Setoran = [...setoranRes.data, ...localOnlySetoran];
         hasChanged = true;
       }
 
       if (keuanganRes && keuanganRes.status === "success" && Array.isArray(keuanganRes.data)) {
         totalPayload += keuanganRes.data.length;
-        const localKeuangan = db.KeuanganOutlet || [];
+        const localKeuangan = latestDb.KeuanganOutlet || [];
         const remoteKeuanganIds = new Set(keuanganRes.data.map((k: any) => k.id));
         
         const mergedKeuangan = keuanganRes.data.map((remoteK: any) => {
@@ -7286,7 +7296,7 @@ const resJam =
           if (!resolvedLokasiUang && (remoteK.resi_id || (remoteK.deskripsi && remoteK.deskripsi.toLowerCase().includes("resi")))) {
             const resiIdMatch = remoteK.resi_id || remoteK.deskripsi.match(/resi\s+([a-z0-9]+)/i)?.[1];
             if (resiIdMatch) {
-              const tx = (db.MASTER_TRANSAKSI || []).find((t: any) => t.resi_id === resiIdMatch || t.no_resi === resiIdMatch);
+              const tx = (latestDb.MASTER_TRANSAKSI || []).find((t: any) => t.resi_id === resiIdMatch || t.no_resi === resiIdMatch);
               if (tx) {
                 // Deteksi apakah entri ini untuk amplop/packing
                 const isAmplop = remoteK.kategori_id === "KAT-208" || remoteK.deskripsi?.toLowerCase().includes("amplop");
@@ -7295,7 +7305,7 @@ const resJam =
                 let mBayar: string;
                 if (isAmplop || isPacking) {
                   // Untuk amplop/packing: baca metode_bayar_tambahan dari EXP_Resi
-                  const resiRecord = (db.EXP_Resi || []).find((r: any) => r.resi_id === resiIdMatch);
+                  const resiRecord = (latestDb.EXP_Resi || []).find((r: any) => r.resi_id === resiIdMatch);
                   const metodeTambahan = (resiRecord?.metode_bayar_tambahan || "").trim();
                   // Fallback ke "Tunai" (conservative) jika metode_bayar_tambahan kosong
                   mBayar = metodeTambahan ? metodeTambahan.toUpperCase() : "TUNAI";
@@ -7320,21 +7330,21 @@ const resJam =
         });
 
         const localOnlyKeuangan = localKeuangan.filter((k: any) => k.id && !remoteKeuanganIds.has(k.id));
-        db.KeuanganOutlet = [...mergedKeuangan, ...localOnlyKeuangan];
+        latestDb.KeuanganOutlet = [...mergedKeuangan, ...localOnlyKeuangan];
         hasChanged = true;
       }
 
       if (hasChanged) {
-        writeDb(db);
+        writeDb(latestDb);
       }
       
       lastSyncTime = Date.now();
     } catch (e: any) {
       isError = true; detailMsg += `Error: ${e.message}; `; console.warn("syncDbWithAppsScript warning:", e.message);
     } finally {
-      const duration = Date.now() - startTime; addSyncLog(db, isError ? "ERROR" : "SUCCESS", duration, totalPayload, detailMsg || "Sync completed successfully"); syncPromise = null;
+      const duration = Date.now() - startTime; addSyncLog(currentDb, isError ? "ERROR" : "SUCCESS", duration, totalPayload, detailMsg || "Sync completed successfully"); syncPromise = null;
     }
-    return db;
+    return currentDb;
   })();
 
   return syncPromise;
