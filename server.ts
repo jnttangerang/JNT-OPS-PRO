@@ -1431,11 +1431,12 @@ async function callAppsScript(action: string, data: any): Promise<any> {
   const url = process.env.APPS_SCRIPT_URL
            || process.env.VITE_APPS_SCRIPT_URL
            || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  if (!url) throw new Error("APPS_SCRIPT_URL tidak dikonfigurasi");
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, data }),
-    signal: AbortSignal.timeout(25000) // 25s timeout
+    signal: AbortSignal.timeout(25000)
   });
   if (!resp.ok) throw new Error(`Apps Script HTTP ${resp.status}`);
   const json = await resp.json();
