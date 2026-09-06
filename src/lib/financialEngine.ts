@@ -169,8 +169,17 @@ export function calculateFinancialSummary(tx: any): any {
   const packing = safeNum(tx.packing ?? tx.biaya_packing);
   const biaya_tambahan_direct = safeNum(tx.biaya_tambahan ?? tx.surcharge);
   
-  // Biaya Dasar Layanan (Ongkir Dasar + Asuransi + Biaya Lain-lain)
-  const biayaDasarLayanan = ongkir_customer + asuransi + biaya_lain;
+  const resolveNum = safeNum;
+  const ongkirYoyi = ongkir_customer;
+  const biayaLain = biaya_lain;
+
+  // Prioritaskan wajib_setor_owner yang tersimpan (sudah include rounding)
+  // Fallback ke kalkulasi komponen jika field tidak ada
+  const storedOwner = resolveNum(tx.wajib_setor_owner ?? tx.setoran_ke_owner ?? 0);
+  const rawOwner = storedOwner > 0
+    ? storedOwner
+    : (ongkirYoyi + asuransi + biayaLain);
+  const biayaDasarLayanan = rawOwner;
   
   // Surcharges / Kas Operasional Outlet (Amplop + Packing)
   const biayaTambahan = (amplop + packing > 0) ? (amplop + packing) : biaya_tambahan_direct;
