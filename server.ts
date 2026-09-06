@@ -2827,6 +2827,24 @@ app.post("/api/importYoYi", async (req, res) => {
       };
     }
   }
+
+  // Update EXP_Resi di local db dari response Code.gs
+  if (gasResult.data?.exp_resi) {
+    if (!currentDb.EXP_Resi) currentDb.EXP_Resi = [];
+    const expData = gasResult.data.exp_resi;
+    const expIdx = currentDb.EXP_Resi.findIndex(
+      (r: any) => (expData.resi_id && r.resi_id === expData.resi_id)
+               || (expData.transaksi_id && r.transaksi_id === expData.transaksi_id)
+    );
+    if (expIdx === -1) {
+      currentDb.EXP_Resi.unshift(expData);
+    } else {
+      currentDb.EXP_Resi[expIdx] = {
+        ...currentDb.EXP_Resi[expIdx],
+        ...expData
+      };
+    }
+  }
   writeDb(currentDb);
   // Tahan sync selama 10 detik — beri waktu local db terbaca dulu
   (global as any)._lastRiwayatSync = Date.now();
