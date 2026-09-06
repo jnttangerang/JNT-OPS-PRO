@@ -4519,8 +4519,10 @@ app.post("/api/getDashboardData", async (req, res) => {
   });
 });
 
-app.post("/api/getRiwayatTransaksi", async (req, res) => {
-  console.log("--> /api/getRiwayatTransaksi called with body:", req.body);
+app.all("/api/getRiwayatTransaksi", async (req, res) => {
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  const queryOrBody = { ...(req.query || {}), ...(req.body || {}) };
+  console.log("--> /api/getRiwayatTransaksi called with params:", queryOrBody);
   try {
     const RIWAYAT_SYNC_TTL_MS = 5000;
     const now = Date.now();
@@ -4529,11 +4531,13 @@ app.post("/api/getRiwayatTransaksi", async (req, res) => {
     // Gracefully handle network latency scenarios:
     // 1. If a sync is currently in-flight, queue onto the existing promise so subsequent calls await completion
     //    without spawning duplicate concurrent syncs or causing data reconciliation race conditions.
-    // 2. If a sync request takes longer than the 5s TTL, subsequent calls are queued or suppressed.
-    // 3. If a sync has finished within the TTL (5s), auto-sync is suppressed and serves from local state.
+    // 2. Bound sync waiting to 2.5s maximum so request never times out or drops to gateway error.
     if ((global as any)._riwayatSyncPromise) {
       try {
-        await (global as any)._riwayatSyncPromise;
+        await Promise.race([
+          (global as any)._riwayatSyncPromise,
+          new Promise((resolve) => setTimeout(resolve, 2500))
+        ]);
       } catch (err: any) {
         console.warn("Queued riwayat sync completed with error:", err?.message || err);
       }
@@ -4548,14 +4552,17 @@ app.post("/api/getRiwayatTransaksi", async (req, res) => {
       })();
       (global as any)._riwayatSyncPromise = syncP;
       try {
-        await syncP;
+        await Promise.race([
+          syncP,
+          new Promise((resolve) => setTimeout(resolve, 2500))
+        ]);
       } catch (err: any) {
         console.warn("Auto-sync riwayat error:", err?.message || err);
       }
     }
 
     const db = readDb();
-    const { filterOutlet: reqOutlet, activeOutletId, tanggal_awal: rawAwal, tanggal_akhir: rawAkhir, filterStatus } = req.body || {};
+    const { filterOutlet: reqOutlet, activeOutletId, tanggal_awal: rawAwal, tanggal_akhir: rawAkhir, filterStatus } = queryOrBody;
     const filterOutlet = reqOutlet || activeOutletId || "ALL";
     const tanggal_awal = rawAwal ? String(rawAwal).slice(0, 10) : undefined;
     const tanggal_akhir = rawAkhir ? String(rawAkhir).slice(0, 10) : undefined;
@@ -5399,7 +5406,16 @@ app.post("/api/analyzeReview", async (req, res) => {
 // ==========================================
 
 app.post(["/api/getOwnerClosingSummary", "/api/dailyClosing/ownerSummary"], async (req, res) => {
-  const db = await syncDbWithAppsScript(readDb());
+  const CLOSING_SYNC_TTL_MS = 10000; // 10s — lebih panjang dari Riwayat (5s)
+  const now = Date.now();
+  const lastSync = (global as any)._lastClosingSync || 0;
+  let db: any;
+  if (now - lastSync > CLOSING_SYNC_TTL_MS) {
+    db = await syncDbWithAppsScript(readDb());
+    (global as any)._lastClosingSync = Date.now();
+  } else {
+    db = readDb();
+  }
   const filters = req.body || {};
   const result = getOwnerClosingSummary(db, filters);
   return res.json(result);
@@ -7888,7 +7904,16 @@ app.post("/api/dailyClosing/close", async (req, res) => {
 });
 
 app.get("/api/dailyClosing/status", async (req, res) => {
-  const db = await syncDbWithAppsScript(readDb());
+  const CLOSING_SYNC_TTL_MS = 10000; // 10s — lebih panjang dari Riwayat (5s)
+  const now = Date.now();
+  const lastSync = (global as any)._lastClosingSync || 0;
+  let db: any;
+  if (now - lastSync > CLOSING_SYNC_TTL_MS) {
+    db = await syncDbWithAppsScript(readDb());
+    (global as any)._lastClosingSync = Date.now();
+  } else {
+    db = readDb();
+  }
   const { outlet_id, tanggal, date } = req.query as any;
   const targetDate = tanggal || date;
   const statusInfo = getDailyClosingStatus(db, outlet_id, targetDate);
@@ -7896,7 +7921,16 @@ app.get("/api/dailyClosing/status", async (req, res) => {
 });
 
 app.get("/api/dailyClosing/admin/status", async (req, res) => {
-  const db = await syncDbWithAppsScript(readDb());
+  const CLOSING_SYNC_TTL_MS = 10000; // 10s — lebih panjang dari Riwayat (5s)
+  const now = Date.now();
+  const lastSync = (global as any)._lastClosingSync || 0;
+  let db: any;
+  if (now - lastSync > CLOSING_SYNC_TTL_MS) {
+    db = await syncDbWithAppsScript(readDb());
+    (global as any)._lastClosingSync = Date.now();
+  } else {
+    db = readDb();
+  }
   const { admin_id, tanggal, date } = req.query as any;
   const targetDate = tanggal || date;
   
@@ -7938,8 +7972,16 @@ app.get("/api/dailyClosing/admin/status", async (req, res) => {
   for (const outlet_id of outletSet) {
     const statusInfo = getDailyClosingStatus(db, outlet_id, targetDate);
     if (statusInfo.data) {
-       const myBreakdown = statusInfo.data.admin_breakdown?.find((a: any) => possibleIds.has(a.admin_id) || a.admin_id === admin_id);
-       if (myBreakdown) {
+      const myBreakdown = statusInfo.data.admin_breakdown?.find((a: any) => {
+        if (!a.admin_id) return false;
+        const aId = String(a.admin_id).trim();
+        return possibleIds.has(aId)
+            || aId === String(admin_id).trim()
+            || [...possibleIds].some(pid =>
+                 String(pid).trim().toUpperCase() === aId.toUpperCase()
+               );
+      });
+      if (myBreakdown) {
          results.push({
            outlet_id,
            outlet_name: (db.Outlets || db.Master_Outlet || []).find((o: any) => o.outlet_id === outlet_id)?.nama_outlet || outlet_id,

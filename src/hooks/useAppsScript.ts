@@ -20,7 +20,7 @@ declare global {
 export function useAppsScript() {
   const [loading, setLoading] = useState(false);
 
-  const callLocalApi = async <T = any>(action: string, params: any = {}): Promise<T> => {
+  const callLocalApi = async <T = any>(action: string, params: any = {}, retries = 2): Promise<T> => {
     let url = `/api/${action}`;
     let method = "POST";
     let body: any = params;
@@ -31,29 +31,48 @@ export function useAppsScript() {
       body = undefined;
     }
 
-    const response = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: body ? JSON.stringify(body) : undefined,
+        });
 
-    const text = await response.text();
-    let json: any;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      setLoading(false);
-      throw new Error(`Respons dari server lokal bukan JSON yang valid (HTTP ${response.status}).`);
+        const text = await response.text();
+        let json: any;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          // If response is HTML/empty during server reload or proxy glitch, retry briefly
+          if (attempt < retries) {
+            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+            continue;
+          }
+          setLoading(false);
+          throw new Error(`Respons dari server lokal bukan JSON yang valid (HTTP ${response.status}).`);
+        }
+        setLoading(false);
+
+        if (response.status !== 200 || json.status === "error") {
+          throw new Error(json.message || `HTTP ${response.status} Error`);
+        }
+
+        return json as T;
+      } catch (err: any) {
+        if (attempt < retries && !err.message?.includes("Akses ditolak") && !err.message?.includes("HTTP 4")) {
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          continue;
+        }
+        setLoading(false);
+        throw err;
+      }
     }
     setLoading(false);
-
-    if (response.status !== 200 || json.status === "error") {
-      throw new Error(json.message || `HTTP ${response.status} Error`);
-    }
-
-    return json as T;
+    throw new Error(`Gagal menghubungi endpoint /api/${action}.`);
   };
 
   const callBackend = useCallback(

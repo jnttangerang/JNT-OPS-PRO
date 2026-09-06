@@ -232,7 +232,10 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
         }
         return response;
       } catch (error) {
-        console.error("Error fetching riwayat:", error);
+        console.warn("Error fetching riwayat:", error);
+        if (_cachedRiwayatData && isMountedRef.current) {
+          setData(_cachedRiwayatData);
+        }
         return null;
       } finally {
         _activeFetchPromise = null;
