@@ -4005,7 +4005,35 @@ var TransactionService = {
       sumber_data: "Resi & Bayar"
     });
     
-    return { resi_id: resiId };
+    // Ambil record yang baru ditulis untuk dikirim balik ke server.ts
+    var txRecord = null;
+    var expRecord = null;
+    try {
+      var allTx = DatabaseService.getAll("MASTER_TRANSAKSI");
+      txRecord = allTx.find(function(r) {
+        return r.id === transId || r.transaksi_id === transId || r.no_resi === resiId;
+      }) || null;
+      var allExp = DatabaseService.getAll("EXP_Resi");
+      expRecord = allExp.find(function(r) {
+        return r.resi_id === resiId || r.transaksi_id === transId;
+      }) || null;
+    } catch(e) {
+      Logger.log("Warning: gagal ambil record untuk response: " + e.toString());
+    }
+    
+    return {
+      status: "success",
+      resi_id: resiId,
+      transaksi_id: transId,
+      transaksi: txRecord,
+      exp_resi: expRecord,
+      data: {
+        resi_id: resiId,
+        transaksi_id: transId,
+        transaksi: txRecord,
+        exp_resi: expRecord
+      }
+    };
   },
   
   updateTransaction: function(jenisLayanan, data) {

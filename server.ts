@@ -2738,7 +2738,10 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       }
     }
     writeDb(currentDb);
-    invalidateSyncCache();
+    // Tahan sync selama 10 detik — beri waktu local db terbaca dulu
+    (global as any)._lastRiwayatSync = Date.now();
+    (global as any)._lastClosingSync = Date.now();
+    (global as any)._riwayatSyncPromise = null;
 
     return res.json({ status: "success", data: gasResult.data });
   } catch (err: any) {
@@ -2825,7 +2828,10 @@ app.post("/api/importYoYi", async (req, res) => {
     }
   }
   writeDb(currentDb);
-  invalidateSyncCache();
+  // Tahan sync selama 10 detik — beri waktu local db terbaca dulu
+  (global as any)._lastRiwayatSync = Date.now();
+  (global as any)._lastClosingSync = Date.now();
+  (global as any)._riwayatSyncPromise = null;
 
   return res.json({ status: "success", data: gasResult.data });
 });
