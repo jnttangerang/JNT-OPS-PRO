@@ -169,13 +169,11 @@ export function calculateFinancialSummary(tx: any): any {
   const packing = safeNum(tx.packing ?? tx.biaya_packing);
   const biaya_tambahan_direct = safeNum(tx.biaya_tambahan ?? tx.surcharge);
   
-  const resolveNum = safeNum;
   const ongkirYoyi = ongkir_customer;
   const biayaLain = biaya_lain;
 
   // Prioritaskan wajib_setor_owner yang tersimpan (sudah include rounding)
-  // Fallback ke kalkulasi komponen jika field tidak ada
-  const storedOwner = resolveNum(tx.wajib_setor_owner ?? tx.setoran_ke_owner ?? 0);
+  const storedOwner = Number(tx.wajib_setor_owner ?? tx.setoran_ke_owner ?? 0);
   const rawOwner = storedOwner > 0
     ? storedOwner
     : (ongkirYoyi + asuransi + biayaLain);
