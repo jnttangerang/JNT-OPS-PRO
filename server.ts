@@ -2723,9 +2723,18 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       const existing = currentDb.MASTER_TRANSAKSI.findIndex(
         (t: any) => t.no_resi === gasResult.data.transaksi.no_resi
                  || t.id === gasResult.data.transaksi.id
+                 || t.id === gasResult.data.transaksi.transaksi_id
+                 || t.transaksi_id === gasResult.data.transaksi.id
+                 || t.transaksi_id === gasResult.data.transaksi.transaksi_id
       );
       if (existing === -1) {
         currentDb.MASTER_TRANSAKSI.unshift(gasResult.data.transaksi);
+      } else {
+        // Update existing draft/record dengan data final dari Apps Script
+        currentDb.MASTER_TRANSAKSI[existing] = {
+          ...currentDb.MASTER_TRANSAKSI[existing],
+          ...gasResult.data.transaksi
+        };
       }
     }
     writeDb(currentDb);
@@ -2801,9 +2810,18 @@ app.post("/api/importYoYi", async (req, res) => {
     const existing = currentDb.MASTER_TRANSAKSI.findIndex(
       (t: any) => t.no_resi === gasResult.data.transaksi.no_resi
                || t.id === gasResult.data.transaksi.id
+               || t.id === gasResult.data.transaksi.transaksi_id
+               || t.transaksi_id === gasResult.data.transaksi.id
+               || t.transaksi_id === gasResult.data.transaksi.transaksi_id
     );
     if (existing === -1) {
       currentDb.MASTER_TRANSAKSI.unshift(gasResult.data.transaksi);
+    } else {
+      // Update existing draft/record dengan data final dari Apps Script
+      currentDb.MASTER_TRANSAKSI[existing] = {
+        ...currentDb.MASTER_TRANSAKSI[existing],
+        ...gasResult.data.transaksi
+      };
     }
   }
   writeDb(currentDb);
