@@ -1426,6 +1426,23 @@ function addAuditLog(userId: string, action: string, detail: string, outletId: s
   }
 }
 
+// Helper: Synchronous caller to Google Apps Script
+async function callAppsScript(action: string, data: any): Promise<any> {
+  const url = process.env.APPS_SCRIPT_URL
+           || process.env.VITE_APPS_SCRIPT_URL
+           || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, data }),
+    signal: AbortSignal.timeout(25000) // 25s timeout
+  });
+  if (!resp.ok) throw new Error(`Apps Script HTTP ${resp.status}`);
+  const json = await resp.json();
+  if (json.status === "error") throw new Error(json.message || "Apps Script error");
+  return json;
+}
+
 // === API ROUTES ===
 
 // Endpoint Verifikasi Koneksi ke Apps Script
@@ -2777,82 +2794,6 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       return res.status(400).json({ status: "error", message: "RESI SUDAH TERDAFTAR — Kemungkinan duplikat/fraud" });
     }
 
-    // Optional asynchronous background sync to Apps Script if configured (non-blocking)
-    const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
-    if (appsScriptUrl && appsScriptUrl.trim() && req.headers["x-test-mode"] !== "true") {
-      fetch(appsScriptUrl.trim(), {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({ action: "saveTransaksi", data: req.body || {} })
-      })
-      .then(async (res) => {
-        const text = await res.text();
-        try {
-          const json = JSON.parse(text);
-          if (json.status === "error") {
-            console.warn(`[Background Sync Error] saveTransaksi: ${json.message}`);
-          } else {
-            console.log(`[Background Sync Success] saveTransaksi: ${json.message || "OK"}`);
-          }
-        } catch (e) {
-          console.warn("[Background Sync Error] Non-JSON response:", text.substring(0, 200));
-        }
-      })
-      .catch((err) => console.warn("Background Apps Script sync note:", err.message));
-    }
-
-    let timestamp = new Date().toISOString();
-    if (data.timestamp) {
-      timestamp = data.timestamp;
-    } else if (data.tanggal_transaksi && data.jam_transaksi) {
-      timestamp = `${data.tanggal_transaksi}T${data.jam_transaksi}`;
-    } else if (data.tanggal_transaksi) {
-      timestamp = `${data.tanggal_transaksi}T00:00:00`;
-    }
-
-    const txTanggal = data.tanggal_transaksi || (timestamp.includes("T") ? timestamp.split("T")[0] : getWIBDate(timestamp));
-    const txJam = data.jam_transaksi || (timestamp.includes("T") ? timestamp.split("T")[1].replace("Z", "").split(".")[0] : getWIBTime(timestamp));
-    const importedAt = (data.imported_at && !data.imported_at.includes("T") && !data.imported_at.includes("Z"))
-      ? data.imported_at
-      : new Date().toISOString();
-
-    const isDoc = isDocumentTransaction(data);
-    const metodeBayarOngkir = data.metode_pembayaran_ongkir || data.metode_bayar || data.metode_bayar_ongkir || "Tunai";
-    const metodeBayarTambahan = data.metode_pembayaran_tambahan || data.metode_bayar_tambahan || "";
-    const isDfod = String(metodeBayarOngkir).toUpperCase().includes("DFOD");
-
-    let biayaAmplop = Number(data.biaya_amplop ?? data.biayaAmplop ?? data.amplop) || 0;
-    if (isDoc && biayaAmplop === 0) {
-      biayaAmplop = 2000;
-    }
-    let biayaLain = Number(data.biaya_lain) || 0;
-    if (isDoc && biayaLain === 0) {
-      biayaLain = 1000;
-    }
-    const biayaPacking = Number(data.biaya_packing ?? data.biayaPacking ?? data.packing) || 0;
-    const biayaAsuransi = Number(data.biaya_asuransi ?? data.asuransi) || 0;
-    const ongkirDasar = Number(data.ongkir_dasar ?? data.ongkir_customer ?? data.ongkir) || 0;
-    const pembulatan = Number(data.pembulatan) || 0;
-
-    // Financial Engine SSOT
-    const summary = calculateFinancialSummary({
-      ...data,
-      ongkir_dasar: ongkirDasar,
-      biaya_asuransi: biayaAsuransi,
-      biaya_lain: biayaLain,
-      biaya_amplop: biayaAmplop,
-      biaya_packing: biayaPacking,
-      pembulatan: pembulatan,
-      metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
-      metode_bayar_tambahan: metodeBayarTambahan
-    });
-
-    const setoranKeOwner = isDfod ? 0 : (data.setoran_ke_owner !== undefined && Number(data.setoran_ke_owner) > 0 ? Number(data.setoran_ke_owner) : summary.owner_deposit);
-    const grandTotal = Number(data.grand_total) || summary.customer_payment;
-    const jumlahDibayarCustomer = Number(data.jumlah_dibayar_customer) || (isDfod ? 0 : summary.customer_payment);
-    const kasOperasional = Number(data.kas_operasional ?? data.kas_outlet) || summary.outlet_cash;
-
-    const transId = data.transaksi_id || ("TRX-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5));
     const outletId = data.outlet_id_input || data.activeOutletId || data.outlet_id;
     const adminId = data.admin_id_pencatat || data.admin_id;
     if (!outletId) {
@@ -2862,238 +2803,43 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
       return res.status(400).json({ status: "error", message: "admin_id_pencatat wajib diisi" });
     }
 
-    if (jenis_layanan === "Express" || jenis_layanan === "REGULAR") {
-      const newExp = {
-        resi_id: rid,
-        transaksi_id: transId,
-        timestamp,
-        imported_at: importedAt,
-        tanggal_transaksi: txTanggal,
-        jam_transaksi: txJam,
-        admin_id_pencatat: adminId,
-        outlet_id_input: outletId,
-        tipe_produk: data.tipe_produk || "EZ",
-        ekspedisi: data.ekspedisi || "Express",
-        berat_timbangan: Number(data.berat_timbangan) || Number(data.berat_kg) || 0,
-        panjang_cm: Number(data.panjang_cm) || 0,
-        lebar_cm: Number(data.lebar_cm) || 0,
-        tinggi_cm: Number(data.tinggi_cm) || 0,
-        berat_volume: Number(data.berat_volume) || 0,
-        dasar_berat: data.dasar_berat || "TIMBANGAN",
-        berat_kg: Number(data.berat_kg) || 0,
-        volume: data.volume || "0 x 0 x 0",
-        biaya_lain: Number(data.biaya_lain) || 0,
-        biaya_asuransi: Number(data.biaya_asuransi) || 0,
-        ongkir_dasar: Number(data.ongkir_dasar) || 0,
-        biaya_yoyi: Number(data.biaya_yoyi) || 0,
-        total_dibayar_customer: jumlahDibayarCustomer,
-        jumlah_dibayar_customer: jumlahDibayarCustomer,
-        pembulatan: Number(data.pembulatan) || 0,
-        metode_bayar: metodeBayarOngkir,
-        metode_pembayaran_ongkir: metodeBayarOngkir,
-        bukti_bayar_url: data.bukti_bayar_url || "",
-        biaya_amplop: biayaAmplop,
-        biaya_packing: biayaPacking,
-        metode_bayar_tambahan: metodeBayarTambahan,
-        metode_pembayaran_tambahan: metodeBayarTambahan,
-        bukti_tambahan_url: data.bukti_tambahan_url || "",
-        grand_total: grandTotal,
-        setoran_ke_owner: setoranKeOwner,
-        kas_operasional: kasOperasional
-      };
-      db.EXP_Resi.unshift(newExp);
-    } else if (jenis_layanan === "Cargo") {
-      const newCrg = {
-        resi_id: rid,
-        transaksi_id: transId,
-        timestamp,
-        imported_at: importedAt,
-        tanggal_transaksi: txTanggal,
-        jam_transaksi: txJam,
-        admin_id_pencatat: adminId,
-        outlet_id_input: outletId,
-        tipe_produk: data.tipe_produk || "FastTrack",
-        ekspedisi: data.ekspedisi || "Cargo",
-        berat_timbangan: Number(data.berat_timbangan) || Number(data.berat_kg) || 0,
-        panjang_cm: Number(data.panjang_cm) || 0,
-        lebar_cm: Number(data.lebar_cm) || 0,
-        tinggi_cm: Number(data.tinggi_cm) || 0,
-        berat_volume: Number(data.berat_volume) || 0,
-        dasar_berat: data.dasar_berat || "TIMBANGAN",
-        volume: data.volume || "0 x 0 x 0",
-        merk_motor: data.merk_motor || "",
-        cc_motor: Number(data.cc_motor) || 0,
-        tahun_motor: Number(data.tahun_motor) || 0,
-        kelengkapan_motor: data.kelengkapan_motor || "",
-        biaya_asuransi: Number(data.biaya_asuransi) || 0,
-        ongkir_dasar: Number(data.ongkir_dasar) || 0,
-        biaya_jtc: Number(data.biaya_jtc) || 0,
-        total_dibayar_customer: jumlahDibayarCustomer,
-        jumlah_dibayar_customer: jumlahDibayarCustomer,
-        pembulatan: Number(data.pembulatan) || 0,
-        metode_bayar: metodeBayarOngkir,
-        metode_pembayaran_ongkir: metodeBayarOngkir,
-        bukti_bayar_url: data.bukti_bayar_url || "",
-        biaya_amplop: biayaAmplop,
-        biaya_packing: biayaPacking,
-        metode_bayar_tambahan: metodeBayarTambahan,
-        metode_pembayaran_tambahan: metodeBayarTambahan,
-        bukti_tambahan_url: data.bukti_tambahan_url || "",
-        grand_total: grandTotal,
-        setoran_ke_owner: setoranKeOwner,
-        kas_operasional: kasOperasional
-      };
-      db.CRG_Resi.unshift(newCrg);
-    } else {
-      return res.status(400).json({ status: "error", message: "Jenis layanan tidak valid" });
-    }
-
-    // Update PreInput_Backup status to SELESAI if transaction_id was pending, or create backup if missing
-    let pre = db.PreInput_Backup.find((p: any) => p.transaksi_id === transId || (rid && p.no_resi === rid));
-
-    // Resolve robust values giving priority to non-placeholder values from data or pre
-    const isPlaceholderSender = (val?: string) => !val || String(val).trim() === "" || String(val).trim() === "Umum" || String(val).trim() === "YoYi Pengirim";
-    const isPlaceholderReceiver = (val?: string) => !val || String(val).trim() === "" || String(val).trim() === "Umum" || String(val).trim() === "YoYi Penerima";
-    const isPlaceholderItem = (val?: string) => !val || String(val).trim() === "" || String(val).trim() === "Paket" || String(val).trim() === "Paket Standard" || String(val).trim() === "Paket YoYi";
-
-    const senderName = (!isPlaceholderSender(data.nama_pengirim) ? data.nama_pengirim : (!isPlaceholderSender(pre?.nama_pengirim) ? pre.nama_pengirim : (data.nama_pengirim || pre?.nama_pengirim || "Umum"))).toString().trim();
-    const senderHp = String(data.hp_pengirim || data.no_hp_pengirim || pre?.hp_pengirim || "").trim();
-    const senderAddr = String(data.alamat_pengirim || pre?.alamat_pengirim || "").trim();
-
-    const recName = (!isPlaceholderReceiver(data.nama_penerima) ? data.nama_penerima : (!isPlaceholderReceiver(pre?.nama_penerima) ? pre.nama_penerima : (data.nama_penerima || pre?.nama_penerima || "Umum"))).toString().trim();
-    const recHp = String(data.hp_penerima || data.no_hp_penerima || pre?.hp_penerima || "").trim();
-    const recAddr = String(data.alamat_penerima || pre?.alamat_penerima || "").trim();
-
-    const itemName = (!isPlaceholderItem(data.nama_barang) ? data.nama_barang : (!isPlaceholderItem(pre?.nama_barang) ? pre.nama_barang : (data.nama_barang || pre?.nama_barang || "Paket"))).toString().trim();
-
-    if (pre) {
-      pre.status = "SELESAI";
-      pre.nama_pengirim = senderName;
-      pre.nama_penerima = recName;
-      pre.nama_barang = itemName;
-      pre.timestamp = timestamp;
-      if (importedAt) pre.imported_at = importedAt;
-      pre.tanggal_transaksi = txTanggal;
-      pre.jam_transaksi = txJam;
-      if (senderHp) pre.hp_pengirim = senderHp;
-      if (senderAddr) pre.alamat_pengirim = senderAddr;
-      if (recHp) pre.hp_penerima = recHp;
-      if (recAddr) pre.alamat_penerima = recAddr;
-      if (rid) pre.no_resi = rid;
-    } else {
-      pre = {
-        transaksi_id: transId,
-        timestamp,
-        imported_at: importedAt,
-        tanggal_transaksi: txTanggal,
-        jam_transaksi: txJam,
-        admin_id: adminId,
-        admin_name: data.operator_nama || undefined,
-        outlet_id_tugas: outletId,
-        nama_pengirim: senderName,
-        hp_pengirim: senderHp,
-        alamat_pengirim: senderAddr,
-        nama_penerima: recName,
-        hp_penerima: recHp,
-        alamat_penerima: recAddr,
-        nama_barang: itemName,
-        berat_kg: Number(data.berat_kg) || 1,
-        volume: data.volume || "0 x 0 x 0",
-        nilai_barang: Number(data.nilai_barang) || 0,
-        foto_paket_url: data.foto_paket_url || "",
-        status: "SELESAI",
-        catatan_admin: data.catatan_admin || "Import YoYi / Resi & Bayar",
-        no_resi: rid
-      };
-      if (!db.PreInput_Backup) db.PreInput_Backup = [];
-      db.PreInput_Backup.unshift(pre);
-    }
-
-    // Trigger Auto Upsert for Customer Master & Address Book and MASTER_TRANSAKSI & MASTER_PENGIRIMAN
+    // 1. Tulis ke Spreadsheet via Code.gs (SYNCHRONOUS)
+    let gasResult: any;
     try {
-      const { pengirim_id, penerima_id } = autoUpsertCustomerAndAddressBook(db, {
-        nama_pengirim: senderName,
-        hp_pengirim: senderHp,
-        alamat_pengirim: senderAddr,
-        nama_penerima: recName,
-        hp_penerima: recHp,
-        alamat_penerima: recAddr,
-        timestamp,
-        outlet_id_tugas: outletId
+      gasResult = await callAppsScript("saveTransaksi", {
+        jenis_layanan,
+        data: {
+          ...data,
+          outlet_id_input: outletId,
+          admin_id_pencatat: adminId
+        }
       });
-
-      autoUpsertMasterTransaksiAndPengiriman(db, {
-        transaksi_id: transId,
-        outlet_id: outletId,
-        admin_id: adminId,
-        admin_name: data.operator_nama || undefined,
-        tanggal_transaksi: txTanggal,
-        jam_transaksi: txJam,
-        timestamp: timestamp,
-        imported_at: importedAt,
-        no_resi: rid,
-        ekspedisi: data.ekspedisi || (jenis_layanan === "Cargo" ? "Cargo" : "Express"),
-        tipe_produk: data.tipe_produk || (jenis_layanan === "Cargo" ? "FastTrack" : "EZ"),
-        pengirim_id,
-        penerima_id,
-        snapshot_nama_pengirim: senderName,
-        snapshot_hp_pengirim: senderHp,
-        snapshot_alamat_pengirim: senderAddr,
-        snapshot_nama_penerima: recName,
-        snapshot_hp_penerima: recHp,
-        snapshot_alamat_penerima: recAddr,
-        nama_barang: itemName,
-        berat_barang: Number(data.berat_kg) || Number(pre?.berat_kg) || 0,
-        volume_barang: data.volume || pre?.volume || "0 x 0 x 0",
-        nilai_barang: Number(data.nilai_barang) || Number(pre?.nilai_barang) || 0,
-        metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
-        metode_pembayaran_ongkir: isDfod ? "DFOD" : metodeBayarOngkir,
-        metode_pembayaran_tambahan: metodeBayarTambahan,
-        ongkir_customer: ongkirDasar,
-        packing: biayaPacking,
-        amplop: biayaAmplop,
-        biaya_packing: biayaPacking,
-        biaya_amplop: biayaAmplop,
-        biaya_lain: biayaLain,
-        total_customer: grandTotal,
-        jumlah_dibayar_customer: jumlahDibayarCustomer,
-        ongkir_yoyi: Number(data.biaya_yoyi) || 0,
-        asuransi: biayaAsuransi,
-        biaya_asuransi: biayaAsuransi,
-        pembulatan: pembulatan,
-        biaya_lain_yoyi: Number(data.biaya_jtc) || 0,
-        wajib_setor_owner: setoranKeOwner,
-        kas_outlet: kasOperasional,
-        foto_barang: data.foto_paket_url || pre?.foto_paket_url || "",
-        foto_resi: data.foto_resi_url || pre?.foto_resi_url || "",
-        status_transaksi: "SELESAI",
-        sumber_data: data.sumber_data || "Resi & Bayar"
+    } catch (gasErr: any) {
+      // Jika Apps Script gagal, JANGAN tulis ke local db
+      // Return error ke UI agar user bisa coba lagi
+      return res.status(503).json({
+        status: "error",
+        message: "Gagal menyimpan ke database: " + (gasErr.message || "Apps Script tidak merespons"),
+        retry: true
       });
-    } catch (upsertErr) {
-      require("fs").writeFileSync("error.log", upsertErr.toString() + "\n" + (upsertErr as any).stack);
     }
 
-
-    writeDb(db);
+    // 2. Update local db dari response Code.gs (bukan dari kalkulasi lokal)
+    const currentDb = readDb();
+    if (!currentDb.MASTER_TRANSAKSI) currentDb.MASTER_TRANSAKSI = [];
+    if (gasResult.data?.transaksi) {
+      const existing = currentDb.MASTER_TRANSAKSI.findIndex(
+        (t: any) => t.no_resi === gasResult.data.transaksi.no_resi
+                 || t.id === gasResult.data.transaksi.id
+      );
+      if (existing === -1) {
+        currentDb.MASTER_TRANSAKSI.unshift(gasResult.data.transaksi);
+      }
+    }
+    writeDb(currentDb);
     invalidateSyncCache();
 
-    // Audit Log
-    try {
-      addAuditLog(
-        adminId,
-        "TRANSAKSI_SIMPAN",
-        `Simpan resi ${jenis_layanan} '${rid}' (${data.tipe_produk || "EZ"}). Grand Total: Rp ${Number(grandTotal || jumlahDibayarCustomer).toLocaleString("id-ID")}`,
-        outletId
-      );
-    } catch (auditErr) {
-      console.warn("Audit log warning during save transaksi:", auditErr);
-    }
-
-    return res.json({
-      status: "success",
-      message: `Transaksi resi ${jenis_layanan} berhasil disimpan!`,
-      data: { resi_id: rid, transaksi_id: transId }
-    });
+    return res.json({ status: "success", data: gasResult.data });
   } catch (err: any) {
     console.error("Error in handleSaveTransaksiRequest:", err);
     return res.status(500).json({
@@ -3113,50 +2859,19 @@ app.post("/api/importYoYi", async (req, res) => {
     return res.status(400).json({ status: "error", message: "Data import YoYi tidak lengkap" });
   }
 
-  const appsScriptUrl = process.env.VITE_APPS_SCRIPT_URL || process.env.APPS_SCRIPT_URL;
-  if (appsScriptUrl && appsScriptUrl.trim() && req.headers["x-test-mode"] !== "true") {
-    try {
-      const response = await fetch(appsScriptUrl.trim(), {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          action: "importYoYi",
-          data: { parsed, input }
-        })
-      });
-      const text = await response.text();
-      let json: any;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        console.warn("Apps Script returned non-JSON for importYoYi:", text.slice(0, 200));
-        json = null;
-      }
-      if (json) {
-        if (json.status === "error") {
-          const errMsg = json.message || "";
-          if (!errMsg.includes("Aksi tidak dikenali") && !errMsg.includes("unrecognized")) {
-            return res.status(400).json(json);
-          }
-        } else {
-          invalidateSyncCache();
-          return res.json(json);
-        }
-      }
-    } catch (err: any) {
-      console.warn("Error proxying importYoYi to Apps Script:", err.message);
-    }
-  }
-
-  const db = readDb();
   const rid = String(parsed.nomor_resi || "").trim().toUpperCase();
   if (!rid) {
     return res.status(400).json({ status: "error", message: "Nomor resi tidak valid" });
   }
 
+  const db = readDb();
+  if (!db.EXP_Resi) db.EXP_Resi = [];
+  if (!db.CRG_Resi) db.CRG_Resi = [];
+  if (!db.MASTER_TRANSAKSI) db.MASTER_TRANSAKSI = [];
+
   // Duplicate check
-  const inExp = db.EXP_Resi.some((r: any) => r.resi_id.toUpperCase() === rid);
-  const inCrg = db.CRG_Resi.some((r: any) => r.resi_id.toUpperCase() === rid);
+  const inExp = db.EXP_Resi.some((r: any) => (r.resi_id || "").toUpperCase() === rid);
+  const inCrg = db.CRG_Resi.some((r: any) => (r.resi_id || "").toUpperCase() === rid);
   if (inExp || inCrg) {
     return res.status(400).json({ status: "error", message: `RESI SUDAH TERDAFTAR — ${rid}` });
   }
@@ -3169,210 +2884,40 @@ app.post("/api/importYoYi", async (req, res) => {
   if (!adminId) {
     return res.status(400).json({ status: "error", message: "admin_id wajib diisi untuk import YoYi" });
   }
-  let txDate = getTodayWIB();
-  let txTime = "00:00:00";
-  let timestamp = new Date().toISOString();
 
-  // 1. Manual Override from UI (User intentional input)
-  if (input.tanggal_transaksi) {
-    txDate = input.tanggal_transaksi;
-    txTime = input.jam_transaksi || "00:00:00";
-    timestamp = `${txDate}T${txTime}`;
-  } 
-  // 2. Parsed from YoYi (Convert UTC to WIB)
-  else if (parsed.tanggal_transaksi) {
-    const normalized = normalizeYoYiTimestampToWIB(parsed.tanggal_transaksi, parsed.jam_transaksi);
-    txDate = normalized.tanggal_transaksi;
-    txTime = normalized.jam_transaksi;
-    timestamp = `${txDate}T${txTime}`;
+  // 1. Tulis ke Spreadsheet via Code.gs (SYNCHRONOUS)
+  let gasResult: any;
+  try {
+    gasResult = await callAppsScript("importYoYi", {
+      parsed,   // hasil parse YoYi
+      input     // outlet_id, admin_id, metode_bayar, dll
+    });
+  } catch (gasErr: any) {
+    // Jika Apps Script gagal, JANGAN tulis ke local db
+    // Return error ke UI agar user bisa coba lagi
+    return res.status(503).json({
+      status: "error",
+      message: "Gagal menyimpan ke database: " + (gasErr.message || "Apps Script tidak merespons"),
+      retry: true
+    });
   }
-  const transId = "TRX-YY-" + Math.floor(Date.now() / 1000) + "-" + Math.random().toString(36).substring(2, 5);
-  const importedAt = `${getWIBDate(new Date())} ${getWIBTime(new Date())}`;
 
-  // Financial calculations
-  const isDoc = isDocumentTransaction({ ...parsed, ...input });
-  const ongkirDasar = Number(parsed.ongkir_dasar) || 0;
-  const biayaAsuransi = Number(parsed.asuransi) || 0;
-  let biayaLain = Number(parsed.biaya_lain) || 0;
-  if (isDoc && biayaLain === 0) {
-    biayaLain = 1000;
+  // 2. Update local db dari response Code.gs (bukan dari kalkulasi lokal)
+  const currentDb = readDb();
+  if (!currentDb.MASTER_TRANSAKSI) currentDb.MASTER_TRANSAKSI = [];
+  if (gasResult.data?.transaksi) {
+    const existing = currentDb.MASTER_TRANSAKSI.findIndex(
+      (t: any) => t.no_resi === gasResult.data.transaksi.no_resi
+               || t.id === gasResult.data.transaksi.id
+    );
+    if (existing === -1) {
+      currentDb.MASTER_TRANSAKSI.unshift(gasResult.data.transaksi);
+    }
   }
-  const metodeBayarOngkir = input.metode_bayar_ongkir || input.metode_bayar || parsed.metode_bayar || "Tunai";
-  const isDfod = String(metodeBayarOngkir).toUpperCase().includes("DFOD");
+  writeDb(currentDb);
+  invalidateSyncCache();
 
-  let biayaAmplop = Number(input.biaya_amplop) || 0;
-  if (isDoc && biayaAmplop === 0) {
-    biayaAmplop = 2000;
-  }
-  const biayaPacking = Number(input.biaya_packing) || 0;
-  const biayaTambahan = biayaAmplop + biayaPacking;
-  
-  const metodeBayarTambahan = String(
-    input.metode_bayar_tambahan || input.metode_pembayaran_tambahan || ""
-  ).trim();
-  const resolvedMetodeTambahan = metodeBayarTambahan || (biayaTambahan > 0 ? "Tunai" : "");
-
-  const jumlahDibayar = Number(input.jumlah_dibayar) || 0;
-  const biayaDasarLayanan = ongkirDasar + biayaAsuransi + biayaLain;
-  const biayaDitagihkan = isDfod ? 0 : biayaDasarLayanan;
-  const pembulatan = Number(input.pembulatan) || (jumlahDibayar > 0 ? (jumlahDibayar - biayaDitagihkan) : 0);
-
-  // Financial Engine SSOT
-  const summary = calculateFinancialSummary({
-    ...parsed,
-    ...input,
-    ongkir_dasar: ongkirDasar,
-    biaya_asuransi: biayaAsuransi,
-    biaya_lain: biayaLain,
-    biaya_amplop: biayaAmplop,
-    biaya_packing: biayaPacking,
-    pembulatan: pembulatan,
-    metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
-    metode_bayar_tambahan: metodeBayarTambahan
-  });
-
-  const grandTotal = summary.customer_payment;
-  const setoranOwner = isDfod ? 0 : summary.owner_deposit;
-  const kasOperasional = summary.outlet_cash;
-
-  // 1. Create PreInput_Backup record so that Riwayat Transaksi and Customer joins work
-  const preBackup = {
-    transaksi_id: transId,
-    timestamp,
-    imported_at: importedAt,
-    admin_id: adminId,
-    outlet_id_tugas: outletId,
-    nama_pengirim: parsed.nama_pengirim || "YoYi Pengirim",
-    hp_pengirim: parsed.no_hp_pengirim || "",
-    alamat_pengirim: parsed.alamat_pengirim || "",
-    nama_penerima: parsed.nama_penerima || "YoYi Penerima",
-    hp_penerima: parsed.no_hp_penerima || "",
-    alamat_penerima: parsed.alamat_penerima || "",
-    nama_barang: parsed.nama_barang || "Paket YoYi",
-    berat_kg: Number(parsed.berat_kg) || 1,
-    volume: "0 x 0 x 0",
-    nilai_barang: 0,
-    foto_paket_url: "",
-    status: "SELESAI",
-    catatan_admin: "Import YoYi"
-  };
-  db.PreInput_Backup.unshift(preBackup);
-
-  // 2. Insert into EXP_Resi
-  const newExp = {
-    resi_id: rid,
-    transaksi_id: transId,
-    timestamp,
-    imported_at: importedAt,
-    admin_id_pencatat: adminId,
-    outlet_id_input: outletId,
-    tipe_produk: parsed.tipe_produk || "EZ",
-    ekspedisi: "Express",
-    berat_timbangan: Number(parsed.berat_kg) || 0,
-    panjang_cm: 0,
-    lebar_cm: 0,
-    tinggi_cm: 0,
-    berat_volume: 0,
-    dasar_berat: "TIMBANGAN",
-    berat_kg: Number(parsed.berat_kg) || 0,
-    volume: "0 x 0 x 0",
-    biaya_lain: biayaLain,
-    biaya_asuransi: biayaAsuransi,
-    ongkir_dasar: ongkirDasar,
-    biaya_yoyi: Number(parsed.total_yoyi) || 0,
-    total_dibayar_customer: isDfod ? 0 : (jumlahDibayar || grandTotal),
-    pembulatan,
-    metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
-    metode_pembayaran_ongkir: isDfod ? "DFOD" : metodeBayarOngkir,
-    bukti_bayar_url: "",
-    biaya_amplop: biayaAmplop,
-    biaya_packing: biayaPacking,
-    metode_bayar_tambahan: metodeBayarTambahan,
-    metode_pembayaran_tambahan: metodeBayarTambahan,
-    bukti_tambahan_url: "",
-    grand_total: grandTotal,
-    setoran_ke_owner: setoranOwner,
-    kas_operasional: kasOperasional,
-    status_resi: "AKTIF"
-  };
-  db.EXP_Resi.unshift(newExp);
-
-  // 3. Upsert Customer & Address Book
-  const { pengirim_id, penerima_id } = autoUpsertCustomerAndAddressBook(db, {
-    nama_pengirim: parsed.nama_pengirim || "",
-    hp_pengirim: parsed.no_hp_pengirim || "",
-    alamat_pengirim: parsed.alamat_pengirim || "",
-    nama_penerima: parsed.nama_penerima || "",
-    hp_penerima: parsed.no_hp_penerima || "",
-    alamat_penerima: parsed.alamat_penerima || "",
-    timestamp,
-    outlet_id_tugas: outletId
-  });
-
-  // 4. Upsert MASTER_TRANSAKSI & MASTER_PENGIRIMAN
-  autoUpsertMasterTransaksiAndPengiriman(db, {
-    transaksi_id: transId,
-    outlet_id: outletId,
-    admin_id: adminId,
-    tanggal_transaksi: txDate,
-    jam_transaksi: txTime,
-    timestamp,
-    imported_at: importedAt,
-    no_resi: rid,
-    ekspedisi: "Express",
-    tipe_produk: parsed.tipe_produk || "EZ",
-    pengirim_id,
-    penerima_id,
-    snapshot_nama_pengirim: parsed.nama_pengirim || "",
-    snapshot_hp_pengirim: parsed.no_hp_pengirim || "",
-    snapshot_alamat_pengirim: parsed.alamat_pengirim || "",
-    snapshot_nama_penerima: parsed.nama_penerima || "",
-    snapshot_hp_penerima: parsed.no_hp_penerima || "",
-    snapshot_alamat_penerima: parsed.alamat_penerima || "",
-    nama_barang: parsed.nama_barang || "",
-    berat_barang: Number(parsed.berat_kg) || 0,
-    volume_barang: "0 x 0 x 0",
-    nilai_barang: 0,
-    metode_bayar: isDfod ? "DFOD" : metodeBayarOngkir,
-    metode_pembayaran_ongkir: isDfod ? "DFOD" : metodeBayarOngkir,
-    metode_pembayaran_tambahan: metodeBayarTambahan,
-    ongkir_customer: ongkirDasar,
-    packing: biayaPacking,
-    amplop: biayaAmplop,
-    biaya_packing: biayaPacking,
-    biaya_amplop: biayaAmplop,
-    biaya_lain: biayaLain,
-    total_customer: grandTotal,
-    jumlah_dibayar_customer: isDfod ? 0 : (jumlahDibayar || grandTotal),
-    ongkir_yoyi: Number(parsed.total_yoyi) || 0,
-    asuransi: biayaAsuransi,
-    biaya_asuransi: biayaAsuransi,
-    pembulatan: pembulatan,
-    biaya_lain_yoyi: 0,
-    wajib_setor_owner: setoranOwner,
-    kas_outlet: kasOperasional,
-    foto_barang: "",
-    foto_resi: "",
-    status_transaksi: "SELESAI",
-    sumber_data: "YoYi Import"
-  });
-
-
-  writeDb(db);
-
-  // 5. Audit Log
-  addAuditLog(
-    adminId,
-    "TRANSAKSI_YOYI_SIMPAN",
-    `Simpan import YoYi resi '${rid}' (${parsed.tipe_produk || "EZ"}). Grand Total: Rp ${grandTotal.toLocaleString("id-ID")}`,
-    outletId
-  );
-
-  return res.json({
-    status: "success",
-    message: `Transaksi YoYi resi ${rid} berhasil disimpan!`,
-    data: { resi_id: rid, transaksi_id: transId }
-  });
+  return res.json({ status: "success", data: gasResult.data });
 });
 
 
