@@ -601,19 +601,15 @@ function apiImportYoYi(params) {
       Logger.log("[apiImportYoYi] Error: Payload parsed atau input tidak lengkap");
       return { status: "error", message: "Data import YoYi tidak lengkap (parsed/input kosong)" };
     }
-    const parsed = params.parsed;
-    const input = params.input;
-    
-    // 1. Validasi input
-    const resiNum = (parsed.nomor_resi || "").toString().trim().toUpperCase();
+    var parsed = params.parsed;
+    var input = params.input;
+
+    var resiNum = (parsed.nomor_resi || parsed.no_resi || "").toString().trim().toUpperCase();
     if (!resiNum) {
       Logger.log("[apiImportYoYi] Error: Nomor resi kosong");
       return { status: "error", message: "Nomor resi YoYi tidak ditemukan dalam data" };
     }
 
-    const jumlahDibayar = Number(input.jumlah_dibayar) || 0;
-    
-    // 2. Validasi outlet & admin
     if (!input.outlet_id) {
       Logger.log("[apiImportYoYi] Error: Outlet ID kosong");
       return { status: "error", message: "Outlet ID wajib diisi" };
@@ -622,96 +618,51 @@ function apiImportYoYi(params) {
       Logger.log("[apiImportYoYi] Error: Admin ID kosong");
       return { status: "error", message: "Admin ID wajib diisi" };
     }
-    
-    // 3. Cek duplicate resi
-    if (!TransactionService.validateTransaction(resiNum)) {
-      Logger.log("[apiImportYoYi] Error: Resi duplikat " + resiNum);
-      return { status: "error", message: "RESI SUDAH TERDAFTAR — " + resiNum };
-    }
-    
-    // 4. Buat PreInput Backup agar sinkron di Riwayat
-    const txId = TransactionService.generateTransactionId();
-    const backupObj = {
-      transaksi_id: txId,
-      timestamp: new Date().toISOString(),
-      admin_id: input.admin_id,
-      outlet_id_tugas: input.outlet_id,
-      nama_pengirim: parsed.nama_pengirim || "YoYi Pengirim",
-      hp_pengirim: parsed.no_hp_pengirim || "",
-      alamat_pengirim: parsed.alamat_pengirim || "",
-      nama_penerima: parsed.nama_penerima || "YoYi Penerima",
-      hp_penerima: parsed.no_hp_penerima || "",
-      alamat_penerima: parsed.alamat_penerima || "",
-      nama_barang: parsed.nama_barang || "Paket YoYi",
-      berat_kg: Number(parsed.berat_kg) || 1,
-      volume: "0 x 0 x 0",
-      nilai_barang: 0,
-      foto_paket_url: "",
-      status: "SELESAI",
-      catatan_admin: "Auto Import YoYi"
-    };
 
-    // Cari draft dengan customer yang sama dan ubah statusnya menjadi "SELESAI"
-    var sheet = getSheetByName("PreInput_Backup");
-    var data = sheet.getDataRange().getValues();
-    var headers = data[0];
-    var namaIdx = headers.indexOf("nama_pengirim");
-    var hpIdx = headers.indexOf("hp_pengirim");
-    var statusIdx = headers.indexOf("status");
-    var sName = parsed.nama_pengirim || "";
-    var sPhone = parsed.no_hp_pengirim || "";
-    
-    if (namaIdx !== -1 && hpIdx !== -1 && statusIdx !== -1 && sName && sPhone) {
-      for (var i = 1; i < data.length; i++) {
-        var row = data[i];
-        var draftNama = row[namaIdx] || "";
-        var draftHp = row[hpIdx] || "";
-        if (draftNama === sName && draftHp === sPhone) {
-          // Ubah status menjadi "SELESAI", bukan hapus
-          sheet.getRange(i + 1, statusIdx + 1).setValue("SELESAI");
-        }
-      }
-    }
-
-    DatabaseService.insertRow("PreInput_Backup", backupObj);
-    
-    // 5. Simpan transaksi ke EXP_Resi & MASTER_TRANSAKSI
-    const transactionData = {
-      transaksi_id: txId,
+    var transData = {
       resi_id: resiNum,
-      nomor_resi: resiNum,
-      tanggal_transaksi: (parsed && parsed.tanggal_transaksi) || (input && input.tanggal_transaksi) || null,
-      jam_transaksi: (parsed && parsed.jam_transaksi) || (input && input.jam_transaksi) || null,
+      no_resi: resiNum,
+      outlet_id_input: input.outlet_id,
+      admin_id_pencatat: input.admin_id,
+      tanggal_transaksi: parsed.tanggal_transaksi || input.tanggal_transaksi || null,
+      jam_transaksi: parsed.jam_transaksi || input.jam_transaksi || null,
+      tipe_produk: parsed.tipe_produk || "EZ",
+      jenis_barang: parsed.jenis_barang || "BARANG",
+      metode_bayar: input.metode_bayar || input.metode_bayar_ongkir || parsed.metode_bayar || "Tunai",
+      metode_bayar_tambahan: input.metode_bayar_tambahan || "",
+      ongkir_dasar: Number(parsed.ongkir_dasar) || 0,
+      ongkir_customer: Number(parsed.ongkir_dasar) || 0,
+      biaya_asuransi: Number(parsed.biaya_asuransi) || Number(parsed.asuransi) || 0,
+      asuransi: Number(parsed.biaya_asuransi) || Number(parsed.asuransi) || 0,
+      biaya_lain: Number(parsed.biaya_lain) || 0,
+      biaya_amplop: Number(input.amplop) || Number(input.biaya_amplop) || 0,
+      amplop: Number(input.amplop) || Number(input.biaya_amplop) || 0,
+      biaya_packing: Number(input.packing) || Number(input.biaya_packing) || 0,
+      packing: Number(input.packing) || Number(input.biaya_packing) || 0,
       nama_pengirim: parsed.nama_pengirim || "",
-      hp_pengirim: parsed.no_hp_pengirim || "",
+      hp_pengirim: parsed.hp_pengirim || parsed.no_hp_pengirim || "",
       alamat_pengirim: parsed.alamat_pengirim || "",
       nama_penerima: parsed.nama_penerima || "",
-      hp_penerima: parsed.no_hp_penerima || "",
+      hp_penerima: parsed.hp_penerima || parsed.no_hp_penerima || "",
       alamat_penerima: parsed.alamat_penerima || "",
-      nama_barang: parsed.nama_barang || "Paket YoYi",
-      berat_kg: Number(parsed.berat_kg) || 0,
-      ongkir_dasar: Number(parsed.ongkir_dasar) || 0,
-      biaya_asuransi: Number(parsed.asuransi) || 0,
-      biaya_lain: Number(parsed.biaya_lain) || 0,
-      biaya_yoyi: Number(parsed.total_yoyi) || 0,
-      metode_bayar: input.metode_bayar_ongkir || "Tunai",
-      biaya_amplop: Number(input.biaya_amplop) || 0,
-      biaya_packing: Number(input.biaya_packing) || 0,
-      metode_pembayaran_tambahan: input.metode_bayar_tambahan || "Tunai",
-      total_dibayar_customer: jumlahDibayar,
-      admin_id_pencatat: input.admin_id,
-      outlet_id_input: input.outlet_id,
-      outlet_id: input.outlet_id,
-      status: "SELESAI",
-      source_order: "YoYi",
-      tipe_produk: parsed.tipe_produk || "EZ",
-      ekspedisi: "Express"
+      nama_barang: parsed.nama_barang || parsed.jenis_barang || "-",
+      berat_barang: Number(parsed.berat_kg) || Number(parsed.berat) || 1,
+      berat_kg: Number(parsed.berat_kg) || Number(parsed.berat) || 1,
+      jumlah_paket: Number(parsed.jumlah_paket) || 1,
+      biaya_yoyi: Number(parsed.biaya_yoyi) || Number(parsed.total_yoyi) || Number(parsed.ongkir_yoyi) || 0,
+      ongkir_yoyi: Number(parsed.biaya_yoyi) || Number(parsed.total_yoyi) || Number(parsed.ongkir_yoyi) || 0,
+      biaya_lain_yoyi: Number(parsed.biaya_lain_yoyi) || 0,
+      total_customer: Number(input.total_customer) || Number(input.jumlah_dibayar) || Number(parsed.total_dibayar_customer) || 0,
+      total_dibayar_customer: Number(input.total_customer) || Number(input.jumlah_dibayar) || Number(parsed.total_dibayar_customer) || 0,
+      wajib_setor_owner: Number(input.wajib_setor_owner) || 0,
+      kas_outlet: Number(input.kas_outlet) || 0,
+      sumber_data: "Resi & Bayar"
     };
-    
-    Logger.log("[apiImportYoYi] Saving transaction for resi " + resiNum + " with txId " + txId + " | tanggal: " + transactionData.tanggal_transaksi + " | jam: " + transactionData.jam_transaksi);
-    const saveResult = apiSaveTransaksi({ jenis_layanan: "Express", data: transactionData });
-    Logger.log("[apiImportYoYi] Save result: " + JSON.stringify(saveResult));
-    return saveResult;
+
+    Logger.log("[apiImportYoYi] Calling TransactionService.saveTransaction for resi: " + resiNum);
+    var result = TransactionService.saveTransaction("Express", transData);
+    Logger.log("[apiImportYoYi] Save result: " + JSON.stringify(result));
+    return result;
   } catch(e) {
     Logger.log("[apiImportYoYi] Exception: " + e.toString());
     return { status: "error", message: e.message || e.toString() };
