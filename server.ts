@@ -4344,7 +4344,7 @@ app.post("/api/getDetailTransaksi", (req, res) => {
   const txDate = extractBusinessDate(masterTx) || extractBusinessDate(pre) || extractBusinessDate(resiObj) || getTodayWIB();
   const txTime = masterTx?.jam_transaksi || pre?.jam_transaksi || resiObj?.jam_transaksi || masterTx?.timestamp?.split("T")[1]?.slice(0, 8) || resiObj?.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
   const displayTime = `${txDate} ${txTime}`;
-  const rawImported = masterTx?.imported_at || resiObj?.imported_at || pre?.imported_at;
+  const rawImported = masterTx?.imported_at || masterTx?.created_at || masterTx?.timestamp || resiObj?.imported_at || pre?.imported_at;
   const importedAt = rawImported 
     ? ((rawImported.includes("Z") || (rawImported.includes("T") && rawImported.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/))) ? `${getWIBDate(rawImported)} ${getWIBTime(rawImported)}` : rawImported)
     : undefined;
@@ -4395,12 +4395,12 @@ app.post("/api/getDetailTransaksi", (req, res) => {
     admin_name: user?.nama_lengkap || user?.username || resiObj?.admin_id_pencatat || "",
     outlet_id: resiObj?.outlet_id_input || masterTx?.outlet_id || pre?.outlet_id_tugas || "",
     outlet_name: outlet?.nama_outlet || resiObj?.outlet_id_input || "",
-    nama_pengirim: (masterTx?.snapshot_nama_pengirim && masterTx.snapshot_nama_pengirim !== "Umum" ? masterTx.snapshot_nama_pengirim : (pre?.nama_pengirim || masterTx?.snapshot_nama_pengirim || "")),
-    hp_pengirim: masterTx?.snapshot_hp_pengirim || pre?.hp_pengirim || (resiObj as any)?.hp_pengirim || (db.Customers || []).find((c: any) => c.customer_id === masterTx?.pengirim_id)?.no_hp || "",
-    alamat_pengirim: masterTx?.snapshot_alamat_pengirim || pre?.alamat_pengirim || (resiObj as any)?.alamat_pengirim || "",
-    nama_penerima: (masterTx?.snapshot_nama_penerima && masterTx.snapshot_nama_penerima !== "Umum" ? masterTx.snapshot_nama_penerima : (pre?.nama_penerima || masterTx?.snapshot_nama_penerima || "")),
-    hp_penerima: masterTx?.snapshot_hp_penerima || pre?.hp_penerima || (resiObj as any)?.hp_penerima || (db.Customers || []).find((c: any) => c.customer_id === masterTx?.penerima_id)?.no_hp || "",
-    alamat_penerima: masterTx?.snapshot_alamat_penerima || pre?.alamat_penerima || (resiObj as any)?.alamat_penerima || "",
+    nama_pengirim: (masterTx?.nama_pengirim && masterTx.nama_pengirim !== "Umum" ? masterTx.nama_pengirim : (masterTx?.snapshot_nama_pengirim && masterTx.snapshot_nama_pengirim !== "Umum" ? masterTx.snapshot_nama_pengirim : (pre?.nama_pengirim || masterTx?.snapshot_nama_pengirim || ""))),
+    hp_pengirim: masterTx?.no_hp_pengirim || masterTx?.hp_pengirim || masterTx?.snapshot_hp_pengirim || pre?.hp_pengirim || (resiObj as any)?.hp_pengirim || (db.Customers || []).find((c: any) => c.customer_id === masterTx?.pengirim_id)?.no_hp || "",
+    alamat_pengirim: masterTx?.alamat_pengirim || masterTx?.snapshot_alamat_pengirim || pre?.alamat_pengirim || (resiObj as any)?.alamat_pengirim || "",
+    nama_penerima: (masterTx?.nama_penerima && masterTx.nama_penerima !== "Umum" ? masterTx.nama_penerima : (masterTx?.snapshot_nama_penerima && masterTx.snapshot_nama_penerima !== "Umum" ? masterTx.snapshot_nama_penerima : (pre?.nama_penerima || masterTx?.snapshot_nama_penerima || ""))),
+    hp_penerima: masterTx?.no_hp_penerima || masterTx?.hp_penerima || masterTx?.snapshot_hp_penerima || pre?.hp_penerima || (resiObj as any)?.hp_penerima || (db.Customers || []).find((c: any) => c.customer_id === masterTx?.penerima_id)?.no_hp || "",
+    alamat_penerima: masterTx?.alamat_penerima || masterTx?.snapshot_alamat_penerima || pre?.alamat_penerima || (resiObj as any)?.alamat_penerima || "",
     jenis_barang: masterTx?.jenis_barang || pre?.jenis_barang || (resiObj as any)?.jenis_barang || (masterTx?.tipe_produk === "DOC" || resiObj?.tipe_produk === "DOC" ? "DOKUMEN" : "BARANG"),
     nama_barang: (masterTx?.nama_barang && masterTx.nama_barang !== "Paket" && masterTx.nama_barang !== "Paket Standard" ? masterTx.nama_barang : (pre?.nama_barang || masterTx?.nama_barang || "")),
     berat_kg: Number(resiObj?.berat_kg ?? pre?.berat_kg ?? masterTx?.berat_barang ?? 1),

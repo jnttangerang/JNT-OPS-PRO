@@ -1067,38 +1067,32 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                 <span className="text-gray-500">Ongkos Kirim Dasar:</span>
                 <span className="font-mono text-gray-800">Rp {Number(selectedDetail.ongkir_dasar || 0).toLocaleString("id-ID")}</span>
               </div>
-              {Number(selectedDetail.biaya_asuransi) > 0 && (
-                <div className="flex justify-between items-center text-xs">
+              <div className="flex justify-between items-center text-xs">
                   <span className="text-gray-500">Biaya Asuransi:</span>
-                  <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_asuransi).toLocaleString("id-ID")}</span>
+                  <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_asuransi || 0).toLocaleString("id-ID")}</span>
                 </div>
-              )}
               {Number(selectedDetail.biaya_lain) > 0 && (
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-gray-500">Biaya Lain / Admin:</span>
                   <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_lain).toLocaleString("id-ID")}</span>
                 </div>
               )}
-              {Number(selectedDetail.biaya_packing) > 0 && (
-                <div className="flex justify-between items-center text-xs">
+              <div className="flex justify-between items-center text-xs">
                   <span className="text-gray-500">Biaya Packing:</span>
-                  <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_packing).toLocaleString("id-ID")}</span>
+                  <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_packing || 0).toLocaleString("id-ID")}</span>
                 </div>
-              )}
               {Number(selectedDetail.biaya_amplop) > 0 && (
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-gray-500">Biaya Amplop:</span>
                   <span className="font-mono text-gray-800">Rp {Number(selectedDetail.biaya_amplop).toLocaleString("id-ID")}</span>
                 </div>
               )}
-              {Number(selectedDetail.pembulatan || 0) !== 0 && (
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-gray-500">Pembulatan / Selisih:</span>
+              <div className="flex justify-between items-center text-xs">
+                  <span className="text-gray-500">Pembulatan:</span>
                   <span className="font-mono text-gray-800">
-                    {Number(selectedDetail.pembulatan) > 0 ? "+" : ""}Rp {Number(selectedDetail.pembulatan).toLocaleString("id-ID")}
+                    {Number(selectedDetail.pembulatan || 0) > 0 ? "+" : ""}Rp {Number(selectedDetail.pembulatan || 0).toLocaleString("id-ID")}
                   </span>
                 </div>
-              )}
               <div className="border-t border-gray-200 pt-2 flex justify-between items-center font-bold">
                 <span className="text-sm text-gray-800">
                   Grand Total ({selectedDetail.metode_bayar}{selectedDetail.metode_bayar_tambahan && selectedDetail.metode_bayar_tambahan !== selectedDetail.metode_bayar ? ` + ${selectedDetail.metode_bayar_tambahan}` : ""}):
@@ -1275,7 +1269,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                   <DollarSign className="h-4 w-4 text-gray-400" />
                   Barang & Keuangan
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Nama Barang</label>
                     <input
@@ -1310,9 +1304,25 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                       <option value="DFOD">DFOD</option>
                     </select>
                   </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Metode Tambahan</label>
+                    <select
+                      value={editItem.metode_bayar_tambahan || ""}
+                      onChange={(e) => setEditItem({ ...editItem, metode_bayar_tambahan: e.target.value })}
+                      className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm cursor-pointer"
+                    >
+                      <option value="">-</option>
+                      <option value="Tunai">Tunai</option>
+                      <option value="Transfer">Transfer</option>
+                      <option value="QRIS">QRIS</option>
+                      <option value="EDC">EDC</option>
+                      <option value="Order by APP">Order by APP</option>
+                      <option value="DFOD">DFOD</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Ongkir Dasar</label>
                     <input
@@ -1324,7 +1334,8 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                         const packing = Number(editItem.biaya_packing || 0);
                         const asuransi = Number(editItem.biaya_asuransi || 0);
                         const lain = Number(editItem.biaya_lain || 0);
-                        const grand = val + amplop + packing + asuransi + lain;
+                        const pembulatan = Number(editItem.pembulatan || 0);
+                        const grand = val + amplop + packing + asuransi + lain + pembulatan;
                         const kas = amplop + packing;
                         setEditItem({ 
                           ...editItem, 
@@ -1348,7 +1359,8 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                         const packing = Number(editItem.biaya_packing || 0);
                         const asuransi = Number(editItem.biaya_asuransi || 0);
                         const lain = Number(editItem.biaya_lain || 0);
-                        const grand = ongkir + amplop + packing + asuransi + lain;
+                        const pembulatan = Number(editItem.pembulatan || 0);
+                        const grand = ongkir + amplop + packing + asuransi + lain + pembulatan;
                         const kas = amplop + packing;
                         setEditItem({ 
                           ...editItem, 
@@ -1372,7 +1384,8 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                         const amplop = Number(editItem.biaya_amplop || 0);
                         const asuransi = Number(editItem.biaya_asuransi || 0);
                         const lain = Number(editItem.biaya_lain || 0);
-                        const grand = ongkir + amplop + packing + asuransi + lain;
+                        const pembulatan = Number(editItem.pembulatan || 0);
+                        const grand = ongkir + amplop + packing + asuransi + lain + pembulatan;
                         const kas = amplop + packing;
                         setEditItem({ 
                           ...editItem, 
@@ -1396,7 +1409,8 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                         const amplop = Number(editItem.biaya_amplop || 0);
                         const packing = Number(editItem.biaya_packing || 0);
                         const lain = Number(editItem.biaya_lain || 0);
-                        const grand = ongkir + amplop + packing + asuransi + lain;
+                        const pembulatan = Number(editItem.pembulatan || 0);
+                        const grand = ongkir + amplop + packing + asuransi + lain + pembulatan;
                         const kas = amplop + packing;
                         setEditItem({ 
                           ...editItem, 
@@ -1404,6 +1418,30 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                           grand_total: grand, 
                           kas_operasional: kas, 
                           setoran_ke_owner: grand - kas 
+                        });
+                      }}
+                      className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Pembulatan</label>
+                    <input
+                      type="number"
+                      value={editItem.pembulatan ?? 0}
+                      onChange={(e) => {
+                        const val = Number(e.target.value) || 0;
+                        const ongkir = Number(editItem.ongkir_dasar || 0);
+                        const amplop = Number(editItem.biaya_amplop || 0);
+                        const packing = Number(editItem.biaya_packing || 0);
+                        const asuransi = Number(editItem.biaya_asuransi || 0);
+                        const lain = Number(editItem.biaya_lain || 0);
+                        const grand = ongkir + amplop + packing + asuransi + lain + val;
+                        const kas = amplop + packing;
+                        setEditItem({ 
+                          ...editItem, 
+                          pembulatan: val,
+                          grand_total: grand,
+                          setoran_ke_owner: grand - kas
                         });
                       }}
                       className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono"
