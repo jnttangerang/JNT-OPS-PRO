@@ -4525,9 +4525,19 @@ app.post("/api/getDetailTransaksi", (req, res) => {
     metode_bayar_tambahan: metodeBayarTambahan
   });
 
-  const grandTotal = Number(resiObj?.grand_total ?? masterTx?.total_customer) || summary.customer_payment;
-  const setoranKeOwner = isDfod ? 0 : (Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner) > ongkirDasar ? Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner) : summary.owner_deposit);
-  const kasOperasional = Number(resiObj?.kas_operasional ?? masterTx?.kas_outlet) || summary.outlet_cash;
+  const rawResiGrand = Number(resiObj?.grand_total || 0);
+  const hasMasterOwnerOrOutlet = masterTx?.wajib_setor_owner !== undefined || masterTx?.kas_outlet !== undefined;
+  const masterOwnerOutlet = hasMasterOwnerOrOutlet
+    ? (Number(masterTx?.wajib_setor_owner || 0) + Number(masterTx?.kas_outlet || 0))
+    : 0;
+  const grandTotal = rawResiGrand > 0
+    ? rawResiGrand
+    : (masterOwnerOutlet > 0 ? masterOwnerOutlet : summary.customer_payment);
+
+  const rawSetoranOwner = Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner ?? 0);
+  const setoranKeOwner = isDfod ? 0 : (rawSetoranOwner > 0 ? rawSetoranOwner : summary.owner_deposit);
+  const rawKasOperasional = Number(resiObj?.kas_operasional ?? masterTx?.kas_outlet ?? 0);
+  const kasOperasional = rawKasOperasional > 0 ? rawKasOperasional : summary.outlet_cash;
 
   const resolvedAlamatPengirim = (masterTx?.snapshot_alamat_pengirim || masterTx?.alamat_pengirim || pre?.alamat_pengirim || (resiObj as any)?.alamat_pengirim || "").toString().trim();
   const resolvedAlamatPenerima = (masterTx?.snapshot_alamat_penerima || masterTx?.alamat_penerima || pre?.alamat_penerima || (resiObj as any)?.alamat_penerima || "").toString().trim();

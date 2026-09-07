@@ -172,12 +172,11 @@ export function calculateFinancialSummary(tx: any): any {
   const ongkirYoyi = ongkir_customer;
   const biayaLain = biaya_lain;
 
+  // Base service cost (excluding rounding)
+  const biayaDasarLayanan = ongkirYoyi + asuransi + biayaLain;
+
   // Prioritaskan wajib_setor_owner yang tersimpan (sudah include rounding)
   const storedOwner = Number(tx.wajib_setor_owner ?? tx.setoran_ke_owner ?? 0);
-  const rawOwner = storedOwner > 0
-    ? storedOwner
-    : (ongkirYoyi + asuransi + biayaLain);
-  const biayaDasarLayanan = rawOwner;
   
   // Surcharges / Kas Operasional Outlet (Amplop + Packing)
   const biayaTambahan = (amplop + packing > 0) ? (amplop + packing) : biaya_tambahan_direct;
@@ -192,27 +191,30 @@ export function calculateFinancialSummary(tx: any): any {
   let rounding = safeNum(tx.pembulatan ?? tx.rounding);
   
   if (grandTotal > 0) {
-    const subtotal = (isDfod ? 0 : biayaDasarLayanan) + biayaTambahan;
+    const subtotal = (isDfod ? 0 : (storedOwner > 0 ? storedOwner : biayaDasarLayanan)) + biayaTambahan;
     if (grandTotal > subtotal && rounding === 0 && !isDfod) {
       rounding = grandTotal - subtotal;
     }
   } else if (dibayarCustomer > 0 && !isDfod) {
-    if (dibayarCustomer > biayaDasarLayanan && rounding === 0) {
-      rounding = dibayarCustomer - biayaDasarLayanan;
+    const baseRef = storedOwner > 0 ? storedOwner : biayaDasarLayanan;
+    if (dibayarCustomer > baseRef && rounding === 0) {
+      rounding = dibayarCustomer - baseRef;
     }
     grandTotal = dibayarCustomer + biayaTambahan;
   } else {
-    grandTotal = (isDfod ? 0 : (biayaDasarLayanan + rounding)) + biayaTambahan;
+    grandTotal = (isDfod ? 0 : (storedOwner > 0 ? storedOwner : (biayaDasarLayanan + rounding))) + biayaTambahan;
   }
 
   // Wajib Setor Owner = Biaya Dasar Layanan + Pembulatan (for Non-DFOD)
+  // CRITICAL: Jika storedOwner > 0, nilai tersebut SUDAH mencakup pembulatan, JANGAN tambahkan rounding lagi.
   // For DFOD, owner deposit to be submitted by origin outlet is 0
-  const owner_deposit = isDfod ? 0 : (biayaDasarLayanan + rounding);
+  const owner_deposit = isDfod ? 0 : (storedOwner > 0 ? storedOwner : (biayaDasarLayanan + rounding));
   const outlet_cash = biayaTambahan;
   const customer_payment = isDfod ? outlet_cash : (owner_deposit + outlet_cash);
   
   const outletMethod = tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || "";
-  const classification = classifyPayment(owner_deposit, outlet_cash, paymentMethod, isDfod ? (biayaDasarLayanan + rounding) : 0, outletMethod);
+  const dfodNominal = isDfod ? (storedOwner > 0 ? storedOwner : (biayaDasarLayanan + rounding)) : 0;
+  const classification = classifyPayment(owner_deposit, outlet_cash, paymentMethod, dfodNominal, outletMethod);
   
   return {
     customer_payment: customer_payment,
