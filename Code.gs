@@ -1253,16 +1253,45 @@ function apiGetRiwayatTransaksi(params) {
     return tStr.toString();
   };
 
+  var backupHeader = (dbBackup && dbBackup[0]) ? dbBackup[0] : [];
   var backupMap = {};
   if (dbBackup && dbBackup.length > 1) {
     for (var k = 1; k < dbBackup.length; k++) {
-      backupMap[dbBackup[k][0].toString()] = { 
-        pengirim: dbBackup[k][4].toString(), 
-        penerima: dbBackup[k][7].toString(),
-        hp_pengirim: (dbBackup[k][5] || "").toString(),
-        hp_penerima: (dbBackup[k][8] || "").toString(),
-        nama_barang: (dbBackup[k][10] || "").toString()
+      var bObj = rowToObject_(backupHeader, dbBackup[k]);
+      var bData = { 
+        pengirim: (bObj.nama_pengirim || "").toString(), 
+        penerima: (bObj.nama_penerima || "").toString(),
+        hp_pengirim: (bObj.hp_pengirim || "").toString(),
+        hp_penerima: (bObj.hp_penerima || "").toString(),
+        alamat_pengirim: (bObj.alamat_pengirim || "").toString(),
+        alamat_penerima: (bObj.alamat_penerima || "").toString(),
+        nama_barang: (bObj.nama_barang || "").toString()
       };
+      if (bObj.transaksi_id) backupMap[bObj.transaksi_id.toString()] = bData;
+      if (bObj.no_resi) backupMap[bObj.no_resi.toString()] = bData;
+      if (bObj.resi_id) backupMap[bObj.resi_id.toString()] = bData;
+    }
+  }
+
+  var expResiMap = {};
+  if (dbExp && dbExp.length > 1) {
+    for (var ei = 1; ei < dbExp.length; ei++) {
+      var expObj = rowToObject_(expHeader, dbExp[ei]);
+      var eResi = (expObj.resi_id || "").toString().trim().toUpperCase();
+      var eTxId = (expObj.transaksi_id || "").toString().trim().toUpperCase();
+      if (eResi && !expResiMap[eResi]) expResiMap[eResi] = expObj;
+      if (eTxId && !expResiMap[eTxId]) expResiMap[eTxId] = expObj;
+    }
+  }
+
+  var crgResiMap = {};
+  if (dbCrg && dbCrg.length > 1) {
+    for (var ci = 1; ci < dbCrg.length; ci++) {
+      var crgObj = rowToObject_(crgHeader, dbCrg[ci]);
+      var cResi = (crgObj.resi_id || "").toString().trim().toUpperCase();
+      var cTxId = (crgObj.transaksi_id || "").toString().trim().toUpperCase();
+      if (cResi && !crgResiMap[cResi]) crgResiMap[cResi] = crgObj;
+      if (cTxId && !crgResiMap[cTxId]) crgResiMap[cTxId] = crgObj;
     }
   }
 
@@ -1297,7 +1326,38 @@ function apiGetRiwayatTransaksi(params) {
       if (resiIdM) seenKeys[resiIdM.toUpperCase()] = true;
       if (txIdM) seenKeys[txIdM.toUpperCase()] = true;
 
-      var pM = backupMap[txIdM] || { pengirim: "", penerima: "", hp_pengirim: "", hp_penerima: "", nama_barang: "" };
+      var pM = backupMap[txIdM] || backupMap[resiIdM] || { pengirim: "", penerima: "", hp_pengirim: "", hp_penerima: "", alamat_pengirim: "", alamat_penerima: "", nama_barang: "" };
+
+      var resiUpper = resiIdM.toUpperCase().trim();
+      var txUpper = txIdM.toUpperCase().trim();
+      var matchedExp = (resiUpper ? expResiMap[resiUpper] : null) || (txUpper ? expResiMap[txUpper] : null);
+      var matchedCrg = (!matchedExp && resiUpper ? crgResiMap[resiUpper] : null) || (!matchedExp && txUpper ? crgResiMap[txUpper] : null);
+      var matchedResi = matchedExp || matchedCrg;
+
+      var pembulatanM = 0;
+      if (matchedResi) {
+        var pRawM = matchedResi.pembulatan !== undefined ? matchedResi.pembulatan : matchedResi.Pembulatan;
+        if (pRawM !== undefined && pRawM !== null && String(pRawM).trim() !== "") {
+          pembulatanM = parseFloat(pRawM) || 0;
+        }
+      } else if (tx.pembulatan !== undefined && tx.pembulatan !== null && String(tx.pembulatan).trim() !== "") {
+        pembulatanM = parseFloat(tx.pembulatan) || 0;
+      }
+
+      var metodeTambahanM = "";
+      if (matchedResi) {
+        metodeTambahanM = (matchedResi.metode_bayar_tambahan || matchedResi.metode_pembayaran_tambahan || "").toString().trim();
+      } else {
+        metodeTambahanM = (tx.metode_pembayaran_tambahan || tx.metode_bayar_tambahan || "").toString().trim();
+      }
+
+      var buktiTambahanM = "";
+      if (matchedResi && matchedResi.bukti_tambahan_url) {
+        buktiTambahanM = matchedResi.bukti_tambahan_url.toString().trim();
+      }
+
+      var snapAlamatPengirim = (tx.snapshot_alamat_pengirim || tx.alamat_pengirim || (pM && pM.alamat_pengirim) || (matchedResi && matchedResi.alamat_pengirim) || "").toString().trim();
+      var snapAlamatPenerima = (tx.snapshot_alamat_penerima || tx.alamat_penerima || (pM && pM.alamat_penerima) || (matchedResi && matchedResi.alamat_penerima) || "").toString().trim();
 
       var txTanggalM = (tx.tanggal_transaksi || "").toString();
       var txJamM = padTime(tx.jam_transaksi);
@@ -1325,21 +1385,27 @@ function apiGetRiwayatTransaksi(params) {
         tipe_produk: (tx.tipe_produk || "EZ").toString(),
         jenis_barang: (tx.jenis_barang || (tx.tipe_produk === "DOC" ? "DOKUMEN" : "BARANG")).toString(),
         metode_bayar: (tx.metode_bayar || "Tunai").toString(),
+        metode_bayar_tambahan: metodeTambahanM,
         ongkir_dasar: parseFloat(tx.ongkir_customer) || 0,
         biaya_asuransi: parseFloat(tx.asuransi) || 0,
         biaya_yoyi: parseFloat(tx.biaya_yoyi || tx.ongkir_yoyi) || 0,
         total_dibayar_customer: parseFloat(tx.total_customer) || 0,
-        pembulatan: 0,
+        pembulatan: pembulatanM,
         biaya_packing: parseFloat(tx.packing) || 0,
         biaya_amplop: parseFloat(tx.amplop) || 0,
         biaya_lain: parseFloat(tx.biaya_lain) || 0,
         grand_total: parseFloat(tx.total_customer || tx.grand_total) || 0,
         setoran_ke_owner: parseFloat(tx.wajib_setor_owner) || 0,
         kas_operasional: parseFloat(tx.kas_outlet) || 0,
-        pengirim: (tx.snapshot_nama_pengirim || pM.pengirim || "").toString(),
-        penerima: (tx.snapshot_nama_penerima || pM.penerima || "").toString(),
-        hp_pengirim: (tx.snapshot_hp_pengirim || pM.hp_pengirim || "").toString(),
-        hp_penerima: (tx.snapshot_hp_penerima || pM.hp_penerima || "").toString(),
+        pengirim: (tx.snapshot_nama_pengirim || tx.nama_pengirim || pM.pengirim || "").toString(),
+        penerima: (tx.snapshot_nama_penerima || tx.nama_penerima || pM.penerima || "").toString(),
+        hp_pengirim: (tx.snapshot_hp_pengirim || tx.hp_pengirim || pM.hp_pengirim || "").toString(),
+        hp_penerima: (tx.snapshot_hp_penerima || tx.hp_penerima || pM.hp_penerima || "").toString(),
+        snapshot_alamat_pengirim: snapAlamatPengirim,
+        snapshot_alamat_penerima: snapAlamatPenerima,
+        alamat_pengirim: snapAlamatPengirim,
+        alamat_penerima: snapAlamatPenerima,
+        bukti_tambahan_url: buktiTambahanM,
         nama_barang: (tx.nama_barang || pM.nama_barang || "-").toString(),
         status_resi: (tx.status_transaksi === "CANCELLED" ? "BATAL" : (tx.status_transaksi || "AKTIF")).toString()
       });
@@ -1358,7 +1424,7 @@ function apiGetRiwayatTransaksi(params) {
     seenKeys[resiKey] = true;
     if (txKey) seenKeys[txKey] = true;
 
-    var p = backupMap[txId] || { pengirim: "", penerima: "", hp_pengirim: "", hp_penerima: "", nama_barang: "" };
+    var p = backupMap[txId] || backupMap[r[0].toString()] || { pengirim: "", penerima: "", hp_pengirim: "", hp_penerima: "", alamat_pengirim: "", alamat_penerima: "", nama_barang: "" };
     var m = masterTxMap[r[0].toString()] || masterTxMap[txId] || null;
 
     var txTanggal = (m && m.tanggal_transaksi) ? m.tanggal_transaksi.toString() : "";
@@ -1370,6 +1436,16 @@ function apiGetRiwayatTransaksi(params) {
       ? (txTanggal + "T" + txJam)
       : r[2].toString();
     var importedAt = (m && m.created_at) ? m.created_at : r[2].toString();
+
+    var expPVal = getVal(expHeader, r, "pembulatan", 11);
+    if (expPVal === "" || expPVal === undefined || expPVal === null) {
+      expPVal = getVal(expHeader, r, "Pembulatan");
+    }
+    var expPembulatan = (expPVal !== "" && expPVal !== undefined && expPVal !== null) ? (parseFloat(expPVal) || 0) : 0;
+    var expMetodeTambahan = (getVal(expHeader, r, "metode_bayar_tambahan") || getVal(expHeader, r, "metode_pembayaran_tambahan") || "").toString().trim();
+    var expBuktiTambahan = (getVal(expHeader, r, "bukti_tambahan_url") || "").toString().trim();
+    var expAlamatPengirim = (m && (m.snapshot_alamat_pengirim || m.alamat_pengirim) ? (m.snapshot_alamat_pengirim || m.alamat_pengirim) : (getVal(expHeader, r, "alamat_pengirim") || p.alamat_pengirim || "")).toString().trim();
+    var expAlamatPenerima = (m && (m.snapshot_alamat_penerima || m.alamat_penerima) ? (m.snapshot_alamat_penerima || m.alamat_penerima) : (getVal(expHeader, r, "alamat_penerima") || p.alamat_penerima || "")).toString().trim();
 
     transaksiList.push({
       resi_id: r[0].toString(),
@@ -1386,21 +1462,27 @@ function apiGetRiwayatTransaksi(params) {
       tipe: "Express",
       tipe_produk: getVal(expHeader, r, "tipe_produk", 5).toString(),
       metode_bayar: getVal(expHeader, r, "metode_bayar", 12).toString() || "Tunai",
+      metode_bayar_tambahan: expMetodeTambahan,
       ongkir_dasar: getNum(expHeader, r, "ongkir_dasar", 8),
       biaya_asuransi: getNum(expHeader, r, "biaya_asuransi", 7),
       biaya_yoyi: getNum(expHeader, r, "biaya_yoyi", 9),
       total_dibayar_customer: getNum(expHeader, r, "total_dibayar_customer", 10),
-      pembulatan: getNum(expHeader, r, "pembulatan", 11),
+      pembulatan: expPembulatan,
       biaya_packing: getNum(expHeader, r, "biaya_packing", 15),
       biaya_amplop: getNum(expHeader, r, "biaya_amplop", 14),
       biaya_lain: getNum(expHeader, r, "biaya_lain", 6),
       grand_total: getNum(expHeader, r, "grand_total", 18),
       setoran_ke_owner: getNum(expHeader, r, "setoran_ke_owner", 19),
       kas_operasional: getNum(expHeader, r, "kas_operasional", 20),
-      pengirim: p.pengirim,
-      penerima: p.penerima,
-      hp_pengirim: p.hp_pengirim,
-      hp_penerima: p.hp_penerima,
+      pengirim: (m && (m.snapshot_nama_pengirim || m.nama_pengirim)) ? (m.snapshot_nama_pengirim || m.nama_pengirim) : p.pengirim,
+      penerima: (m && (m.snapshot_nama_penerima || m.nama_penerima)) ? (m.snapshot_nama_penerima || m.nama_penerima) : p.penerima,
+      hp_pengirim: (m && (m.snapshot_hp_pengirim || m.hp_pengirim)) ? (m.snapshot_hp_pengirim || m.hp_pengirim) : p.hp_pengirim,
+      hp_penerima: (m && (m.snapshot_hp_penerima || m.hp_penerima)) ? (m.snapshot_hp_penerima || m.hp_penerima) : p.hp_penerima,
+      snapshot_alamat_pengirim: expAlamatPengirim,
+      snapshot_alamat_penerima: expAlamatPenerima,
+      alamat_pengirim: expAlamatPengirim,
+      alamat_penerima: expAlamatPenerima,
+      bukti_tambahan_url: expBuktiTambahan,
       nama_barang: p.nama_barang || "-",
       status_resi: (getVal(expHeader, r, "status_resi", 21) || "AKTIF").toString()
     });
@@ -1418,7 +1500,7 @@ function apiGetRiwayatTransaksi(params) {
     seenKeys[resiKeyC] = true;
     if (txKeyC) seenKeys[txKeyC] = true;
 
-    var pC = backupMap[txIdC] || { pengirim: "", penerima: "", hp_pengirim: "", hp_penerima: "", nama_barang: "" };
+    var pC = backupMap[txIdC] || backupMap[c[0].toString()] || { pengirim: "", penerima: "", hp_pengirim: "", hp_penerima: "", alamat_pengirim: "", alamat_penerima: "", nama_barang: "" };
     var mC = masterTxMap[c[0].toString()] || masterTxMap[txIdC] || null;
 
     var txTanggalC = (mC && mC.tanggal_transaksi) ? mC.tanggal_transaksi.toString() : "";
@@ -1430,6 +1512,16 @@ function apiGetRiwayatTransaksi(params) {
       ? (txTanggalC + "T" + txJamC)
       : c[2].toString();
     var importedAtC = (mC && mC.created_at) ? mC.created_at : c[2].toString();
+
+    var crgPVal = getVal(crgHeader, c, "pembulatan", 14);
+    if (crgPVal === "" || crgPVal === undefined || crgPVal === null) {
+      crgPVal = getVal(crgHeader, c, "Pembulatan");
+    }
+    var crgPembulatan = (crgPVal !== "" && crgPVal !== undefined && crgPVal !== null) ? (parseFloat(crgPVal) || 0) : 0;
+    var crgMetodeTambahan = (getVal(crgHeader, c, "metode_bayar_tambahan") || getVal(crgHeader, c, "metode_pembayaran_tambahan") || "").toString().trim();
+    var crgBuktiTambahan = (getVal(crgHeader, c, "bukti_tambahan_url") || "").toString().trim();
+    var crgAlamatPengirim = (mC && (mC.snapshot_alamat_pengirim || mC.alamat_pengirim) ? (mC.snapshot_alamat_pengirim || mC.alamat_pengirim) : (getVal(crgHeader, c, "alamat_pengirim") || pC.alamat_pengirim || "")).toString().trim();
+    var crgAlamatPenerima = (mC && (mC.snapshot_alamat_penerima || mC.alamat_penerima) ? (mC.snapshot_alamat_penerima || mC.alamat_penerima) : (getVal(crgHeader, c, "alamat_penerima") || pC.alamat_penerima || "")).toString().trim();
 
     transaksiList.push({
       resi_id: c[0].toString(),
@@ -1446,21 +1538,27 @@ function apiGetRiwayatTransaksi(params) {
       tipe: "Cargo",
       tipe_produk: getVal(crgHeader, c, "tipe_produk", 5).toString(),
       metode_bayar: getVal(crgHeader, c, "metode_bayar", 15).toString() || "Tunai",
+      metode_bayar_tambahan: crgMetodeTambahan,
       ongkir_dasar: getNum(crgHeader, c, "ongkir_dasar", 11),
       biaya_asuransi: getNum(crgHeader, c, "biaya_asuransi", 10),
       biaya_yoyi: getNum(crgHeader, c, "biaya_jtc", 12),
       total_dibayar_customer: getNum(crgHeader, c, "total_dibayar_customer", 13),
-      pembulatan: getNum(crgHeader, c, "pembulatan", 14),
+      pembulatan: crgPembulatan,
       biaya_packing: getNum(crgHeader, c, "biaya_packing", 18),
       biaya_amplop: getNum(crgHeader, c, "biaya_amplop", 17),
       biaya_lain: 0,
       grand_total: getNum(crgHeader, c, "grand_total", 21),
       setoran_ke_owner: getNum(crgHeader, c, "setoran_ke_owner", 22),
       kas_operasional: getNum(crgHeader, c, "kas_operasional", 23),
-      pengirim: pC.pengirim,
-      penerima: pC.penerima,
-      hp_pengirim: pC.hp_pengirim,
-      hp_penerima: pC.hp_penerima,
+      pengirim: (mC && (mC.snapshot_nama_pengirim || mC.nama_pengirim)) ? (mC.snapshot_nama_pengirim || mC.nama_pengirim) : pC.pengirim,
+      penerima: (mC && (mC.snapshot_nama_penerima || mC.nama_penerima)) ? (mC.snapshot_nama_penerima || mC.nama_penerima) : pC.penerima,
+      hp_pengirim: (mC && (mC.snapshot_hp_pengirim || mC.hp_pengirim)) ? (mC.snapshot_hp_pengirim || mC.hp_pengirim) : pC.hp_pengirim,
+      hp_penerima: (mC && (mC.snapshot_hp_penerima || mC.hp_penerima)) ? (mC.snapshot_hp_penerima || mC.hp_penerima) : pC.hp_penerima,
+      snapshot_alamat_pengirim: crgAlamatPengirim,
+      snapshot_alamat_penerima: crgAlamatPenerima,
+      alamat_pengirim: crgAlamatPengirim,
+      alamat_penerima: crgAlamatPenerima,
+      bukti_tambahan_url: crgBuktiTambahan,
       nama_barang: pC.nama_barang || "-",
       status_resi: (getVal(crgHeader, c, "status_resi", 24) || "AKTIF").toString()
     });
@@ -1521,14 +1619,19 @@ function apiGetDetailTransaksi(params) {
     return tStr.toString();
   };
 
+  var cleanResi = (resiId || "").toString().trim().toUpperCase();
+  var cleanTxId = (txId || "").toString().trim().toUpperCase();
+
   var masterTx = null;
   if (dbMasterTx && dbMasterTx.length > 1) {
     for (var m = 1; m < dbMasterTx.length; m++) {
       var mObj = rowToObject_(mtxHeaders, dbMasterTx[m]);
-      if ((resiId && mObj.no_resi === resiId) || (txId && (mObj.id === txId || mObj.transaksi_id === txId))) {
+      var mResi = (mObj.no_resi || "").toString().trim().toUpperCase();
+      var mId = (mObj.id || mObj.transaksi_id || "").toString().trim().toUpperCase();
+      if ((cleanResi && mResi === cleanResi) || (cleanTxId && mId === cleanTxId)) {
         masterTx = mObj;
-        if (!resiId && mObj.no_resi) resiId = mObj.no_resi;
-        if (!txId && mObj.id) txId = mObj.id;
+        if (!resiId && mObj.no_resi) { resiId = mObj.no_resi; cleanResi = resiId.trim().toUpperCase(); }
+        if (!txId && mObj.id) { txId = mObj.id; cleanTxId = txId.trim().toUpperCase(); }
         break;
       }
     }
@@ -1540,10 +1643,12 @@ function apiGetDetailTransaksi(params) {
   if (dbExp && dbExp.length > 1) {
     for (var i = 1; i < dbExp.length; i++) {
       var rowE = rowToObject_(expHeaders, dbExp[i]);
-      if ((resiId && rowE.resi_id === resiId) || (txId && rowE.transaksi_id === txId)) {
+      var rResi = (rowE.resi_id || "").toString().trim().toUpperCase();
+      var rTxId = (rowE.transaksi_id || "").toString().trim().toUpperCase();
+      if ((cleanResi && rResi === cleanResi) || (cleanTxId && rTxId === cleanTxId)) {
         resiObj = rowE;
         tipe = "Express";
-        if (!txId) txId = rowE.transaksi_id;
+        if (!txId) { txId = rowE.transaksi_id; cleanTxId = (txId || "").toString().trim().toUpperCase(); }
         break;
       }
     }
@@ -1552,20 +1657,24 @@ function apiGetDetailTransaksi(params) {
   if (!resiObj && dbCrg && dbCrg.length > 1) {
     for (var j = 1; j < dbCrg.length; j++) {
       var rowC = rowToObject_(crgHeaders, dbCrg[j]);
-      if ((resiId && rowC.resi_id === resiId) || (txId && rowC.transaksi_id === txId)) {
+      var cResi = (rowC.resi_id || "").toString().trim().toUpperCase();
+      var cTxId = (rowC.transaksi_id || "").toString().trim().toUpperCase();
+      if ((cleanResi && cResi === cleanResi) || (cleanTxId && cTxId === cleanTxId)) {
         resiObj = rowC;
         tipe = "Cargo";
-        if (!txId) txId = rowC.transaksi_id;
+        if (!txId) { txId = rowC.transaksi_id; cleanTxId = (txId || "").toString().trim().toUpperCase(); }
         break;
       }
     }
   }
 
   var preObj = null;
-  if (txId && dbBackup && dbBackup.length > 1) {
+  if (dbBackup && dbBackup.length > 1) {
     for (var k = 1; k < dbBackup.length; k++) {
       var rowP = rowToObject_(backupHeaders, dbBackup[k]);
-      if (rowP.transaksi_id === txId || (resiId && rowP.no_resi === resiId)) {
+      var pResi = (rowP.no_resi || rowP.resi_id || "").toString().trim().toUpperCase();
+      var pTxId = (rowP.transaksi_id || "").toString().trim().toUpperCase();
+      if ((cleanTxId && pTxId === cleanTxId) || (cleanResi && pResi === cleanResi)) {
         preObj = rowP;
         break;
       }
@@ -1620,23 +1729,28 @@ function apiGetDetailTransaksi(params) {
     admin_name: adminName,
     outlet_id: outId,
     outlet_name: outletName,
-    nama_pengirim: (masterTx && masterTx.snapshot_nama_pengirim) || (preObj && preObj.nama_pengirim) || "",
-    hp_pengirim: (masterTx && masterTx.snapshot_hp_pengirim) || (preObj && preObj.hp_pengirim) || "",
-    alamat_pengirim: (masterTx && masterTx.snapshot_alamat_pengirim) || (preObj && preObj.alamat_pengirim) || "",
-    nama_penerima: (masterTx && masterTx.snapshot_nama_penerima) || (preObj && preObj.nama_penerima) || "",
-    hp_penerima: (masterTx && masterTx.snapshot_hp_penerima) || (preObj && preObj.hp_penerima) || "",
-    alamat_penerima: (masterTx && masterTx.snapshot_alamat_penerima) || (preObj && preObj.alamat_penerima) || "",
-    nama_barang: (masterTx && masterTx.nama_barang) || (preObj && preObj.nama_barang) || "",
+    nama_pengirim: (masterTx && (masterTx.snapshot_nama_pengirim || masterTx.nama_pengirim)) || (preObj && preObj.nama_pengirim) || (resiObj && resiObj.nama_pengirim) || "",
+    hp_pengirim: (masterTx && (masterTx.snapshot_hp_pengirim || masterTx.hp_pengirim)) || (preObj && preObj.hp_pengirim) || (resiObj && resiObj.hp_pengirim) || "",
+    alamat_pengirim: (masterTx && (masterTx.snapshot_alamat_pengirim || masterTx.alamat_pengirim)) || (preObj && preObj.alamat_pengirim) || (resiObj && resiObj.alamat_pengirim) || "",
+    snapshot_alamat_pengirim: (masterTx && (masterTx.snapshot_alamat_pengirim || masterTx.alamat_pengirim)) || (preObj && preObj.alamat_pengirim) || (resiObj && resiObj.alamat_pengirim) || "",
+    nama_penerima: (masterTx && (masterTx.snapshot_nama_penerima || masterTx.nama_penerima)) || (preObj && preObj.nama_penerima) || (resiObj && resiObj.nama_penerima) || "",
+    hp_penerima: (masterTx && (masterTx.snapshot_hp_penerima || masterTx.hp_penerima)) || (preObj && preObj.hp_penerima) || (resiObj && resiObj.hp_penerima) || "",
+    alamat_penerima: (masterTx && (masterTx.snapshot_alamat_penerima || masterTx.alamat_penerima)) || (preObj && preObj.alamat_penerima) || (resiObj && resiObj.alamat_penerima) || "",
+    snapshot_alamat_penerima: (masterTx && (masterTx.snapshot_alamat_penerima || masterTx.alamat_penerima)) || (preObj && preObj.alamat_penerima) || (resiObj && resiObj.alamat_penerima) || "",
+    nama_barang: (masterTx && masterTx.nama_barang) || (preObj && preObj.nama_barang) || (resiObj && resiObj.nama_barang) || "",
     berat_kg: Number((resiObj && resiObj.berat_kg) || (preObj && preObj.berat_kg) || (masterTx && masterTx.berat_barang) || 1),
     ongkir_dasar: Number((resiObj && resiObj.ongkir_dasar) || (masterTx && masterTx.ongkir_customer) || 0),
     biaya_asuransi: Number((resiObj && resiObj.biaya_asuransi) || (masterTx && masterTx.asuransi) || 0),
     biaya_packing: Number((resiObj && resiObj.biaya_packing) || (masterTx && masterTx.packing) || 0),
     biaya_amplop: Number((resiObj && resiObj.biaya_amplop) || (masterTx && masterTx.amplop) || 0),
     biaya_lain: Number((resiObj && resiObj.biaya_lain) || (masterTx && masterTx.biaya_lain) || 0),
+    pembulatan: Number((resiObj && (resiObj.pembulatan !== undefined ? resiObj.pembulatan : resiObj.Pembulatan)) || (masterTx && masterTx.pembulatan) || 0),
     grand_total: Number((resiObj && resiObj.grand_total) || (masterTx && masterTx.total_customer) || 0),
     setoran_ke_owner: Number((resiObj && resiObj.setoran_ke_owner) || (masterTx && masterTx.wajib_setor_owner) || 0),
     kas_operasional: Number((resiObj && resiObj.kas_operasional) || (masterTx && masterTx.kas_outlet) || 0),
     metode_bayar: (resiObj && resiObj.metode_bayar) || (masterTx && masterTx.metode_bayar) || "Tunai",
+    metode_bayar_tambahan: (resiObj && (resiObj.metode_bayar_tambahan || resiObj.metode_pembayaran_tambahan)) ? (resiObj.metode_bayar_tambahan || resiObj.metode_pembayaran_tambahan).toString().trim() : ((masterTx && (masterTx.metode_pembayaran_tambahan || masterTx.metode_bayar_tambahan)) ? (masterTx.metode_pembayaran_tambahan || masterTx.metode_bayar_tambahan).toString().trim() : ""),
+    bukti_tambahan_url: (resiObj && resiObj.bukti_tambahan_url) ? resiObj.bukti_tambahan_url.toString().trim() : "",
     status_resi: (masterTx && masterTx.status_transaksi === "CANCELLED" ? "BATAL" : ((resiObj && resiObj.status_resi) || (masterTx && masterTx.status_transaksi) || "AKTIF")),
     catatan: (preObj && preObj.catatan_admin) || (masterTx && masterTx.catatan) || ""
   };
@@ -5094,6 +5208,33 @@ function apiGetKeuanganOutlet(params) {
       }
     }
 
+    // Load EXP_Resi and MASTER_TRANSAKSI maps for read-side bukti_tambahan_url enrichment
+    var expRows = DatabaseService.getSheetData("EXP_Resi");
+    var expMap = {};
+    if (expRows && expRows.length >= 2) {
+      var eHeaders = expRows[0];
+      for (var e = 1; e < expRows.length; e++) {
+        var eObj = rowToObject_(eHeaders, expRows[e]);
+        var eResi = (eObj.resi_id || "").toString().trim().toUpperCase();
+        var eTxId = (eObj.transaksi_id || "").toString().trim().toUpperCase();
+        if (eResi && !expMap[eResi]) expMap[eResi] = eObj;
+        if (eTxId && !expMap[eTxId]) expMap[eTxId] = eObj;
+      }
+    }
+
+    var masterRows = DatabaseService.getSheetData("MASTER_TRANSAKSI");
+    var masterByResi = {};
+    if (masterRows && masterRows.length >= 2) {
+      var mHeaders = masterRows[0];
+      for (var m = 1; m < masterRows.length; m++) {
+        var mObj = rowToObject_(mHeaders, masterRows[m]);
+        var mResi = (mObj.no_resi || mObj.resi_id || "").toString().trim().toUpperCase();
+        var mTxId = (mObj.id || mObj.transaksi_id || "").toString().trim().toUpperCase();
+        if (mResi && !masterByResi[mResi]) masterByResi[mResi] = mObj;
+        if (mTxId && !masterByResi[mTxId]) masterByResi[mTxId] = mObj;
+      }
+    }
+
     var list = [];
     for (var i = 1; i < rows.length; i++) {
       var obj = rowToObject_(headers, rows[i]);
@@ -5112,6 +5253,20 @@ function apiGetKeuanganOutlet(params) {
       if (params.jenis && params.jenis !== "ALL" && (obj.jenis || "").toString().toUpperCase() !== params.jenis.toUpperCase()) continue;
       if (params.kategori_id && params.kategori_id !== "ALL" && obj.kategori_id !== params.kategori_id) continue;
 
+      var resiKey = (obj.resi_id || "").toString().trim().toUpperCase();
+      var matchedExp = resiKey ? expMap[resiKey] : null;
+      if (!matchedExp && resiKey && masterByResi[resiKey]) {
+        var mMatched = masterByResi[resiKey];
+        var mResiKey = (mMatched.no_resi || mMatched.resi_id || "").toString().trim().toUpperCase();
+        var mTxKey = (mMatched.id || mMatched.transaksi_id || "").toString().trim().toUpperCase();
+        matchedExp = (mResiKey ? expMap[mResiKey] : null) || (mTxKey ? expMap[mTxKey] : null);
+      }
+
+      var resolvedBukti = (obj.bukti_url || "").toString().trim();
+      if (!resolvedBukti && matchedExp && matchedExp.bukti_tambahan_url) {
+        resolvedBukti = matchedExp.bukti_tambahan_url.toString().trim();
+      }
+
       var catInfo = catMap[obj.kategori_id] || {};
       list.push({
         id: obj.id.toString(),
@@ -5123,7 +5278,7 @@ function apiGetKeuanganOutlet(params) {
         kategori_nama: catInfo.nama || obj.kategori_id || "-",
         nominal: Number(obj.nominal) || 0,
         deskripsi: (obj.deskripsi || "").toString(),
-        bukti_url: (obj.bukti_url || "").toString(),
+        bukti_url: resolvedBukti,
         dibuat_oleh: (obj.dibuat_oleh || "").toString(),
         created_at: (obj.created_at || "").toString(),
         aktif: isAktif,

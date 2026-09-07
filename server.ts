@@ -4080,6 +4080,24 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
       if (rId) backupByResi.set(rId, b);
     });
 
+    const expByResi = new Map<string, any>();
+    const expByTxId = new Map<string, any>();
+    (db.EXP_Resi || []).forEach((r: any) => {
+      const rId = (r.resi_id || "").toString().trim().toUpperCase();
+      const tId = (r.transaksi_id || "").toString().trim().toUpperCase();
+      if (rId && !expByResi.has(rId)) expByResi.set(rId, r);
+      if (tId && !expByTxId.has(tId)) expByTxId.set(tId, r);
+    });
+
+    const crgByResi = new Map<string, any>();
+    const crgByTxId = new Map<string, any>();
+    (db.CRG_Resi || []).forEach((c: any) => {
+      const rId = (c.resi_id || "").toString().trim().toUpperCase();
+      const tId = (c.transaksi_id || "").toString().trim().toUpperCase();
+      if (rId && !crgByResi.has(rId)) crgByResi.set(rId, c);
+      if (tId && !crgByTxId.has(tId)) crgByTxId.set(tId, c);
+    });
+
     const masterByResi = new Map<string, any>();
     (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
       const rId = (tx.no_resi || tx.resi_id || tx.id || "").toUpperCase();
@@ -4112,14 +4130,45 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
     const transaksiList = filtered.map((tx: any) => {
       const sum = calculateFinancialSummary(tx);
       const txId = tx.id || tx.transaksi_id || "";
-      const p = backupMap[txId];
+      const p = backupMap[txId] || (tx.no_resi ? backupByResi.get(String(tx.no_resi).toUpperCase()) : null);
       const resiId = tx.no_resi || tx.resi_id || tx.id;
       if (resiId) seenKeys.add(resiId.toUpperCase());
       if (txId) seenKeys.add(txId.toUpperCase());
 
-      const tipeProduk = tx.tipe_produk || p?.tipe_produk || ((tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "EZ");
-      const jenisBarang = tx.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
-      const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || p?.metode_bayar || "Tunai";
+      const resiUpper = (resiId || "").toString().trim().toUpperCase();
+      const txUpper = (txId || "").toString().trim().toUpperCase();
+      const matchedExp = (resiUpper ? expByResi.get(resiUpper) : null) || (txUpper ? expByTxId.get(txUpper) : null);
+      const matchedCrg = (!matchedExp && resiUpper ? crgByResi.get(resiUpper) : null) || (!matchedExp && txUpper ? crgByTxId.get(txUpper) : null);
+      const matchedResi = matchedExp || matchedCrg;
+
+      let finalPembulatan = 0;
+      if (matchedResi) {
+        const pRaw = matchedResi.pembulatan !== undefined ? matchedResi.pembulatan : matchedResi.Pembulatan;
+        if (pRaw !== undefined && pRaw !== null && String(pRaw).trim() !== "") {
+          finalPembulatan = Number(pRaw) || 0;
+        }
+      } else if (tx.pembulatan !== undefined && tx.pembulatan !== null && String(tx.pembulatan).trim() !== "") {
+        finalPembulatan = Number(tx.pembulatan) || 0;
+      }
+
+      let finalMetodeTambahan = "";
+      if (matchedResi) {
+        finalMetodeTambahan = (matchedResi.metode_bayar_tambahan || matchedResi.metode_pembayaran_tambahan || "").toString().trim();
+      } else {
+        finalMetodeTambahan = (tx.metode_pembayaran_tambahan || tx.metode_bayar_tambahan || "").toString().trim();
+      }
+
+      let finalBuktiTambahanUrl = "";
+      if (matchedResi && matchedResi.bukti_tambahan_url) {
+        finalBuktiTambahanUrl = String(matchedResi.bukti_tambahan_url).trim();
+      }
+
+      const finalAlamatPengirim = (tx.snapshot_alamat_pengirim || tx.alamat_pengirim || p?.alamat_pengirim || matchedResi?.alamat_pengirim || "").toString().trim();
+      const finalAlamatPenerima = (tx.snapshot_alamat_penerima || tx.alamat_penerima || p?.alamat_penerima || matchedResi?.alamat_penerima || "").toString().trim();
+
+      const tipeProduk = tx.tipe_produk || matchedResi?.tipe_produk || p?.tipe_produk || ((tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "EZ");
+      const jenisBarang = tx.jenis_barang || matchedResi?.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
+      const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || matchedResi?.metode_bayar || p?.metode_bayar || "Tunai";
 
       const txDate = extractBusinessDate(tx) || extractBusinessDate(p) || (tx.tanggal_transaksi ? getWIBDate(tx.tanggal_transaksi) : "") || getTodayWIB();
       const txTime = tx.jam_transaksi || p?.jam_transaksi || tx.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
@@ -4145,13 +4194,13 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
         tipe_produk: tipeProduk,
         jenis_barang: jenisBarang,
         metode_bayar: metodeBayar,
-        metode_bayar_tambahan: tx.metode_pembayaran_tambahan || tx.metode_bayar_tambahan || "",
+        metode_bayar_tambahan: finalMetodeTambahan,
         ongkir_dasar: Number(tx.ongkir_customer || tx.ongkir_dasar || 0),
         biaya_asuransi: Number(tx.asuransi || tx.biaya_asuransi || 0),
         biaya_lain: Number(tx.biaya_lain || 0),
         biaya_amplop: Number(tx.biaya_amplop || tx.amplop || 0),
         biaya_packing: Number(tx.biaya_packing || tx.packing || 0),
-        pembulatan: Number(tx.pembulatan || 0),
+        pembulatan: finalPembulatan,
         wajib_setor_owner: Number(tx.wajib_setor_owner || sum.owner_deposit || 0),
         kas_operasional: Number(tx.kas_outlet || sum.outlet_cash || 0),
         grand_total: sum.customer_payment || Number(tx.total_customer) || Number(tx.grand_total) || Number(tx.jumlah_dibayar_customer) || 0,
@@ -4159,8 +4208,11 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
         penerima: tx.snapshot_nama_penerima || tx.nama_penerima || tx.penerima || p?.nama_penerima || "",
         hp_pengirim: tx.snapshot_hp_pengirim || tx.hp_pengirim || p?.hp_pengirim || "",
         hp_penerima: tx.snapshot_hp_penerima || tx.hp_penerima || p?.hp_penerima || "",
-        alamat_pengirim: tx.snapshot_alamat_pengirim || tx.alamat_pengirim || p?.alamat_pengirim || "",
-        alamat_penerima: tx.snapshot_alamat_penerima || tx.alamat_penerima || p?.alamat_penerima || "",
+        snapshot_alamat_pengirim: finalAlamatPengirim,
+        snapshot_alamat_penerima: finalAlamatPenerima,
+        alamat_pengirim: finalAlamatPengirim,
+        alamat_penerima: finalAlamatPenerima,
+        bukti_tambahan_url: finalBuktiTambahanUrl,
         nama_barang: tx.nama_barang || p?.nama_barang || "-",
         status_resi: tx.status_resi || tx.status_transaksi || tx.status || "AKTIF"
       };
@@ -4183,6 +4235,13 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
         const jenisBarang = r.jenis_barang || masterTx?.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
         const metodeBayar = r.metode_bayar || masterTx?.metode_bayar || p?.metode_bayar || "Tunai";
 
+        const rPVal = r.pembulatan !== undefined ? r.pembulatan : r.Pembulatan;
+        const rPembulatan = (rPVal !== undefined && rPVal !== null && String(rPVal).trim() !== "") ? (Number(rPVal) || 0) : (Number(masterTx?.pembulatan) || 0);
+        const rMetodeTambahan = (r.metode_bayar_tambahan || r.metode_pembayaran_tambahan || masterTx?.metode_pembayaran_tambahan || masterTx?.metode_bayar_tambahan || "").toString().trim();
+        const rBuktiTambahan = (r.bukti_tambahan_url || masterTx?.bukti_tambahan_url || "").toString().trim();
+        const rAlamatPengirim = (masterTx?.snapshot_alamat_pengirim || masterTx?.alamat_pengirim || r.alamat_pengirim || p?.alamat_pengirim || "").toString().trim();
+        const rAlamatPenerima = (masterTx?.snapshot_alamat_penerima || masterTx?.alamat_penerima || r.alamat_penerima || p?.alamat_penerima || "").toString().trim();
+
         const rDate = masterTx?.tanggal_transaksi || p?.tanggal_transaksi || r.tanggal_transaksi || r.timestamp?.split("T")[0] || r.created_at?.split("T")[0] || getTodayWIB();
         const rTime = masterTx?.jam_transaksi || p?.jam_transaksi || r.jam_transaksi || r.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
         const rTxTime = `${rDate} ${rTime}`;
@@ -4203,13 +4262,18 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
           tipe_produk: tipeProduk,
           jenis_barang: jenisBarang,
           metode_bayar: metodeBayar,
+          metode_bayar_tambahan: rMetodeTambahan,
+          pembulatan: rPembulatan,
+          bukti_tambahan_url: rBuktiTambahan,
           grand_total: Number(masterTx?.total_customer || masterTx?.grand_total || r.grand_total) || 0,
           pengirim: masterTx?.snapshot_nama_pengirim || r.nama_pengirim || p?.nama_pengirim || "",
           penerima: masterTx?.snapshot_nama_penerima || r.nama_penerima || p?.nama_penerima || "",
           hp_pengirim: masterTx?.snapshot_hp_pengirim || r.hp_pengirim || p?.hp_pengirim || "",
           hp_penerima: masterTx?.snapshot_hp_penerima || r.hp_penerima || p?.hp_penerima || "",
-          alamat_pengirim: masterTx?.snapshot_alamat_pengirim || r.alamat_pengirim || p?.alamat_pengirim || "",
-          alamat_penerima: masterTx?.snapshot_alamat_penerima || r.alamat_penerima || p?.alamat_penerima || "",
+          snapshot_alamat_pengirim: rAlamatPengirim,
+          snapshot_alamat_penerima: rAlamatPenerima,
+          alamat_pengirim: rAlamatPengirim,
+          alamat_penerima: rAlamatPenerima,
           nama_barang: masterTx?.nama_barang || r.nama_barang || p?.nama_barang || "-",
           status_resi: masterTx?.status_resi || masterTx?.status_transaksi || r.status_resi || r.status || "AKTIF"
         });
@@ -4234,6 +4298,13 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
         const jenisBarang = c.jenis_barang || masterTx?.jenis_barang || p?.jenis_barang || "BARANG";
         const metodeBayar = c.metode_bayar || masterTx?.metode_bayar || p?.metode_bayar || "Tunai";
 
+        const cPVal = c.pembulatan !== undefined ? c.pembulatan : c.Pembulatan;
+        const cPembulatan = (cPVal !== undefined && cPVal !== null && String(cPVal).trim() !== "") ? (Number(cPVal) || 0) : (Number(masterTx?.pembulatan) || 0);
+        const cMetodeTambahan = (c.metode_bayar_tambahan || c.metode_pembayaran_tambahan || masterTx?.metode_pembayaran_tambahan || masterTx?.metode_bayar_tambahan || "").toString().trim();
+        const cBuktiTambahan = (c.bukti_tambahan_url || masterTx?.bukti_tambahan_url || "").toString().trim();
+        const cAlamatPengirim = (masterTx?.snapshot_alamat_pengirim || masterTx?.alamat_pengirim || c.alamat_pengirim || p?.alamat_pengirim || "").toString().trim();
+        const cAlamatPenerima = (masterTx?.snapshot_alamat_penerima || masterTx?.alamat_penerima || c.alamat_penerima || p?.alamat_penerima || "").toString().trim();
+
         const cDate = masterTx?.tanggal_transaksi || p?.tanggal_transaksi || c.tanggal_transaksi || c.timestamp?.split("T")[0] || c.created_at?.split("T")[0] || getTodayWIB();
         const cTime = masterTx?.jam_transaksi || p?.jam_transaksi || c.jam_transaksi || c.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
         const cTxTime = `${cDate} ${cTime}`;
@@ -4254,13 +4325,18 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
           tipe_produk: tipeProduk,
           jenis_barang: jenisBarang,
           metode_bayar: metodeBayar,
+          metode_bayar_tambahan: cMetodeTambahan,
+          pembulatan: cPembulatan,
+          bukti_tambahan_url: cBuktiTambahan,
           grand_total: Number(masterTx?.total_customer || masterTx?.grand_total || c.grand_total) || 0,
           pengirim: masterTx?.snapshot_nama_pengirim || c.nama_pengirim || p?.nama_pengirim || "",
           penerima: masterTx?.snapshot_nama_penerima || c.nama_penerima || p?.nama_penerima || "",
           hp_pengirim: masterTx?.snapshot_hp_pengirim || c.hp_pengirim || p?.hp_pengirim || "",
           hp_penerima: masterTx?.snapshot_hp_penerima || c.hp_penerima || p?.hp_penerima || "",
-          alamat_pengirim: masterTx?.snapshot_alamat_pengirim || c.alamat_pengirim || p?.alamat_pengirim || "",
-          alamat_penerima: masterTx?.snapshot_alamat_penerima || c.alamat_penerima || p?.alamat_penerima || "",
+          snapshot_alamat_pengirim: cAlamatPengirim,
+          snapshot_alamat_penerima: cAlamatPenerima,
+          alamat_pengirim: cAlamatPengirim,
+          alamat_penerima: cAlamatPenerima,
           nama_barang: masterTx?.nama_barang || c.nama_barang || p?.nama_barang || "-",
           status_resi: masterTx?.status_resi || masterTx?.status_transaksi || c.status_resi || c.status || "AKTIF"
         });
@@ -4378,13 +4454,33 @@ app.post("/api/getDetailTransaksi", (req, res) => {
     return res.status(400).json({ status: "error", message: "resi_id atau transaksi_id diperlukan" });
   }
 
-  const exp = (db.EXP_Resi || []).find((r: any) => (resi_id && r.resi_id === resi_id) || (transaksi_id && r.transaksi_id === transaksi_id));
-  const crg = (db.CRG_Resi || []).find((r: any) => (resi_id && r.resi_id === resi_id) || (transaksi_id && r.transaksi_id === transaksi_id));
+  const cleanResi = (resi_id || "").toString().trim().toUpperCase();
+  const cleanTxId = (transaksi_id || "").toString().trim().toUpperCase();
+
+  const exp = (db.EXP_Resi || []).find((r: any) => {
+    const rResi = (r.resi_id || "").toString().trim().toUpperCase();
+    const rTx = (r.transaksi_id || "").toString().trim().toUpperCase();
+    return (cleanResi && rResi === cleanResi) || (cleanTxId && rTx === cleanTxId);
+  });
+  const crg = (db.CRG_Resi || []).find((r: any) => {
+    const cResi = (r.resi_id || "").toString().trim().toUpperCase();
+    const cTx = (r.transaksi_id || "").toString().trim().toUpperCase();
+    return (cleanResi && cResi === cleanResi) || (cleanTxId && cTx === cleanTxId);
+  });
   const resiObj = exp || crg;
   const txId = transaksi_id || resiObj?.transaksi_id || "";
+  const resolvedTxUpper = (txId || "").toString().trim().toUpperCase();
 
-  const pre = (db.PreInput_Backup || []).find((p: any) => (txId && p.transaksi_id === txId) || (resi_id && p.no_resi === resi_id));
-  const masterTx = (db.MASTER_TRANSAKSI || []).find((m: any) => (txId && (m.id === txId || m.transaksi_id === txId)) || (resi_id && m.no_resi === resi_id));
+  const pre = (db.PreInput_Backup || []).find((p: any) => {
+    const pResi = (p.no_resi || p.resi_id || "").toString().trim().toUpperCase();
+    const pTx = (p.transaksi_id || "").toString().trim().toUpperCase();
+    return (resolvedTxUpper && pTx === resolvedTxUpper) || (cleanResi && pResi === cleanResi);
+  });
+  const masterTx = (db.MASTER_TRANSAKSI || []).find((m: any) => {
+    const mResi = (m.no_resi || m.resi_id || "").toString().trim().toUpperCase();
+    const mTx = (m.id || m.transaksi_id || "").toString().trim().toUpperCase();
+    return (resolvedTxUpper && mTx === resolvedTxUpper) || (cleanResi && mResi === cleanResi);
+  });
 
   const outlet = (db.Outlets || []).find((o: any) => o.outlet_id === (resiObj?.outlet_id_input || masterTx?.outlet_id || pre?.outlet_id_tugas));
   const user = (db.Users || []).find((u: any) => u.user_id === (resiObj?.admin_id_pencatat || masterTx?.admin_id || pre?.admin_id));
@@ -4407,9 +4503,13 @@ app.post("/api/getDetailTransaksi", (req, res) => {
     biayaAmplop = 2000;
   }
   const biayaPacking = Number(resiObj?.biaya_packing ?? masterTx?.packing ?? masterTx?.biaya_packing ?? 0);
-  const pembulatan = Number(resiObj?.pembulatan ?? masterTx?.pembulatan ?? 0);
+  const rawPembulatan = resiObj?.pembulatan !== undefined ? resiObj.pembulatan : (resiObj as any)?.Pembulatan;
+  const pembulatan = (rawPembulatan !== undefined && rawPembulatan !== null && String(rawPembulatan).trim() !== "")
+    ? Number(rawPembulatan) || 0
+    : Number(masterTx?.pembulatan ?? 0);
   const metodeBayar = resiObj?.metode_bayar || masterTx?.metode_bayar || "Tunai";
-  const metodeBayarTambahan = resiObj?.metode_bayar_tambahan || resiObj?.metode_pembayaran_tambahan || masterTx?.metode_pembayaran_tambahan || "";
+  const metodeBayarTambahan = (resiObj?.metode_bayar_tambahan || resiObj?.metode_pembayaran_tambahan || masterTx?.metode_pembayaran_tambahan || masterTx?.metode_bayar_tambahan || "").toString().trim();
+  const buktiTambahanUrl = (resiObj?.bukti_tambahan_url || masterTx?.bukti_tambahan_url || "").toString().trim();
   const isDfod = String(metodeBayar).toUpperCase().includes("DFOD");
 
   const summary = calculateFinancialSummary({
@@ -4429,6 +4529,9 @@ app.post("/api/getDetailTransaksi", (req, res) => {
   const setoranKeOwner = isDfod ? 0 : (Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner) > ongkirDasar ? Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner) : summary.owner_deposit);
   const kasOperasional = Number(resiObj?.kas_operasional ?? masterTx?.kas_outlet) || summary.outlet_cash;
 
+  const resolvedAlamatPengirim = (masterTx?.snapshot_alamat_pengirim || masterTx?.alamat_pengirim || pre?.alamat_pengirim || (resiObj as any)?.alamat_pengirim || "").toString().trim();
+  const resolvedAlamatPenerima = (masterTx?.snapshot_alamat_penerima || masterTx?.alamat_penerima || pre?.alamat_penerima || (resiObj as any)?.alamat_penerima || "").toString().trim();
+
   const detail = {
     resi_id: resiObj?.resi_id || masterTx?.no_resi || resi_id || "",
     transaksi_id: txId,
@@ -4445,10 +4548,12 @@ app.post("/api/getDetailTransaksi", (req, res) => {
     outlet_name: outlet?.nama_outlet || resiObj?.outlet_id_input || "",
     nama_pengirim: (masterTx?.nama_pengirim && masterTx.nama_pengirim !== "Umum" ? masterTx.nama_pengirim : (masterTx?.snapshot_nama_pengirim && masterTx.snapshot_nama_pengirim !== "Umum" ? masterTx.snapshot_nama_pengirim : (pre?.nama_pengirim || masterTx?.snapshot_nama_pengirim || ""))),
     hp_pengirim: masterTx?.no_hp_pengirim || masterTx?.hp_pengirim || masterTx?.snapshot_hp_pengirim || pre?.hp_pengirim || (resiObj as any)?.hp_pengirim || (db.Customers || []).find((c: any) => c.customer_id === masterTx?.pengirim_id)?.no_hp || "",
-    alamat_pengirim: masterTx?.alamat_pengirim || masterTx?.snapshot_alamat_pengirim || pre?.alamat_pengirim || (resiObj as any)?.alamat_pengirim || "",
+    alamat_pengirim: resolvedAlamatPengirim,
+    snapshot_alamat_pengirim: resolvedAlamatPengirim,
     nama_penerima: (masterTx?.nama_penerima && masterTx.nama_penerima !== "Umum" ? masterTx.nama_penerima : (masterTx?.snapshot_nama_penerima && masterTx.snapshot_nama_penerima !== "Umum" ? masterTx.snapshot_nama_penerima : (pre?.nama_penerima || masterTx?.snapshot_nama_penerima || ""))),
     hp_penerima: masterTx?.no_hp_penerima || masterTx?.hp_penerima || masterTx?.snapshot_hp_penerima || pre?.hp_penerima || (resiObj as any)?.hp_penerima || (db.Customers || []).find((c: any) => c.customer_id === masterTx?.penerima_id)?.no_hp || "",
-    alamat_penerima: masterTx?.alamat_penerima || masterTx?.snapshot_alamat_penerima || pre?.alamat_penerima || (resiObj as any)?.alamat_penerima || "",
+    alamat_penerima: resolvedAlamatPenerima,
+    snapshot_alamat_penerima: resolvedAlamatPenerima,
     jenis_barang: masterTx?.jenis_barang || pre?.jenis_barang || (resiObj as any)?.jenis_barang || (masterTx?.tipe_produk === "DOC" || resiObj?.tipe_produk === "DOC" ? "DOKUMEN" : "BARANG"),
     nama_barang: (masterTx?.nama_barang && masterTx.nama_barang !== "Paket" && masterTx.nama_barang !== "Paket Standard" ? masterTx.nama_barang : (pre?.nama_barang || masterTx?.nama_barang || "")),
     berat_kg: Number(resiObj?.berat_kg ?? pre?.berat_kg ?? masterTx?.berat_barang ?? 1),
@@ -4463,6 +4568,7 @@ app.post("/api/getDetailTransaksi", (req, res) => {
     kas_operasional: kasOperasional,
     metode_bayar: isDfod ? "DFOD" : metodeBayar,
     metode_bayar_tambahan: metodeBayarTambahan,
+    bukti_tambahan_url: buktiTambahanUrl,
     status_resi: resiObj?.status || resiObj?.status_resi || masterTx?.status || "AKTIF",
     catatan: pre?.catatan_admin || masterTx?.catatan || "",
     foto_paket_url: pre?.foto_paket_url || resiObj?.foto_paket_url || masterTx?.foto_barang || "",
@@ -6442,6 +6548,24 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
     if (u.nama_lengkap) userMap[u.nama_lengkap] = u.nama_lengkap;
   });
 
+  const expByResi = new Map<string, any>();
+  const expByTxId = new Map<string, any>();
+  (db.EXP_Resi || []).forEach((r: any) => {
+    const rId = (r.resi_id || "").toString().trim().toUpperCase();
+    const tId = (r.transaksi_id || "").toString().trim().toUpperCase();
+    if (rId && !expByResi.has(rId)) expByResi.set(rId, r);
+    if (tId && !expByTxId.has(tId)) expByTxId.set(tId, r);
+  });
+
+  const masterByResi = new Map<string, any>();
+  const masterByTxId = new Map<string, any>();
+  (db.MASTER_TRANSAKSI || []).forEach((m: any) => {
+    const rId = (m.no_resi || m.resi_id || "").toString().trim().toUpperCase();
+    const tId = (m.id || m.transaksi_id || "").toString().trim().toUpperCase();
+    if (rId && !masterByResi.has(rId)) masterByResi.set(rId, m);
+    if (tId && !masterByTxId.has(tId)) masterByTxId.set(tId, m);
+  });
+
   // Calculate opening balance for active items before params.tanggal_awal (matching the outlet filter if any)
   let openingAdmin = 0;
   let openingOwner = 0;
@@ -6517,6 +6641,29 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
       else if (item.kategori_id === "KAT-TRANSFER-OWNER-TO-ADMIN" || item.kategori_id === "KAT-TRANSFER") kategoriNama = "Transfer Dana Owner ke Admin";
       else kategoriNama = item.kategori_id || "-";
     }
+
+    let resolvedBukti = String(item.bukti_url || "").trim();
+    if (!resolvedBukti) {
+      const rKey = (item.resi_id || "").toString().trim().toUpperCase();
+      let matchedExp = rKey ? (expByResi.get(rKey) || expByTxId.get(rKey)) : null;
+      if (!matchedExp && rKey && masterByResi.has(rKey)) {
+        const m = masterByResi.get(rKey);
+        const mResi = (m.no_resi || m.resi_id || "").toString().trim().toUpperCase();
+        const mTx = (m.id || m.transaksi_id || "").toString().trim().toUpperCase();
+        matchedExp = (mResi ? expByResi.get(mResi) : null) || (mTx ? expByTxId.get(mTx) : null);
+      }
+      if (!matchedExp && item.deskripsi) {
+        const resiMatch = item.deskripsi.match(/resi\s+([a-z0-9]+)/i)?.[1];
+        if (resiMatch) {
+          const matchUpper = resiMatch.trim().toUpperCase();
+          matchedExp = expByResi.get(matchUpper) || expByTxId.get(matchUpper);
+        }
+      }
+      if (matchedExp && matchedExp.bukti_tambahan_url) {
+        resolvedBukti = String(matchedExp.bukti_tambahan_url).trim();
+      }
+    }
+
     return {
       id: String(item.id),
       tanggal: toIsoDateString(item.tanggal, item.created_at),
@@ -6527,11 +6674,12 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
       kategori_nama: kategoriNama,
       nominal: Number(item.nominal) || 0,
       deskripsi: String(item.deskripsi || ""),
-      bukti_url: String(item.bukti_url || ""),
+      bukti_url: resolvedBukti,
       dibuat_oleh: String(adminName),
       created_at: String(item.created_at || ""),
       aktif: item.aktif !== false && item.aktif !== "FALSE",
-      lokasi_uang: item.lokasi_uang || (item.jenis === "PEMASUKAN" ? "ADMIN" : "ADMIN")
+      lokasi_uang: item.lokasi_uang || (item.jenis === "PEMASUKAN" ? "ADMIN" : "ADMIN"),
+      resi_id: String(item.resi_id || "")
     };
   });
 
@@ -7179,17 +7327,28 @@ const resJam =
             snapshot_nama_pengirim: tx.pengirim || tx.nama_pengirim || tx.snapshot_nama_pengirim || localTx?.snapshot_nama_pengirim || "",
             hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || localTx?.hp_pengirim || "",
             snapshot_hp_pengirim: tx.hp_pengirim || tx.snapshot_hp_pengirim || localTx?.snapshot_hp_pengirim || "",
-            alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || localTx?.alamat_pengirim || "",
-            snapshot_alamat_pengirim: tx.alamat_pengirim || tx.snapshot_alamat_pengirim || localTx?.snapshot_alamat_pengirim || "",
+            alamat_pengirim: ((tx.snapshot_alamat_pengirim || tx.alamat_pengirim || "").toString().trim() && (tx.snapshot_alamat_pengirim || tx.alamat_pengirim || "").toString().trim() !== "-")
+              ? (tx.snapshot_alamat_pengirim || tx.alamat_pengirim || "").toString().trim()
+              : ((localTx?.snapshot_alamat_pengirim || localTx?.alamat_pengirim || "").toString().trim() || (tx.snapshot_alamat_pengirim || tx.alamat_pengirim || "").toString().trim()),
+            snapshot_alamat_pengirim: ((tx.snapshot_alamat_pengirim || tx.alamat_pengirim || "").toString().trim() && (tx.snapshot_alamat_pengirim || tx.alamat_pengirim || "").toString().trim() !== "-")
+              ? (tx.snapshot_alamat_pengirim || tx.alamat_pengirim || "").toString().trim()
+              : ((localTx?.snapshot_alamat_pengirim || localTx?.alamat_pengirim || "").toString().trim() || (tx.snapshot_alamat_pengirim || tx.alamat_pengirim || "").toString().trim()),
             penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || localTx?.penerima || localTx?.nama_penerima || "",
             nama_penerima: tx.nama_penerima || tx.penerima || tx.snapshot_nama_penerima || localTx?.nama_penerima || localTx?.penerima || "",
             snapshot_nama_penerima: tx.penerima || tx.nama_penerima || tx.snapshot_nama_penerima || localTx?.snapshot_nama_penerima || "",
             hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || localTx?.hp_penerima || "",
             snapshot_hp_penerima: tx.hp_penerima || tx.snapshot_hp_penerima || localTx?.snapshot_hp_penerima || "",
-            alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || localTx?.alamat_penerima || "",
-            snapshot_alamat_penerima: tx.alamat_penerima || tx.snapshot_alamat_penerima || localTx?.snapshot_alamat_penerima || "",
+            alamat_penerima: ((tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim() && (tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim() !== "-")
+              ? (tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim()
+              : ((localTx?.snapshot_alamat_penerima || localTx?.alamat_penerima || "").toString().trim() || (tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim()),
+            snapshot_alamat_penerima: ((tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim() && (tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim() !== "-")
+              ? (tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim()
+              : ((localTx?.snapshot_alamat_penerima || localTx?.alamat_penerima || "").toString().trim() || (tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim()),
             nama_barang: tx.nama_barang || localTx?.nama_barang || "Paket",
             metode_bayar: tx.metode_bayar || tx.metode_pembayaran_ongkir || localTx?.metode_bayar || localTx?.metode_pembayaran_ongkir || "CASH",
+            metode_bayar_tambahan: (tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || localTx?.metode_bayar_tambahan || localTx?.metode_pembayaran_tambahan || "").toString().trim(),
+            metode_pembayaran_tambahan: (tx.metode_pembayaran_tambahan || tx.metode_bayar_tambahan || localTx?.metode_pembayaran_tambahan || localTx?.metode_bayar_tambahan || "").toString().trim(),
+            bukti_tambahan_url: (tx.bukti_tambahan_url || localTx?.bukti_tambahan_url || "").toString().trim(),
             ongkir_customer: resolveNum(tx.ongkir_dasar ?? tx.ongkir_customer ?? tx.biaya_kirim, localTx?.ongkir_customer ?? localTx?.ongkir_dasar ?? localTx?.biaya_kirim),
             ongkir_yoyi: resolveNum(tx.ongkir_dasar ?? tx.ongkir_yoyi, localTx?.ongkir_yoyi ?? localTx?.ongkir_dasar),
             biaya_yoyi: resolveNum(tx.biaya_yoyi ?? tx.biaya_jtc, localTx?.biaya_yoyi ?? localTx?.biaya_jtc),
@@ -7326,7 +7485,19 @@ const resJam =
             resolvedLokasiUang = localK?.lokasi_uang || "ADMIN";
           }
 
-          return { ...remoteK, lokasi_uang: resolvedLokasiUang };
+          let resolvedBukti = (remoteK.bukti_url || localK?.bukti_url || "").toString().trim();
+          if (!resolvedBukti) {
+            const resiIdMatch = remoteK.resi_id || remoteK.deskripsi?.match(/resi\s+([a-z0-9]+)/i)?.[1];
+            if (resiIdMatch) {
+              const resiClean = String(resiIdMatch).trim().toUpperCase();
+              const resiRecord = (latestDb.EXP_Resi || []).find((r: any) => (r.resi_id || "").toString().trim().toUpperCase() === resiClean || (r.transaksi_id || "").toString().trim().toUpperCase() === resiClean);
+              if (resiRecord?.bukti_tambahan_url) {
+                resolvedBukti = String(resiRecord.bukti_tambahan_url).trim();
+              }
+            }
+          }
+
+          return { ...remoteK, lokasi_uang: resolvedLokasiUang, bukti_url: resolvedBukti };
         });
 
         const localOnlyKeuangan = localKeuangan.filter((k: any) => k.id && !remoteKeuanganIds.has(k.id));
