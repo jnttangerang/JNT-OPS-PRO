@@ -168,15 +168,41 @@ export function calculateStatusSetoran(filtered: any[], dbSetoranData: any[], fi
     const dateStr = extractBusinessDate(r);
     if (!dateStr) return;
     if (!setoranMap[dateStr]) {
-      const existing = (dbSetoranData || []).find((s: any) => (extractBusinessDate(s) === dateStr) && (!filterOutlet || filterOutlet === "ALL" || (s.outlet_id || s.kode_outlet) === (r.outlet_id_input || r.outlet_id) || (s.outlet_id || s.kode_outlet) === filterOutlet));
+      const allSetoran = dbSetoranData || [];
+      const matchingSetoran = allSetoran.filter((s: any) => 
+        (extractBusinessDate(s) === dateStr) && 
+        (!filterOutlet || filterOutlet === "ALL" || (s.outlet_id || s.kode_outlet) === (r.outlet_id_input || r.outlet_id) || (s.outlet_id || s.kode_outlet) === filterOutlet) &&
+        s.status !== "DITOLAK" && s.status !== "REJECTED"
+      );
+      let statusStr = "Belum Disetor";
+      let disetor = 0;
+      if (matchingSetoran.length > 0) {
+        const allApproved = matchingSetoran.every((s: any) => s.status === "DISETUJUI" || s.status === "APPROVED" || s.status === "Sudah Disetujui");
+        const anyApprovedOrPending = matchingSetoran.some((s: any) => s.status === "DISETUJUI" || s.status === "APPROVED" || s.status === "Sudah Disetujui" || s.status === "MENUNGGU_APPROVAL" || s.status === "PENDING" || s.status === "Menunggu ACC");
+        if (allApproved) {
+          statusStr = "Sudah Disetujui";
+        } else if (anyApprovedOrPending) {
+          statusStr = "Menunggu ACC";
+        } else {
+          statusStr = matchingSetoran[0].status;
+        }
+        disetor = matchingSetoran.reduce((sum: number, s: any) => {
+          if (s.status === "DISETUJUI" || s.status === "APPROVED" || s.status === "Sudah Disetujui") {
+            return sum + Number(s.actual_cash ?? s.total_setoran_owner ?? s.nominal_setor ?? 0);
+          }
+          return sum;
+        }, 0);
+      }
       setoranMap[dateStr] = {
         date: dateStr,
         total_setoran: 0,
-        status: existing ? existing.status : "Belum Disetor",
+        nominal_disetor: disetor,
+        status: statusStr,
         transaksi: []
       };
     }
-    setoranMap[dateStr].total_setoran += r.setoran_ke_owner || r.wajib_setor_owner || 0;
+    const sum = calculateFinancialSummary(r);
+    setoranMap[dateStr].total_setoran += sum.cash_payment;
     setoranMap[dateStr].transaksi.push(r.resi_id || r.no_resi);
   });
   return Object.values(setoranMap).sort((a: any, b: any) => b.date.localeCompare(a.date));

@@ -3593,16 +3593,41 @@ function calculateStatusSetoran(filtered: any[], dbSetoranData: any[], filterOut
     if (!dateStr) return;
     
     if (!setoranMap[dateStr]) {
-      const existing = (dbSetoranData || []).find((s: any) => (extractBusinessDate(s) === dateStr) && (!filterOutlet || filterOutlet === "ALL" || s.outlet_id === tx.outlet_id || s.outlet_id === filterOutlet));
+      const allSetoran = dbSetoranData || [];
+      const matchingSetoran = allSetoran.filter((s: any) => 
+        (extractBusinessDate(s) === dateStr) && 
+        (!filterOutlet || filterOutlet === "ALL" || s.outlet_id === tx.outlet_id || s.outlet_id === filterOutlet) &&
+        s.status !== "DITOLAK" && s.status !== "REJECTED"
+      );
+      let statusStr = "Belum Disetor";
+      let disetor = 0;
+      if (matchingSetoran.length > 0) {
+        const allApproved = matchingSetoran.every((s: any) => s.status === "DISETUJUI" || s.status === "APPROVED" || s.status === "Sudah Disetujui");
+        const anyApprovedOrPending = matchingSetoran.some((s: any) => s.status === "DISETUJUI" || s.status === "APPROVED" || s.status === "Sudah Disetujui" || s.status === "MENUNGGU_APPROVAL" || s.status === "PENDING" || s.status === "Menunggu ACC");
+        if (allApproved) {
+          statusStr = "Sudah Disetujui";
+        } else if (anyApprovedOrPending) {
+          statusStr = "Menunggu ACC";
+        } else {
+          statusStr = matchingSetoran[0].status;
+        }
+        disetor = matchingSetoran.reduce((sum: number, s: any) => {
+          if (s.status === "DISETUJUI" || s.status === "APPROVED" || s.status === "Sudah Disetujui") {
+            return sum + Number(s.actual_cash ?? s.total_setoran_owner ?? s.nominal_setor ?? 0);
+          }
+          return sum;
+        }, 0);
+      }
       setoranMap[dateStr] = {
         date: dateStr,
         total_setoran: 0,
-        status: existing ? existing.status : "Belum Disetor",
+        nominal_disetor: disetor,
+        status: statusStr,
         transaksi: []
       };
     }
     const sum = calculateFinancialSummary(tx);
-    setoranMap[dateStr].total_setoran += sum.owner_deposit;
+    setoranMap[dateStr].total_setoran += sum.cash_payment;
     setoranMap[dateStr].transaksi.push(tx.no_resi || tx.resi_id);
   });
   return Object.values(setoranMap).sort((a: any, b: any) => b.date.localeCompare(a.date));
@@ -3782,7 +3807,8 @@ app.post("/api/getAdminDashboardData", async (req, res) => {
     const byAdmin = calculateByAdmin(filtered, db.Users);
     const byEkspedisi = calculateByEkspedisi(filtered);
     const grafik = calculateGrafik(combined, filterOutlet, dateEnd);
-    const statusSetoranList = calculateStatusSetoran(filtered, db.SetoranData, filterOutlet);
+    const allSetoran = [...(db.Master_Setoran || []), ...(db.SetoranData || [])];
+    const statusSetoranList = calculateStatusSetoran(filtered, allSetoran, filterOutlet);
     const targetHarian = calculateTargetHarian(combined, filterOutlet, db.Outlets, dateEnd);
 
     // Aktivitas Terakhir (Audit Logs)

@@ -121,9 +121,11 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
   const safePembatalanLogs = pembatalanLogs || [];
   const safeByAdmin = byAdmin || [];
   const safeAlerts = Array.isArray(alerts) ? alerts : [];
-  const totalSetoran = safeStatusSetoranList.reduce((sum: number, s: any) => sum + s.total_setoran, 0);
-  const sudahDisetor = safeStatusSetoranList.filter((s:any) => s.status === "Sudah Disetujui").reduce((sum: number, s: any) => sum + s.total_setoran, 0);
-  const sisaSetoran = totalSetoran - sudahDisetor;
+  const totalSetoran = safeStatusSetoranList.length > 0 
+    ? safeStatusSetoranList.reduce((sum: number, s: any) => sum + s.total_setoran, 0)
+    : (summary?.totalWajibSetorOwner || 0);
+  const sudahDisetor = safeStatusSetoranList.filter((s:any) => s.status === "Sudah Disetujui" || s.status === "DISETUJUI" || s.status === "APPROVED").reduce((sum: number, s: any) => sum + (s.nominal_disetor !== undefined && s.nominal_disetor > 0 ? s.nominal_disetor : s.total_setoran), 0);
+  const sisaSetoran = Math.max(0, totalSetoran - sudahDisetor);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 pb-24 space-y-6">
