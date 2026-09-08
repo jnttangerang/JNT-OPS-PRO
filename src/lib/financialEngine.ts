@@ -32,7 +32,7 @@ export function isTransactionValidForFinance(tx: any): boolean {
   return true;
 }
 
-function classifyPayment(owner_deposit: number, outlet_cash: number, rawMethodInput?: string, dfodNominal: number = 0, outletMethod?: string) {
+function classifyPayment(owner_deposit: number, outlet_cash: number, rawMethodInput?: string, dfodNominal: number = 0, outletMethod?: string, explicitLokasi?: string) {
   const rawMethod = String(rawMethodInput || "").trim().toUpperCase();
   const isDigitalOwner = rawMethod === "QRIS" || rawMethod === "TRANSFER" || rawMethod === "ORDER BY APP" || rawMethod === "ORDER_BY_APP" || rawMethod === "APP";
   const isDfod = rawMethod === "DFOD" || rawMethod.includes("DFOD");
@@ -40,10 +40,12 @@ function classifyPayment(owner_deposit: number, outlet_cash: number, rawMethodIn
   const rawOutletMethod = String(outletMethod || "").trim().toUpperCase();
   const isDigitalOutlet = rawOutletMethod === "QRIS" || rawOutletMethod === "TRANSFER" || rawOutletMethod === "ORDER BY APP" || rawOutletMethod === "ORDER_BY_APP" || rawOutletMethod === "APP";
 
+  const lokasi = String(explicitLokasi || "").trim().toUpperCase();
+
   let outlet_right_admin = 0;
   let outlet_right_owner = 0;
 
-  if (isDigitalOutlet) {
+  if (lokasi === "OWNER" || (lokasi !== "ADMIN" && isDigitalOutlet)) {
     outlet_right_owner = outlet_cash;
     outlet_right_admin = 0;
   } else {
@@ -56,8 +58,8 @@ function classifyPayment(owner_deposit: number, outlet_cash: number, rawMethodIn
       cash_payment: 0,
       digital_payment: 0,
       dfod_outstanding: dfodNominal > 0 ? dfodNominal : owner_deposit,
-      outlet_right_admin: outlet_cash,
-      outlet_right_owner: 0
+      outlet_right_admin: outlet_right_admin,
+      outlet_right_owner: outlet_right_owner
     };
   }
 
@@ -213,8 +215,9 @@ export function calculateFinancialSummary(tx: any): any {
   const customer_payment = isDfod ? outlet_cash : (owner_deposit + outlet_cash);
   
   const outletMethod = tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || "";
+  const explicitLokasi = tx.lokasi_uang || tx.lokasi_uang_outlet || "";
   const dfodNominal = isDfod ? (storedOwner > 0 ? storedOwner : (biayaDasarLayanan + rounding)) : 0;
-  const classification = classifyPayment(owner_deposit, outlet_cash, paymentMethod, dfodNominal, outletMethod);
+  const classification = classifyPayment(owner_deposit, outlet_cash, paymentMethod, dfodNominal, outletMethod, explicitLokasi);
   
   return {
     customer_payment: customer_payment,

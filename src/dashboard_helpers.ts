@@ -55,12 +55,16 @@ export function calculateDashboardSummary(filtered: any[]) {
   let totalOmsetGlobal = 0;
   let totalSetoranOwner = 0;
   let totalKasOperasional = 0;
+  let totalKasAdmin = 0;
+  let totalKasOwner = 0;
 
   for (const r of filtered) {
     const sum = calculateFinancialSummary(r);
     totalOmsetGlobal += sum.customer_payment;
     totalSetoranOwner += sum.cash_payment;
     totalKasOperasional += sum.outlet_cash;
+    totalKasAdmin += sum.outlet_right_admin;
+    totalKasOwner += sum.outlet_right_owner;
   }
   
   return {
@@ -72,7 +76,11 @@ export function calculateDashboardSummary(filtered: any[]) {
     totalWajibSetorOwner: totalSetoranOwner,
     total_setoran_owner: totalSetoranOwner,
     totalKasOutlet: totalKasOperasional,
-    total_kas_operasional: totalKasOperasional
+    total_kas_operasional: totalKasOperasional,
+    kasOutletAdmin: totalKasAdmin,
+    kasOutletOwner: totalKasOwner,
+    total_kas_outlet_admin: totalKasAdmin,
+    total_kas_outlet_owner: totalKasOwner
   };
 }
 
@@ -89,7 +97,9 @@ export function calculateByAdmin(filtered: any[], users: any[]) {
         cargo: 0,
         totalResi: 0,
         totalSetoranOwner: 0,
-        kasOutlet: 0
+        kasOutlet: 0,
+        kasOutletAdmin: 0,
+        kasOutletOwner: 0
       };
     }
     const sum = calculateFinancialSummary(r);
@@ -99,6 +109,8 @@ export function calculateByAdmin(filtered: any[], users: any[]) {
     adminMap[admin].totalResi++;
     adminMap[admin].totalSetoranOwner += sum.owner_deposit;
     adminMap[admin].kasOutlet += sum.outlet_cash;
+    adminMap[admin].kasOutletAdmin += sum.outlet_right_admin;
+    adminMap[admin].kasOutletOwner += sum.outlet_right_owner;
   });
   return Object.values(adminMap).sort((a: any, b: any) => b.totalResi - a.totalResi);
 }

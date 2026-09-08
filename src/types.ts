@@ -235,6 +235,10 @@ export interface DashboardData {
     total_transaksi: number;
     total_setoran_owner: number;
     total_kas_operasional: number;
+    kasOutletAdmin?: number;
+    kasOutletOwner?: number;
+    total_kas_outlet_admin?: number;
+    total_kas_outlet_owner?: number;
   };
   chart_data: {
     daily_trends: Array<{

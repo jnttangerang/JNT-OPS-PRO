@@ -310,22 +310,38 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
         </div>
 
         {/* Kas Card */}
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-4 relative overflow-hidden">
-          <div className="bg-green-50 text-green-600 p-3.5 rounded-2xl border border-green-100/50">
-            <Wallet className="h-6 w-6 stroke-[2.5]" />
+        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
+          <div className="flex items-center gap-4">
+            <div className="bg-green-50 text-green-600 p-3.5 rounded-2xl border border-green-100/50">
+              <Wallet className="h-6 w-6 stroke-[2.5]" />
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
+                Kas Operasional (Outlet)
+              </span>
+              <p className="text-xl font-extrabold text-green-800 font-mono mt-0.5">
+                Rp {dashboardData?.summary?.total_kas_operasional?.toLocaleString("id-ID") || "0"}
+              </p>
+              <span className="text-[10px] text-green-500 block mt-0.5">
+                Amplop & packing di outlet
+              </span>
+            </div>
           </div>
-          <div>
-            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block font-mono">
-              Kas Operasional (Outlet)
-            </span>
-            <p className="text-xl font-extrabold text-green-800 font-mono mt-0.5">
-              Rp {dashboardData?.summary?.total_kas_operasional?.toLocaleString("id-ID") || "0"}
-            </p>
-            <span className="text-[10px] text-green-500 block mt-0.5">
-              Amplop & packing di outlet
-            </span>
+          <div className="mt-3 pt-2.5 border-t border-gray-100 grid grid-cols-2 gap-2 text-[11px] relative z-10">
+            <div>
+              <span className="text-gray-400 block text-[10px] font-semibold">Kas Fisik (Admin)</span>
+              <span className="font-mono font-bold text-emerald-700">
+                Rp {(dashboardData?.summary?.kasOutletAdmin ?? dashboardData?.summary?.total_kas_outlet_admin ?? 0).toLocaleString("id-ID")}
+              </span>
+            </div>
+            <div className="text-right">
+              <span className="text-gray-400 block text-[10px] font-semibold">Kas Digital (Owner)</span>
+              <span className="font-mono font-bold text-purple-700">
+                Rp {(dashboardData?.summary?.kasOutletOwner ?? dashboardData?.summary?.total_kas_outlet_owner ?? 0).toLocaleString("id-ID")}
+              </span>
+            </div>
           </div>
-          <div className="absolute -right-2 -bottom-2 opacity-[0.03] text-green-700">
+          <div className="absolute -right-2 -bottom-2 opacity-[0.03] text-green-700 pointer-events-none">
             <Wallet className="h-24 w-24" />
           </div>
         </div>

@@ -3513,6 +3513,10 @@ function calculateDashboardSummary(filtered: any[]) {
     total_setoran_owner: fin.total_cash_payment,
     totalKasOutlet: fin.total_outlet,
     total_kas_operasional: fin.total_outlet,
+    kasOutletAdmin: fin.total_outlet_admin,
+    kasOutletOwner: fin.total_outlet_owner,
+    total_kas_outlet_admin: fin.total_outlet_admin,
+    total_kas_outlet_owner: fin.total_outlet_owner,
     total_transaksi: fin.jumlah_transaksi
   };
 }
@@ -3529,7 +3533,9 @@ function calculateByAdmin(filtered: any[], users: any[]) {
       cargo: adm.jumlah_cargo,
       totalResi: adm.jumlah_resi,
       totalSetoranOwner: adm.owner_deposit,
-      kasOutlet: adm.outlet_cash
+      kasOutlet: adm.outlet_cash,
+      kasOutletAdmin: adm.outlet_right_admin || 0,
+      kasOutletOwner: adm.outlet_right_owner || 0
     });
   }
   return result.sort((a: any, b: any) => b.totalResi - a.totalResi);
@@ -3858,17 +3864,23 @@ app.post("/api/getAdminDashboardData", async (req, res) => {
           const timeA = (a.transaction_time || (a.tanggal_transaksi && a.jam_transaksi ? `${a.tanggal_transaksi} ${a.jam_transaksi}` : a.timestamp || a.created_at || "")).replace("T", " ");
           const timeB = (b.transaction_time || (b.tanggal_transaksi && b.jam_transaksi ? `${b.tanggal_transaksi} ${b.jam_transaksi}` : b.timestamp || b.created_at || "")).replace("T", " ");
           return timeB.localeCompare(timeA);
-        }).slice(0, 10).map((r: any) => ({
-          ...r,
-          resi_id: r.no_resi || r.resi_id || r.id,
-          tipe_layanan: (r.ekspedisi || "Express").toUpperCase() === "CARGO" ? "Cargo" : "Express",
-          ongkir_dasar: r.ongkir_customer || r.total_customer || r.grand_total || 0,
-          kas_operasional: r.kas_outlet || 0,
-          setoran_ke_owner: r.wajib_setor_owner || 0,
-          status: r.status_transaksi || r.status_resi || r.status || "AKTIF",
-          transaction_time: (r.tanggal_transaksi && r.jam_transaksi) ? `${r.tanggal_transaksi} ${r.jam_transaksi}` : (r.transaction_time || `${r.tanggal_transaksi || getTodayWIB()} 00:00:00`),
-          imported_at: r.imported_at || r.created_at || r.timestamp
-        }))
+        }).slice(0, 10).map((r: any) => {
+          const sum = calculateFinancialSummary(r);
+          const isOwnerLoc = (r.lokasi_uang || "").toUpperCase() === "OWNER" || sum.outlet_right_owner > 0;
+          return {
+            ...r,
+            resi_id: r.no_resi || r.resi_id || r.id,
+            tipe_layanan: (r.ekspedisi || "Express").toUpperCase() === "CARGO" ? "Cargo" : "Express",
+            ongkir_dasar: sum.customer_payment,
+            kas_operasional: sum.outlet_cash,
+            lokasi_uang: isOwnerLoc ? "OWNER" : "ADMIN",
+            lokasi_uang_label: isOwnerLoc ? "Kas Digital (Owner)" : "Kas Fisik (Admin)",
+            setoran_ke_owner: sum.owner_deposit,
+            status: r.status_transaksi || r.status_resi || r.status || "AKTIF",
+            transaction_time: (r.tanggal_transaksi && r.jam_transaksi) ? `${r.tanggal_transaksi} ${r.jam_transaksi}` : (r.transaction_time || `${r.tanggal_transaksi || getTodayWIB()} 00:00:00`),
+            imported_at: r.imported_at || r.created_at || r.timestamp
+          };
+        })
       }
     });
   } catch (error: any) {

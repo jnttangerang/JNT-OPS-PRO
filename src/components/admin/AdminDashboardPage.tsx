@@ -314,24 +314,42 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
 
       {/* KEUANGAN HARI INI */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-blue-50 border border-blue-100 p-5 rounded-xl flex items-center justify-between">
-          <div>
-            <h3 className="text-xs font-bold text-blue-800 uppercase mb-1">WAJIB SETOR OWNER</h3>
-            <p className="text-2xl font-black font-mono text-blue-900">Rp {(summary?.totalWajibSetorOwner || 0).toLocaleString("id-ID")}</p>
-            <p className="text-[10px] text-blue-600 mt-1">Total YoYi/JTC + Pembulatan</p>
+        <div className="bg-blue-50 border border-blue-100 p-5 rounded-xl flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xs font-bold text-blue-800 uppercase mb-1">WAJIB SETOR OWNER</h3>
+              <p className="text-2xl font-black font-mono text-blue-900">Rp {(summary?.totalWajibSetorOwner || 0).toLocaleString("id-ID")}</p>
+              <p className="text-[10px] text-blue-600 mt-0.5">Total YoYi/JTC + Pembulatan</p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-full">
+              <DollarSign className="h-6 w-6 text-blue-600" />
+            </div>
           </div>
-          <div className="p-3 bg-blue-100 rounded-full">
-            <DollarSign className="h-6 w-6 text-blue-600" />
+          <div className="mt-3 pt-2.5 border-t border-blue-200/60 flex items-center justify-between text-[11px]">
+            <span className="text-blue-700/80 text-[10px] font-semibold">Uang Fisik Wajib Setor</span>
+            <span className="font-mono font-bold text-blue-900">Rp {(summary?.totalWajibSetorOwner || 0).toLocaleString("id-ID")}</span>
           </div>
         </div>
-        <div className="bg-green-50 border border-green-100 p-5 rounded-xl flex items-center justify-between">
-          <div>
-            <h3 className="text-xs font-bold text-green-800 uppercase mb-1">KAS OUTLET</h3>
-            <p className="text-2xl font-black font-mono text-green-900">Rp {(summary?.totalKasOutlet || 0).toLocaleString("id-ID")}</p>
-            <p className="text-[10px] text-green-600 mt-1">Packing + Amplop + Biaya Lainnya</p>
+        <div className="bg-green-50 border border-green-100 p-5 rounded-xl flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xs font-bold text-green-800 uppercase mb-1">KAS OUTLET</h3>
+              <p className="text-2xl font-black font-mono text-green-900">Rp {(summary?.totalKasOutlet || 0).toLocaleString("id-ID")}</p>
+              <p className="text-[10px] text-green-600 mt-0.5">Packing + Amplop + Biaya Lainnya</p>
+            </div>
+            <div className="p-3 bg-green-100 rounded-full">
+              <Wallet className="h-6 w-6 text-green-600" />
+            </div>
           </div>
-          <div className="p-3 bg-green-100 rounded-full">
-            <Wallet className="h-6 w-6 text-green-600" />
+          <div className="mt-3 pt-2.5 border-t border-green-200/60 grid grid-cols-2 gap-2 text-[11px]">
+            <div>
+              <span className="text-green-700/80 block text-[10px] font-semibold">Kas Fisik (Admin)</span>
+              <span className="font-mono font-bold text-emerald-800">Rp {(summary?.kasOutletAdmin ?? summary?.total_kas_outlet_admin ?? 0).toLocaleString("id-ID")}</span>
+            </div>
+            <div className="text-right">
+              <span className="text-green-700/80 block text-[10px] font-semibold">Kas Digital (Owner)</span>
+              <span className="font-mono font-bold text-purple-700">Rp {(summary?.kasOutletOwner ?? summary?.total_kas_outlet_owner ?? 0).toLocaleString("id-ID")}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -410,7 +428,17 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
                 <td className="p-3 text-center">{a.cargo}</td>
                 <td className="p-3 text-center font-bold">{a.totalResi}</td>
                 <td className="p-3 text-right font-mono text-blue-600">Rp {a.totalSetoranOwner.toLocaleString("id-ID")}</td>
-                <td className="p-3 text-right font-mono text-green-600">Rp {a.kasOutlet.toLocaleString("id-ID")}</td>
+                <td className="p-3 text-right">
+                  <div className="font-mono font-bold text-green-600">Rp {a.kasOutlet.toLocaleString("id-ID")}</div>
+                  {a.kasOutlet > 0 && (
+                    <div className="text-[9px] text-gray-400 font-normal mt-0.5 flex flex-col items-end gap-0.5">
+                      <span className="text-emerald-700 font-semibold" title="Kas Fisik (Admin)">Fisik: Rp {(a.kasOutletAdmin ?? a.kasOutlet).toLocaleString("id-ID")}</span>
+                      {(a.kasOutletOwner || 0) > 0 && (
+                        <span className="text-purple-700 font-semibold" title="Kas Digital (Owner)">Digital: Rp {(a.kasOutletOwner || 0).toLocaleString("id-ID")}</span>
+                      )}
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -460,7 +488,20 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
                     {formatBusinessDate(r)} <span className="text-gray-400 text-[10px] ml-1">{formatBusinessTime(r)}</span>
                   </td>
                   <td className="p-3 text-right font-mono text-gray-700">Rp {(r.ongkir_dasar || 0).toLocaleString("id-ID")}</td>
-                  <td className="p-3 text-right font-mono text-green-600">Rp {(r.kas_operasional || 0).toLocaleString("id-ID")}</td>
+                  <td className="p-3 text-right">
+                    <div className="font-mono font-bold text-green-600">Rp {(r.kas_operasional || 0).toLocaleString("id-ID")}</div>
+                    {(r.kas_operasional || 0) > 0 && (
+                      <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider mt-0.5 ${
+                        (r.lokasi_uang === "OWNER" || r.lokasi_uang_outlet === "OWNER" || String(r.metode_bayar_tambahan || "").toUpperCase() === "QRIS" || String(r.metode_bayar_tambahan || "").toUpperCase() === "TRANSFER" || String(r.metode_bayar_tambahan || "").toUpperCase() === "APP")
+                          ? "bg-purple-50 text-purple-700 border border-purple-100"
+                          : "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                      }`}>
+                        {(r.lokasi_uang === "OWNER" || r.lokasi_uang_outlet === "OWNER" || String(r.metode_bayar_tambahan || "").toUpperCase() === "QRIS" || String(r.metode_bayar_tambahan || "").toUpperCase() === "TRANSFER" || String(r.metode_bayar_tambahan || "").toUpperCase() === "APP")
+                          ? "Kas Digital (Owner)"
+                          : "Kas Fisik (Admin)"}
+                      </span>
+                    )}
+                  </td>
                   <td className="p-3 text-right font-mono text-blue-600">Rp {(r.setoran_ke_owner || 0).toLocaleString("id-ID")}</td>
                   <td className="p-3 text-center">
                     <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${r.status === 'BATAL' ? 'bg-red-100 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
