@@ -3509,8 +3509,8 @@ function calculateDashboardSummary(filtered: any[]) {
     totalResiCargo: fin.jumlah_cargo,
     grandTotalCustomer: fin.total_customer,
     total_omset: fin.total_customer,
-    totalWajibSetorOwner: fin.total_owner,
-    total_setoran_owner: fin.total_owner,
+    totalWajibSetorOwner: fin.total_cash_payment,
+    total_setoran_owner: fin.total_cash_payment,
     totalKasOutlet: fin.total_outlet,
     total_kas_operasional: fin.total_outlet,
     total_transaksi: fin.jumlah_transaksi

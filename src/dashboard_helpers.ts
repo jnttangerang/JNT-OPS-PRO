@@ -59,7 +59,7 @@ export function calculateDashboardSummary(filtered: any[]) {
   for (const r of filtered) {
     const sum = calculateFinancialSummary(r);
     totalOmsetGlobal += sum.customer_payment;
-    totalSetoranOwner += sum.owner_deposit;
+    totalSetoranOwner += sum.cash_payment;
     totalKasOperasional += sum.outlet_cash;
   }
   
