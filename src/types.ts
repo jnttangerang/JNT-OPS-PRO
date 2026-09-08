@@ -179,6 +179,11 @@ export interface EXPResi {
   grand_total: number;
   setoran_ke_owner: number;
   kas_operasional: number;
+  discount_from_yoyi?: number;
+  biaya_diskon_yoyi?: number;
+  yoyi_shipping_calculated?: number;
+  source_order?: string;
+  is_potential_vip_promo?: boolean;
 }
 
 export interface CRGResi {
@@ -417,3 +422,24 @@ export interface KeuanganOutlet {
   nama_outlet?: string;
   lokasi_uang?: "ADMIN" | "OWNER" | "SYSTEM";
 }
+
+export interface PromoReviewValidation {
+  id: string;
+  transaction_id: string;
+  resi_id: string;
+  outlet_id: string;
+  source_order: string;
+  tipe_produk: string;
+  discount_from_yoyi: number;
+  review_rating?: number | null;
+  reviewer_name?: string | null;
+  review_url?: string | null;
+  evidence_file_url?: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  submitted_by: string;
+  submitted_at: string;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  rejection_reason?: string | null;
+}
+

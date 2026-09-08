@@ -597,7 +597,7 @@ function AppContent() {
                 />
               } />
               
-              <Route path="/ulasan-maps" element={<UlasanMapsPage />} />
+              <Route path="/ulasan-maps" element={<UlasanMapsPage session={session} outlets={outlets} />} />
               
               <Route path="/settings" element={<SettingsPage session={session} outlets={outlets} />} />
               

@@ -41,6 +41,9 @@ interface ParsedRow {
   tipe_produk: string;
   metode_bayar: string;
   metode_bayar_tambahan?: string;
+  discount_from_yoyi: number;
+  yoyi_shipping_calculated: number;
+  is_potential_vip_promo: boolean;
   
   // Validation State
   is_valid: boolean;
@@ -86,7 +89,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
   };
 
   const parseCurrency = (val: any): number => {
-    if (!val) return 0;
+    if (val === null || val === undefined || val === "" || val === "--" || val === "-") return 0;
     if (typeof val === "number") return val;
     const str = String(val).replace(/[^\d.,-]/g, "").trim();
     if (!str) return 0;
@@ -132,8 +135,19 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
   };
 
   const getColValue = (row: any, aliases: string[]) => {
+    const keys = Object.keys(row);
+    // 1. Direct case-insensitive match
     for (const alias of aliases) {
-      const key = Object.keys(row).find(k => k.trim().toLowerCase() === alias.toLowerCase());
+      const key = keys.find(k => k.trim().toLowerCase() === alias.toLowerCase());
+      if (key && row[key] !== undefined && row[key] !== "") return row[key];
+    }
+    // 2. Normalized match (strip whitespace, special chars, and "(idr)")
+    for (const alias of aliases) {
+      const normAlias = alias.toLowerCase().replace(/\s*\(idr\)/g, "").replace(/[^a-z0-9]/g, "");
+      const key = keys.find(k => {
+        const normKey = k.toLowerCase().replace(/\s*\(idr\)/g, "").replace(/[^a-z0-9]/g, "");
+        return normKey === normAlias;
+      });
       if (key && row[key] !== undefined && row[key] !== "") return row[key];
     }
     return "";
@@ -164,7 +178,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         const waktuRaw = getColValue(row, ["Waktu Pesanan", "Tanggal", "Waktu", "Created At"]);
         const { tanggal, jam } = parseDateAndExtract(waktuRaw);
         
-        const sumber = getColValue(row, ["Sumber", "Source"]);
+        const sumber = getColValue(row, ["Sumber Order", "Sumber", "Source", "Source Order"]);
         const status = getColValue(row, ["Status", "Status Paket"]);
         const pengirim = getColValue(row, ["Nama Pengirim", "Pengirim", "Sender", "Nama"]);
         const hpPengirim = getColValue(row, ["No. HP Pengirim", "Telp Pengirim", "No HP Pengirim", "HP Pengirim", "Telepon Pengirim", "Phone Pengirim", "Sender Phone", "Sender Contact", "No. Telepon Pengirim", "No. HP", "No HP"]);
@@ -173,16 +187,27 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         const hpPenerima = getColValue(row, ["No. HP Penerima", "Telp Penerima", "No HP Penerima", "HP Penerima", "Telepon Penerima", "Phone Penerima", "Receiver Phone", "Receiver Contact", "No. Telepon Penerima"]);
         const alamatPenerima = getColValue(row, ["Alamat Penerima", "Alamat Tujuan", "Destinasi"]);
         
-        const ongkir = parseCurrency(getColValue(row, ["Biaya Pengiriman", "Ongkir", "Biaya", "Perhitungan Biaya pengiriman", "Ongkir Dasar"]));
-        const asuransi = parseCurrency(getColValue(row, ["Asuransi", "Biaya Asuransi"]));
-        const total = parseCurrency(getColValue(row, ["Total", "Grand Total", "Total Tagihan", "Perhitungan Biaya pengiriman"]));
-        const biayaLain = total > 0 ? (total - (ongkir + asuransi)) : 0;
+        const tipeProduk = getColValue(row, ["Tipe Produk", "Tipe", "Layanan", "Jenis Layanan", "Produk"]);
+        const ongkir = parseCurrency(getColValue(row, ["Ongkir Dasar", "Biaya Pengiriman", "Tarif Dasar", "Ongkos Kirim", "Ongkir", "Biaya"]));
+        const asuransi = parseCurrency(getColValue(row, ["Biaya Asuransi", "Asuransi"]));
+        const discountFromYoYi = parseCurrency(getColValue(row, ["Biaya diskon", "Biaya Diskon", "Diskon", "Discount", "Potongan Biaya", "Potongan"]));
+        const yoyiShippingCalculated = parseCurrency(getColValue(row, ["Perhitungan Biaya pengiriman", "Perhitungan Biaya Pengiriman", "Total Biaya Pengiriman", "Total Biaya", "Total Ongkir", "Total Tagihan", "Total", "Grand Total"]));
+        const explicitBiayaLain = parseCurrency(getColValue(row, ["Biaya Lain-lain", "Biaya Lain", "Lain-lain"]));
+        const total = yoyiShippingCalculated > 0 ? yoyiShippingCalculated : parseCurrency(getColValue(row, ["Total", "Grand Total", "Total Tagihan"]));
+        
+        let biayaLain = explicitBiayaLain;
+        if (biayaLain === 0 && yoyiShippingCalculated > 0) {
+          const grossBeforeDiscount = yoyiShippingCalculated + discountFromYoYi;
+          const diff = grossBeforeDiscount - (ongkir + asuransi);
+          biayaLain = Math.max(0, diff);
+        }
+
+        const isPotentialVipPromo = String(sumber).trim().toUpperCase() === "VIP" && String(tipeProduk || "EZ").trim().toUpperCase() === "EZ";
         
         const operator = getColValue(row, ["Operator", "Admin", "Nama Operator"]);
         const jenisBarang = getColValue(row, ["Jenis Barang", "Tipe Barang", "Kategori Barang", "Jenis Paket"]);
         const namaBarang = getColValue(row, ["Nama Barang", "Isi Paket", "Deskripsi", "Deskripsi Barang", "Barang", "Nama Paket", "Komoditi"]);
         const tipeAsuransi = getColValue(row, ["Tipe Asuransi", "Asuransi Tipe", "Jenis Asuransi"]);
-        const tipeProduk = getColValue(row, ["Tipe Produk", "Tipe", "Layanan", "Jenis Layanan"]);
         const rawMetode = getColValue(row, ["Metode Pembayaran", "Pembayaran", "Metode Bayar", "Payment Method", "Tipe Pembayaran", "Cara Bayar"]);
         const rawMetodeTambahan = getColValue(row, ["Metode Bayar Tambahan", "Metode Pembayaran Tambahan", "Cara Bayar Tambahan", "Payment Method Tambahan", "Metode Tambahan"]);
         const isDfodDetected = String(rawMetode).toUpperCase().includes("DFOD") || String(tipeProduk).toUpperCase().includes("DFOD") || String(sumber).toUpperCase().includes("DFOD");
@@ -236,6 +261,9 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
           asuransi,
           biaya_lain: Math.max(0, biayaLain),
           total,
+          discount_from_yoyi: discountFromYoYi,
+          yoyi_shipping_calculated: yoyiShippingCalculated || total,
+          is_potential_vip_promo: isPotentialVipPromo,
           status: String(status).trim(),
           operator: String(operator).trim(),
           nama_barang: String(namaBarang).trim() || "Paket",
@@ -387,7 +415,12 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         admin_id_pencatat: resolvedAdminId,
         operator_nama: row.operator,
         catatan_admin: `Bulk Import YoYi | Operator: ${row.operator || "Unknown"}`,
-        sumber_data: row.sumber || "YoYi-WEB"
+        sumber_data: row.sumber || "YoYi-WEB",
+        source_order: row.sumber || "",
+        discount_from_yoyi: row.discount_from_yoyi || 0,
+        biaya_diskon_yoyi: row.discount_from_yoyi || 0,
+        yoyi_shipping_calculated: row.yoyi_shipping_calculated || row.total || 0,
+        is_potential_vip_promo: Boolean(row.is_potential_vip_promo)
       };
       
       try {
@@ -538,7 +571,9 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
                         <th className="px-4 py-3 font-semibold">Layanan</th>
                         <th className="px-4 py-3 font-semibold">Metode Ongkir</th>
                         <th className="px-4 py-3 font-semibold">Metode Tambahan</th>
-                        <th className="px-4 py-3 font-semibold">Ongkir</th>
+                        <th className="px-4 py-3 font-semibold">Ongkir Dasar</th>
+                        <th className="px-4 py-3 font-semibold">Diskon YoYi</th>
+                        <th className="px-4 py-3 font-semibold">Perhitungan YoYi</th>
                         <th className="px-4 py-3 font-semibold">Operator</th>
                       </tr>
                     </thead>
@@ -572,6 +607,21 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
                           </td>
                           <td className="px-4 py-3 font-mono font-bold text-gray-800">
                             Rp {row.ongkir.toLocaleString("id-ID")}
+                          </td>
+                          <td className="px-4 py-3 font-mono">
+                            {row.discount_from_yoyi > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-amber-700 bg-amber-50 font-bold px-1.5 py-0.5 rounded text-[11px]">
+                                Rp {row.discount_from_yoyi.toLocaleString("id-ID")}
+                                {row.is_potential_vip_promo && (
+                                  <span className="text-[9px] bg-amber-200 text-amber-900 px-1 rounded uppercase">VIP</span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 font-mono text-gray-600">
+                            Rp {row.yoyi_shipping_calculated.toLocaleString("id-ID")}
                           </td>
                           <td className="px-4 py-3 text-gray-600 font-semibold">{row.operator || "-"}</td>
                         </tr>

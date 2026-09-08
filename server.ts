@@ -2873,6 +2873,11 @@ function extractYoYiDataWithRegex(text: string): any {
     biaya_lain: 0,
     biaya_amplop: 0,
     total_yoyi: 0,
+    discount_from_yoyi: 0,
+    biaya_diskon: 0,
+    yoyi_shipping_calculated: 0,
+    source_order: "",
+    is_potential_vip_promo: false,
     metode_perhitungan: "Normal",
     nama_barang: "Paket",
     berat_kg: 1
@@ -2906,6 +2911,52 @@ function extractYoYiDataWithRegex(text: string): any {
   for (let i = 0; i < rawLines.length; i++) {
     const line = rawLines[i];
     const lower = line.toLowerCase();
+
+    // Sumber Order / Source
+    if (
+      lower.includes("sumber order") ||
+      lower.startsWith("sumber:") ||
+      lower.startsWith("sumber ") ||
+      lower.startsWith("source:") ||
+      lower.startsWith("source ") ||
+      lower.includes("source order")
+    ) {
+      let val = "";
+      const colonMatch = line.match(/(?:Sumber\s*Order|Source\s*Order|Sumber|Source)\s*[:=]\s*([A-Z0-9_-]+)/i);
+      if (colonMatch) {
+        val = colonMatch[1].trim().toUpperCase();
+      } else {
+        const spaceMatch = line.match(/^(?:Sumber\s*Order|Source\s*Order|Sumber|Source)\s+([A-Z0-9_-]+)$/i);
+        if (spaceMatch && !/^(?:order|data|informasi)$/i.test(spaceMatch[1])) {
+          val = spaceMatch[1].trim().toUpperCase();
+        } else if (i + 1 < rawLines.length) {
+          const nextVal = rawLines[i + 1].replace(/^[:\s-]+/, "").trim();
+          if (/^[A-Z0-9_-]{2,15}$/i.test(nextVal) && !/^(?:order|data|informasi)$/i.test(nextVal)) {
+            val = nextVal.toUpperCase();
+          }
+        }
+      }
+      if (val && val !== "--" && val !== "-") {
+        result.source_order = val;
+      }
+    }
+
+    // Biaya Diskon
+    if (
+      lower.includes("biaya diskon") ||
+      lower.includes("diskon (idr)") ||
+      lower.startsWith("biaya diskon") ||
+      lower.startsWith("diskon:") ||
+      lower.startsWith("diskon ")
+    ) {
+      const inlineMatch = line.match(/(?:Biaya\s*Diskon|Diskon)(?:\s*\(IDR\))?[:\s]+(?:IDR|Rp\.?)?\s*([\d.,]+)/i);
+      if (inlineMatch) {
+        result.discount_from_yoyi = parseCurrency(inlineMatch[1]);
+      } else if (i + 1 < rawLines.length && /^[\d.,]+$/.test(rawLines[i + 1])) {
+        result.discount_from_yoyi = parseCurrency(rawLines[i + 1]);
+      }
+      result.biaya_diskon = result.discount_from_yoyi;
+    }
 
     // Asuransi
     if (lower.includes("biaya asuransi") || lower.includes("asuransi (idr)") || lower.startsWith("asuransi")) {
@@ -2956,6 +3007,7 @@ function extractYoYiDataWithRegex(text: string): any {
       } else if (i + 1 < rawLines.length && /^[\d.,]+$/.test(rawLines[i + 1])) {
         result.total_yoyi = parseCurrency(rawLines[i + 1]);
       }
+      result.yoyi_shipping_calculated = result.total_yoyi;
     }
 
     // Tipe Layanan / Produk
@@ -3046,13 +3098,24 @@ function extractYoYiDataWithRegex(text: string): any {
     }
   }
 
+  if (result.yoyi_shipping_calculated <= 0 && result.total_yoyi > 0) {
+    result.yoyi_shipping_calculated = result.total_yoyi;
+  }
   if (result.total_yoyi <= 0) {
     if (result.ongkir_dasar > 0) {
       result.total_yoyi = result.ongkir_dasar + result.asuransi + result.biaya_lain;
     }
+    if (result.yoyi_shipping_calculated <= 0) {
+      result.yoyi_shipping_calculated = result.total_yoyi;
+    }
   } else if (result.ongkir_dasar <= 0 && result.total_yoyi > 0) {
     result.ongkir_dasar = Math.max(0, result.total_yoyi - result.asuransi - result.biaya_lain);
   }
+
+  // Potential VIP Promo check (Sumber Order = VIP and Tipe Produk = EZ)
+  const normSource = String(result.source_order || "").trim().toUpperCase();
+  const normProduct = String(result.tipe_produk || "EZ").trim().toUpperCase();
+  result.is_potential_vip_promo = normSource === "VIP" && normProduct === "EZ";
 
   return result;
 }
@@ -3091,12 +3154,15 @@ Schema JSON:
   "nama_penerima": "string",
   "no_hp_penerima": "string",
   "alamat_penerima": "string",
+  "source_order": "string",
   "tipe_produk": "string",
   "jenis_barang": "string",
   "tipe_asuransi": "string",
   "ongkir_dasar": number,
   "asuransi": number,
   "biaya_lain": number,
+  "discount_from_yoyi": number,
+  "yoyi_shipping_calculated": number,
   "total_yoyi": number,
   "metode_perhitungan": "string",
   "nama_barang": "string",
@@ -3123,6 +3189,11 @@ ${text}`;
       docBiayaLain = 1000;
     }
 
+    const sourceOrderResolved = parsedData.source_order || regexData.source_order || "";
+    const tipeProdukResolved = parsedData.tipe_produk || regexData.tipe_produk || "EZ";
+    const discountYoYiResolved = Number(parsedData.discount_from_yoyi) || regexData.discount_from_yoyi || 0;
+    const yoyiShippingResolved = Number(parsedData.yoyi_shipping_calculated) || Number(parsedData.total_yoyi) || regexData.yoyi_shipping_calculated || regexData.total_yoyi || 0;
+
     const finalData = {
       nomor_resi: String(parsedData.nomor_resi || regexData.nomor_resi || "").trim().toUpperCase(),
       nama_pengirim: parsedData.nama_pengirim || regexData.nama_pengirim || "",
@@ -3130,15 +3201,19 @@ ${text}`;
       alamat_pengirim: parsedData.alamat_pengirim || regexData.alamat_pengirim || "",
       nama_penerima: parsedData.nama_penerima || regexData.nama_penerima || "",
       no_hp_penerima: parsedData.no_hp_penerima || regexData.no_hp_penerima || "",
-      alamat_penerima: parsedData.alamat_penerima || regexData.alamat_penerima || "",
-      tipe_produk: parsedData.tipe_produk || regexData.tipe_produk || "EZ",
+      source_order: sourceOrderResolved,
+      tipe_produk: tipeProdukResolved,
       jenis_barang: parsedData.jenis_barang || regexData.jenis_barang || "",
       tipe_asuransi: parsedData.tipe_asuransi || regexData.tipe_asuransi || "",
       ongkir_dasar: Number(parsedData.ongkir_dasar) || regexData.ongkir_dasar || 0,
       asuransi: Number(parsedData.asuransi) || regexData.asuransi || 0,
       biaya_lain: docBiayaLain,
       biaya_amplop: isDoc ? 2000 : 0,
+      discount_from_yoyi: discountYoYiResolved,
+      biaya_diskon: discountYoYiResolved,
+      yoyi_shipping_calculated: yoyiShippingResolved,
       total_yoyi: Number(parsedData.total_yoyi) || regexData.total_yoyi || 0,
+      is_potential_vip_promo: (String(sourceOrderResolved).trim().toUpperCase() === "VIP") && (String(tipeProdukResolved).trim().toUpperCase() === "EZ"),
       metode_perhitungan: parsedData.metode_perhitungan || regexData.metode_perhitungan || "Normal",
       nama_barang: parsedData.nama_barang || parsedData.barang || parsedData.item_name || regexData.nama_barang || "Paket",
       berat_kg: Number(parsedData.berat_kg) || regexData.berat_kg || 1

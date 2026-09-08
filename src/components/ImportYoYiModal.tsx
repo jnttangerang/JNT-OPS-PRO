@@ -520,6 +520,27 @@ export default function ImportYoYiModal({
                     </span>
                   </div>
                 </div>
+
+                {(Boolean(parsedData.discount_from_yoyi) || Boolean(parsedData.source_order)) && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg bg-amber-50/70 border border-amber-200 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-amber-900">
+                        Sumber Order: <span className="font-bold">{parsedData.source_order || "Normal"}</span>
+                      </span>
+                      {parsedData.is_potential_vip_promo && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 text-[10px] font-bold uppercase">
+                          VIP Promo Review
+                        </span>
+                      )}
+                    </div>
+                    {Boolean(parsedData.discount_from_yoyi) && (
+                      <div className="text-amber-900 font-medium text-[11px]">
+                        Diskon YoYi: <strong className="font-mono text-amber-800">Rp {parsedData.discount_from_yoyi?.toLocaleString("id-ID")}</strong>
+                        <span className="text-[10px] text-amber-700 block sm:inline sm:ml-1">(Belum menjadi diskon sah)</span>
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 <button
                   type="button"

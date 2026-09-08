@@ -28,6 +28,10 @@ export interface YoYiParsedData {
   operator?: string;
   tanggal_transaksi?: string;
   jam_transaksi?: string;
+  discount_from_yoyi?: number;
+  biaya_diskon?: number;
+  yoyi_shipping_calculated?: number;
+  is_potential_vip_promo?: boolean;
 }
 
 function parseCurrency(str: string): number {
@@ -55,6 +59,10 @@ export function parseYoYiText(text: string): YoYiParsedData {
     asuransi: 0,
     biaya_lain: 0,
     total_yoyi: 0,
+    discount_from_yoyi: 0,
+    biaya_diskon: 0,
+    yoyi_shipping_calculated: 0,
+    is_potential_vip_promo: false,
     metode_perhitungan: "Normal",
     nama_barang: "Paket",
     berat_kg: 1,
@@ -124,7 +132,10 @@ export function parseYoYiText(text: string): YoYiParsedData {
       l.startsWith("riwayat") ||
       l.startsWith("buat pesanan") ||
       l.startsWith("metode perhitungan") ||
-      l.startsWith("metode pembayaran")
+      l.startsWith("metode pembayaran") ||
+      l.startsWith("sumber") ||
+      l.startsWith("source") ||
+      l.startsWith("diskon")
     );
   };
 
@@ -144,6 +155,35 @@ export function parseYoYiText(text: string): YoYiParsedData {
       currentSection = "biaya";
     } else if (lower.includes("riwayat operasi")) {
       currentSection = "operasi";
+    }
+
+    // Sumber Order / Source
+    if (
+      lower.includes("sumber order") ||
+      lower.startsWith("sumber:") ||
+      lower.startsWith("sumber ") ||
+      lower.startsWith("source:") ||
+      lower.startsWith("source ") ||
+      lower.includes("source order")
+    ) {
+      let val = "";
+      const colonMatch = line.match(/(?:Sumber\s*Order|Source\s*Order|Sumber|Source)\s*[:=]\s*([A-Z0-9_-]+)/i);
+      if (colonMatch) {
+        val = colonMatch[1].trim().toUpperCase();
+      } else {
+        const spaceMatch = line.match(/^(?:Sumber\s*Order|Source\s*Order|Sumber|Source)\s+([A-Z0-9_-]+)$/i);
+        if (spaceMatch && !/^(?:order|data|informasi)$/i.test(spaceMatch[1])) {
+          val = spaceMatch[1].trim().toUpperCase();
+        } else if (i + 1 < rawLines.length && !isHeaderLine(rawLines[i + 1])) {
+          const nextVal = rawLines[i + 1].replace(/^[:\s-]+/, "").trim();
+          if (/^[A-Z0-9_-]{2,15}$/i.test(nextVal) && !/^(?:order|data|informasi)$/i.test(nextVal)) {
+            val = nextVal.toUpperCase();
+          }
+        }
+      }
+      if (val && val !== "--" && val !== "-") {
+        result.source_order = val;
+      }
     }
 
     // Metode Perhitungan / Pembayaran
@@ -198,13 +238,48 @@ export function parseYoYiText(text: string): YoYiParsedData {
       }
     }
 
+    // Biaya Diskon (IDR)
+    if (
+      lower.includes("biaya diskon") ||
+      lower.includes("diskon (idr)") ||
+      lower.startsWith("biaya diskon") ||
+      lower.startsWith("diskon:") ||
+      lower.startsWith("diskon ") ||
+      lower.startsWith("discount:") ||
+      lower.startsWith("discount ")
+    ) {
+      if (line.includes("--") || line.endsWith("-")) {
+        result.discount_from_yoyi = 0;
+        result.biaya_diskon = 0;
+      } else {
+        const inlineMatch = line.match(/(?:Biaya\s*diskon|Diskon|Discount)(?:\s*\([^)]+\))?[:\s]+(?:IDR|Rp\.?)?\s*([\d.,]+)/i);
+        if (inlineMatch) {
+          const val = parseCurrency(inlineMatch[1]);
+          result.discount_from_yoyi = val;
+          result.biaya_diskon = val;
+        } else if (i + 1 < rawLines.length) {
+          const nextVal = rawLines[i + 1].trim();
+          if (nextVal === "--" || nextVal === "-" || nextVal === "0") {
+            result.discount_from_yoyi = 0;
+            result.biaya_diskon = 0;
+          } else if (/^(?:IDR|Rp\.?\s*)?[\d.,]+$/i.test(nextVal)) {
+            const val = parseCurrency(nextVal);
+            result.discount_from_yoyi = val;
+            result.biaya_diskon = val;
+          }
+        }
+      }
+    }
+
     // Total YoYi / Perhitungan Biaya Pengiriman
     if (lower.includes("perhitungan biaya pengiriman") || lower.includes("total biaya") || lower.includes("total ongkir") || lower.includes("total (idr)")) {
       const inlineMatch = line.match(/[:\s]+(?:IDR|Rp\.?)?\s*([\d.,]+)/i);
       if (inlineMatch) {
         result.total_yoyi = parseCurrency(inlineMatch[1]);
+        result.yoyi_shipping_calculated = result.total_yoyi;
       } else if (i + 1 < rawLines.length && /^[\d.,]+$/.test(rawLines[i + 1])) {
         result.total_yoyi = parseCurrency(rawLines[i + 1]);
+        result.yoyi_shipping_calculated = result.total_yoyi;
       }
     }
 
@@ -440,5 +515,20 @@ export function parseYoYiText(text: string): YoYiParsedData {
     else if (/\b(SUPER|FASTTRACK|FAST)\b/i.test(text)) result.tipe_produk = "Super";
   }
 
+  // 8. Ensure yoyi_shipping_calculated is set
+  if (!result.yoyi_shipping_calculated) {
+    result.yoyi_shipping_calculated = result.total_yoyi;
+  }
+
+  // 9. VIP + EZ Potential Promo Eligibility (Pure data flag, NO financial calculations)
+  const isVip = String(result.source_order || "").trim().toUpperCase() === "VIP";
+  const isEz = String(result.tipe_produk || "EZ").trim().toUpperCase() === "EZ";
+  result.is_potential_vip_promo = isVip && isEz;
+
   return result;
+}
+
+export function isPotentialVipPromo(sourceOrder?: string, productType?: string): boolean {
+  return String(sourceOrder || "").trim().toUpperCase() === "VIP" &&
+         String(productType || "EZ").trim().toUpperCase() === "EZ";
 }

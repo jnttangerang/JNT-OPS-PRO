@@ -5,6 +5,9 @@ import {
 } from "lucide-react";
 import { toast } from "../utils/toast";
 
+import ValidasiPromo5Bintang from "./ValidasiPromo5Bintang";
+import { User, Outlet } from "../types";
+
 interface ReviewAnalysis {
   category: "POSITIVE" | "MISPLACED" | "FAKE";
   reason: string;
@@ -25,7 +28,13 @@ interface MapsReview {
   analisis: ReviewAnalysis | null;
 }
 
-export default function UlasanMapsPage() {
+interface Props {
+  session?: User | null;
+  outlets?: Outlet[];
+}
+
+export default function UlasanMapsPage({ session = null, outlets = [] }: Props) {
+  const [activeTab, setActiveTab] = useState<"MANAJEMEN" | "VALIDASI">("MANAJEMEN");
   const [reviews, setReviews] = useState<MapsReview[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
@@ -200,16 +209,36 @@ export default function UlasanMapsPage() {
             Asisten Reputasi Digital J&T
           </div>
           <h1 className="text-2xl md:text-4xl font-extrabold tracking-tight">
-            Manajemen & Analisis Ulasan Google Maps
+            Ulasan Maps & Promo
           </h1>
           <p className="text-xs md:text-sm text-red-50/90 leading-relaxed font-medium">
-            Monitor, analisis, dan tanggapi ulasan Google Maps dari 4 outlet J&T Anda secara cerdas menggunakan kecerdasan buatan Gemini AI. Otomatis tangani keluhan salah alamat serta draf banding ulasan palsu/spam.
+            Monitor, analisis, dan tanggapi ulasan Google Maps dari 4 outlet J&T Anda secara cerdas, serta validasi diskon Promo 5★.
           </p>
         </div>
       </div>
 
-      {/* ALERT INFO */}
-      <div className="bg-blue-50/60 border border-blue-150 rounded-2xl p-4 flex gap-3 text-xs text-blue-800 leading-relaxed">
+      {/* TABS NAVIGATION */}
+      <div className="flex bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden text-sm font-bold">
+        <button
+          onClick={() => setActiveTab("MANAJEMEN")}
+          className={`flex-1 py-3 text-center transition-colors ${activeTab === "MANAJEMEN" ? "bg-red-50 text-[#E4002B] border-b-2 border-[#E4002B]" : "text-gray-500 hover:bg-gray-50"}`}
+        >
+          Manajemen & Analisis Ulasan
+        </button>
+        <button
+          onClick={() => setActiveTab("VALIDASI")}
+          className={`flex-1 py-3 text-center transition-colors flex items-center justify-center gap-2 ${activeTab === "VALIDASI" ? "bg-red-50 text-[#E4002B] border-b-2 border-[#E4002B]" : "text-gray-500 hover:bg-gray-50"}`}
+        >
+          <Star className="w-4 h-4 fill-current" /> Validasi Promo 5★
+        </button>
+      </div>
+
+      {activeTab === "VALIDASI" ? (
+        <ValidasiPromo5Bintang session={session} outlets={outlets} />
+      ) : (
+        <>
+          {/* ALERT INFO */}
+          <div className="bg-blue-50/60 border border-blue-150 rounded-2xl p-4 flex gap-3 text-xs text-blue-800 leading-relaxed">
         <Info className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
         <div>
           <span className="font-bold block mb-0.5">Simulasi Dasbor Terintegrasi:</span>
@@ -594,61 +623,65 @@ export default function UlasanMapsPage() {
                           <div className="space-y-4 pt-2 border-t border-gray-100">
                             
                             {/* English Appeal Draft */}
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-extrabold text-[#E4002B] uppercase tracking-wider flex items-center gap-1">
-                                  <AlertTriangle className="h-3.5 w-3.5 text-red-500 animate-pulse" />
-                                  Google Support Official Appeal (English Draft)
-                                </span>
-                                <button
-                                  onClick={() => handleCopy(review.analisis?.appealDraftEnglish || "", `appeal-en-${review.id}`)}
-                                  className="inline-flex items-center gap-1 text-[10px] text-red-600 font-bold hover:underline"
-                                >
-                                  {copiedId === `appeal-en-${review.id}` ? (
-                                    <>
-                                      <Check className="h-3 w-3 text-emerald-500" />
-                                      <span className="text-emerald-500">Tersalin!</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Copy className="h-3 w-3" />
-                                      <span>Salin Appeal</span>
-                                    </>
-                                  )}
-                                </button>
+                            {review.analisis.appealDraftEnglish && (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-extrabold text-[#E4002B] uppercase tracking-wider flex items-center gap-1">
+                                    <AlertTriangle className="h-3.5 w-3.5 text-red-500 animate-pulse" />
+                                    Google Support Official Appeal (English Draft)
+                                  </span>
+                                  <button
+                                    onClick={() => handleCopy(review.analisis?.appealDraftEnglish || "", `appeal-en-${review.id}`)}
+                                    className="inline-flex items-center gap-1 text-[10px] text-red-600 font-bold hover:underline"
+                                  >
+                                    {copiedId === `appeal-en-${review.id}` ? (
+                                      <>
+                                        <Check className="h-3 w-3 text-emerald-500" />
+                                        <span className="text-emerald-500">Tersalin!</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="h-3 w-3" />
+                                        <span>Salin Appeal</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                                <div className="bg-gray-900 text-gray-100 rounded-xl p-4 font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto">
+                                  {review.analisis.appealDraftEnglish}
+                                </div>
                               </div>
-                              <div className="bg-gray-900 text-gray-100 rounded-xl p-4 font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto">
-                                {review.analisis.appealDraftEnglish}
-                              </div>
-                            </div>
+                            )}
 
                             {/* Indonesian translation of appeal */}
-                            <div className="space-y-1.5">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-                                  Terjemahan Bahasa Indonesia Draf Banding Google Support
-                                </span>
-                                <button
-                                  onClick={() => handleCopy(review.analisis?.appealDraftIndonesian || "", `appeal-id-${review.id}`)}
-                                  className="inline-flex items-center gap-1 text-[10px] text-red-600 font-bold hover:underline"
-                                >
-                                  {copiedId === `appeal-id-${review.id}` ? (
-                                    <>
-                                      <Check className="h-3 w-3 text-emerald-500" />
-                                      <span className="text-emerald-500">Tersalin!</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Copy className="h-3 w-3" />
-                                      <span>Salin Terjemahan</span>
-                                    </>
-                                  )}
-                                </button>
+                            {review.analisis.appealDraftIndonesian && (
+                              <div className="space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                                    Terjemahan Bahasa Indonesia Draf Banding Google Support
+                                  </span>
+                                  <button
+                                    onClick={() => handleCopy(review.analisis?.appealDraftIndonesian || "", `appeal-id-${review.id}`)}
+                                    className="inline-flex items-center gap-1 text-[10px] text-red-600 font-bold hover:underline"
+                                  >
+                                    {copiedId === `appeal-id-${review.id}` ? (
+                                      <>
+                                        <Check className="h-3 w-3 text-emerald-500" />
+                                        <span className="text-emerald-500">Tersalin!</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Copy className="h-3 w-3" />
+                                        <span>Salin Terjemahan</span>
+                                      </>
+                                    )}
+                                  </button>
+                                </div>
+                                <div className="bg-white rounded-xl border border-gray-150 p-4 font-sans text-xs text-gray-600 leading-relaxed max-h-48 overflow-y-auto">
+                                  {review.analisis.appealDraftIndonesian}
+                                </div>
                               </div>
-                              <div className="bg-white rounded-xl border border-gray-150 p-4 font-sans text-xs text-gray-600 leading-relaxed max-h-48 overflow-y-auto">
-                                {review.analisis.appealDraftIndonesian}
-                              </div>
-                            </div>
+                            )}
 
                           </div>
                         )}
@@ -718,6 +751,8 @@ export default function UlasanMapsPage() {
         )}
       </div>
 
+      </>
+      )}
     </div>
   );
 }
