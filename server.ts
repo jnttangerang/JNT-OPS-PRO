@@ -1404,6 +1404,7 @@ const UTILITY_ACTIONS = new Set([
   "cleanupOldDrafts",
   "getPreInputDrafts",
   "getPreInput",
+  "getPreInputDetails",
   "deletePreInput",
   "saveDataPreInput",
   "savePreInput",
@@ -1433,6 +1434,11 @@ const UTILITY_ACTIONS = new Set([
   "createSetoran",
   "approveSetoran",
   "rejectSetoran",
+  "getOwnerClosingSummary",
+  "auditTrail",
+  "getAuditTrail",
+  "reconstructTransactionHistory",
+  "reconstructHistory",
   "getAuditTrailByTransaction",
   "getAuditTrailByCustomer",
   "getAuditTrailByImport",
@@ -1491,7 +1497,13 @@ const UTILITY_ACTIONS = new Set([
   "reopenDailyClosing",
   "getSetoranHarian",
   "updateSetoranStatus",
-  "login"
+  "login",
+  "getPromoReviewValidations",
+  "submitPromoReviewValidation",
+  "approvePromoReviewValidation",
+  "rejectPromoReviewValidation",
+  "apps-script",
+  "dev"
 ]);
 
 app.use("/api/:action", async (req, res, next) => {
@@ -1507,7 +1519,8 @@ app.use("/api/:action", async (req, res, next) => {
     action.startsWith("control") ||
     action.startsWith("workflow") ||
     action.startsWith("management") ||
-    action.startsWith("intelligence")
+    action.startsWith("intelligence") ||
+    action.startsWith("promo")
   ) {
     return next();
   }
