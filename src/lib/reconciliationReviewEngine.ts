@@ -449,6 +449,25 @@ export function getExceptions(
   return list;
 }
 
+export function getReconciliationExceptionDomain(type: string): "FINANCIAL" | "OPERATIONAL" | "COMPLIANCE" {
+  const upperType = type.toUpperCase();
+  if (
+    upperType.includes("FINANCIAL") ||
+    upperType.includes("CASH_MISMATCH") ||
+    upperType.includes("DEPOSIT") ||
+    upperType.includes("DUPLICATE") ||
+    upperType.includes("CROSS_OUTLET") ||
+    upperType.includes("INVALID_TRANSACTION_INCLUDED") ||
+    upperType.includes("SETORAN")
+  ) {
+    return "FINANCIAL";
+  }
+  if (upperType.includes("EVIDENCE") || upperType.includes("COMPLIANCE") || upperType.includes("PROMO")) {
+    return "COMPLIANCE";
+  }
+  return "OPERATIONAL";
+}
+
 /**
  * Provides status for Closing module based on open exceptions.
  */
@@ -474,14 +493,16 @@ export function getClosingReconciliationStatus(
   const open_error = openExceptions.filter((e) => e.severity === "ERROR");
   const open_warning = openExceptions.filter((e) => e.severity === "WARNING" || e.severity === "INFO");
 
+  const open_financial_critical = open_critical.filter(e => getReconciliationExceptionDomain(e.exception_type) === "FINANCIAL");
+
   let closing_eligibility: "ELIGIBLE" | "NEEDS_REVIEW" | "BLOCKED" = "ELIGIBLE";
   let status_code: "NO_OPEN_EXCEPTION" | "OPEN_WARNING" | "OPEN_ERROR_EXCEPTION" | "OPEN_CRITICAL_EXCEPTION" = "NO_OPEN_EXCEPTION";
   let summary_text = "Semua exception reconciliation telah tuntas. Closing dapat dilanjutkan.";
 
-  if (open_critical.length > 0) {
+  if (open_financial_critical.length > 0) {
     closing_eligibility = "BLOCKED";
     status_code = "OPEN_CRITICAL_EXCEPTION";
-    summary_text = `Terdapat ${open_critical.length} CRITICAL exception yang belum diselesaikan. Closing diblokir.`;
+    summary_text = `Terdapat ${open_financial_critical.length} FINANCIAL CRITICAL exception yang belum diselesaikan. Closing diblokir.`;
   } else if (open_error.length > 0) {
     closing_eligibility = "NEEDS_REVIEW";
     status_code = "OPEN_ERROR_EXCEPTION";
@@ -498,6 +519,7 @@ export function getClosingReconciliationStatus(
     total_exceptions: exceptions.length,
     open_exceptions_count: openExceptions.length,
     open_critical_count: open_critical.length,
+    open_financial_critical_count: open_financial_critical.length,
     open_error_count: open_error.length,
     open_warning_count: open_warning.length,
     closing_eligibility,

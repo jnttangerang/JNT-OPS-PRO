@@ -2,22 +2,41 @@
 
 Dokumen ini adalah aturan wajib dan panduan etika coding bagi AI Developer (Agent) yang bekerja di dalam codebase ini. Setiap request perubahan dari User harus diverifikasi silang dengan dokumen ini.
 
-## 1. Aturan Modifikasi Code (Surgical Edits)
-- **Do Not Break Existent Behavior:** Sebelum memodifikasi, baca dan pahami _flow_ aslinya. Jangan hapus kode yang sedang berfungsi kecuali User memintanya (atau sedang melakukan migrasi refaktor secara sadar).
-- **Keep Variable Consistency:** Gunakan nama tabel/tata bahasa yang konsisten. Jangan mencampur variabel Inggris (misal `recipient_history`) jika file asli menggunakan `Riwayat_Penerima`.
-- **Preserve Security (API Keys):** Jangan pernah merender, console.log, atau memasukkan token rahasia/API KEY ke dalam layer klien (React). Semua third-party service (Gemini, Google Places) **WAJIB** dieksekusi melalui Express API Server di `server.ts`.
+## A. SOURCE OF TRUTH (Prioritas Tertinggi)
+`Source code > runtime evidence > tests > documentation > assumptions`
+- Jangan pernah mengubah arsitektur berdasarkan asumsi dari dokumentasi lama. 
+- Jika dokumentasi (terutama `01_SYSTEM_CONTEXT.md` atau `02_DATABASE_ARCHITECTURE.md`) bertentangan dengan *code* aktual, lakukan audit (grep/trace) ke source code, karena source code adalah pemegang kebenaran absolut.
 
-## 2. Aturan Kualitas UI/UX
-- **Desain Intensional:** Teruskan styling Tailwind CSS (mengacu pada pedoman _"Design Philosophy"_). Gunakan visual yang rapi, margin yang lapang, dan responsivitas seluler.
-- **Zero Tech-Slop:** Jangan tambahkan elemen UI bohongan yang menampilkan "Terminal Logs", "Ping/MS", dsb., kecuali User dengan eksplisit meminta dashboard bergaya Hacker. 
-- **Graceful Error Handling:** Setiap *fetch* wajib dilengkapi blok `try/catch`. Tangani error API (misal 403 Google API atau 429 Gemini API) dengan toast/alert pesan berbahasa Indonesia yang bersahabat kepada kasir/admin. 
+## B. FINANCIAL & DOMAIN RULE (Strict Backend-Authoritative)
+- **TIDAK BOLEH** memindahkan kalkulasi finansial, perhitungan komisi, penentuan total setoran, atau status *approval* ke frontend (React).
+- Semua kalkulasi dan manipulasi data harus berasal dari `src/lib/*Engine.ts` di backend. Frontend hanya bertugas menampilkan (render) data.
 
-## 3. Aturan Resolusi Konflik (Source of Truth)
-- Jika instruksi User bertentangan dengan struktur database saat ini, sampaikan secara objektif melalui komentar (atau perbaiki skema jika diinstruksikan). 
-- Referensi arsitektur dan tabel ada di `01_SYSTEM_CONTEXT.md` dan `02_DATABASE_ARCHITECTURE.md`.
-- Rencana perbaikan _technical debt_ ada di `03_REFACTOR_TASK.md`. Jangan melakukan refaktor radikal tanpa instruksi, gunakan pendekatan gradual/step-by-step.
+## C. DATABASE & PERSISTENCE RULE
+- Database utama (SSOT) adalah **Google Spreadsheet via Apps Script**. File `db.json` hanyalah cache ephemeral (tersimpan di `/tmp` jika di Vercel).
+- **JANGAN** pernah melakukan `fs.writeFileSync` tanpa memikirkan siklus `syncDbWithAppsScript`. Mutasi harus berhasil di Apps Script terlebih dahulu agar tersimpan permanen.
+- **JANGAN** membuat koleksi/tabel JSON baru tanpa alasan kuat. Cari domain data eksisting terlebih dahulu (misal: jangan buat `KeuanganBaru` jika `KeuanganOutlet` sudah mencukupi).
 
-## 4. Pola Pengembangan Full-Stack
-- **Server:** Gunakan struktur Express standar. Jangan ubah script `dev`, `build`, atau `start` dalam `package.json` yang dapat memecahkan konfigurasi infrastruktur port (port statis: 3000). 
-- **Frontend:** Gunakan `import` dari `lucide-react` untuk ikon. Hindari library baru jika kapabilitas bawaan yang ada di repository (seperti HTML5-QRCode, Recharts, dll.) masih cukup.
-- **Dependensi Tambahan:** Jika perlu menginstal module Node tambahan, pikirkan dampaknya ke bundle size. Utamakan _native capabilities_.
+## D. NO DUPLICATE BUSINESS LOGIC
+Jangan menulis fungsi perhitungan baru (seperti menghitung total transaksi) jika `financialEngine.ts` atau `settlementEngine.ts` sudah memilikinya. Lakukan `import` dan panggil fungsi tersebut (contoh: `calculateDailyFinancial()`).
+
+## E. DATA FLOW & TRACING FIRST
+Sebelum memperbaiki bug data, kamu **WAJIB** menelusuri alurnya (Trace):
+`UI Caller -> Express API -> Domain Engine -> Storage Sync -> Database Cache`
+Memperbaiki *symptom* (seperti melempar error di UI saja tanpa memblokir di backend API) dilarang keras! Lakukan *Hard Lock* di backend API.
+
+## F. MINIMAL & SURGICAL CHANGE
+Gunakan perubahan terkecil (shortest diff) yang menuntaskan akar masalah (*Root Cause*). Jangan membongkar ulang satu modul besar hanya untuk memperbaiki satu validasi. Hindari menghapus *fallback/legacy compatibility layer* secara membabi buta tanpa mengecek konsumennya.
+
+## G. ROLE & SECURITY (RBAC)
+Saat mengedit alur *Approval* (Setoran, Settlement, Certification):
+- Pastikan pengecekan *role* (`actor_role === 'OWNER'`) dilakukan secara ketat di backend, bukan sekadar menghilangkan tombol di UI frontend.
+- Jangan mengekspos token rahasia, API Keys (Google Maps/Gemini) ke layer client React. Selalu proxy via Express.
+
+## H. NO ASSUMPTION
+Jika tidak menemukan bukti kuat di source code saat diminta mengubah suatu bagian, sebutkan `UNKNOWN / REQUIRES VERIFICATION` ke User. Lebih baik bertanya daripada merusak arsitektur data.
+
+## I. TESTING & VERIFICATION
+Setiap perubahan logic yang non-trivial (khususnya finansial) **WAJIB**:
+1. Dicek tipe TypeScript-nya (`npm run lint` atau `tsc`).
+2. Dipastikan dapat di-*build* (`npm run build`).
+3. Dilakukan verifikasi dengan membaca log/hasil dari file *route* yang terimbas.

@@ -33,7 +33,7 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
   
   const [filterOutlet, setFilterOutlet] = useState<string>("ALL");
   const [filterEkspedisi, setFilterEkspedisi] = useState<string>("ALL");
-  const [filterStatus, setFilterStatus] = useState<string>("ALL");
+  const [filterStatus, setFilterStatus] = useState<string>("EXCEPTION");
   const [filterAdmin, setFilterAdmin] = useState<string>("");
   const [dateStart, setDateStart] = useState(() => getTodayWIB());
   const [dateEnd, setDateEnd] = useState(() => getTodayWIB());
@@ -148,7 +148,12 @@ const getStatusBadge = (status: string) => {
 
   // Filter the list dynamically in frontend for admin, status, and ekspedisi so we don't refetch
   const filteredList = auditData?.detail?.filter((tx: any) => {
-    if (filterStatus !== "ALL" && tx.audit_status !== filterStatus) return false;
+    if (filterStatus === "EXCEPTION") {
+      if (tx.audit_status === "VALID" || tx.audit_status === "SESUAI") return false;
+    } else if (filterStatus !== "ALL" && tx.audit_status !== filterStatus) {
+      return false;
+    }
+    
     if (filterEkspedisi !== "ALL") {
       const expType = String(tx.ekspedisi || tx.tipe || "").toUpperCase();
       const targetExp = filterEkspedisi.toUpperCase();
@@ -284,6 +289,7 @@ const getStatusBadge = (status: string) => {
                 onChange={(e) => setFilterStatus(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500/20"
               >
+                <option value="EXCEPTION">Hanya Exception</option>
                 <option value="ALL">Semua Status</option>
                 <option value="BELUM_DIAUDIT">Belum Diaudit</option>
                 <option value="SESUAI">Sesuai</option>
@@ -382,7 +388,12 @@ const getStatusBadge = (status: string) => {
                         {tx.selisih < 0 ? "-" : tx.selisih > 0 ? "+" : ""}Rp {Math.abs(tx.selisih).toLocaleString("id-ID")}
                       </p>
                     </td>
-                    <td className="p-4">{getStatusBadge(tx.audit_status)}</td>
+                    <td className="p-4 text-center">
+                      {getStatusBadge(tx.audit_status)}
+                      {tx.exception_domain && tx.exception_domain !== "NONE" && (
+                        <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-1">{tx.exception_domain}</p>
+                      )}
+                    </td>
                     <td className="p-4 text-center">
                       <button 
                         onClick={() => { setSelectedTx(tx); setAuditNote(tx.audit_note || ""); }}

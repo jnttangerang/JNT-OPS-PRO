@@ -3495,6 +3495,7 @@ app.post("/api/uploadFile", (req, res) => {
     case "KAS_MASUK": targetFolderId = sysConfig.folder_bukti_kas_masuk || ""; break;
     case "KAS_KELUAR": targetFolderId = sysConfig.folder_bukti_kas_keluar || ""; break;
     case "BUKTI_ADD": targetFolderId = sysConfig.folder_bukti_bayar_customer || ""; break;
+    case "BUKTI_PROMO": targetFolderId = sysConfig.folder_bukti_bayar_customer || ""; break;
     default: targetFolderId = "";
   }
   
@@ -5135,9 +5136,20 @@ app.post(["/api/getOwnerClosingSummary", "/api/dailyClosing/ownerSummary"], asyn
   return res.json(result);
 });
 
-app.post("/api/getSetoranList", (req, res) => {
-  const db = readDb();
-  let setoranData = db.Master_Setoran || [];
+app.post("/api/getSetoranList", async (req, res) => {
+  let db = readDb();
+  db = await syncDbWithAppsScript(db);
+  let setoranData = [...(db.Master_Setoran || []), ...(db.SetoranData || [])];
+  
+  // Deduplicate by setoran_id or id
+  const setoranMap = new Map();
+  setoranData.forEach(s => {
+    const id = s.setoran_id || s.id;
+    if (id) {
+       setoranMap.set(id, s);
+    }
+  });
+  setoranData = Array.from(setoranMap.values());
   
   const { outlet_id, status, date_start, date_end } = req.body;
   
@@ -5170,8 +5182,9 @@ app.post("/api/getSetoranList", (req, res) => {
   return res.json({ status: "success", data: list });
 });
 
-app.post("/api/getSetoranDetail", (req, res) => {
-  const db = readDb();
+app.post("/api/getSetoranDetail", async (req, res) => {
+  let db = readDb();
+  db = await syncDbWithAppsScript(db);
   const { setoran_id, tanggal, outlet_id } = req.body;
   
   let header = null;
@@ -5197,7 +5210,7 @@ app.post("/api/getSetoranDetail", (req, res) => {
     if (!isTransactionValidForFinance(tx)) return;
     let txDate = extractBusinessDate(tx);
     const txAdmin = tx.admin_id || "SYSTEM";
-    if (txDate === hTanggal && tx.outlet_id === hOutletId && (!hAdmin || txAdmin === hAdmin)) {
+    if (txDate === hTanggal && tx.outlet_id === hOutletId && (!hAdmin || hAdmin === "SYSTEM" || txAdmin === hAdmin)) {
       const sum = calculateFinancialSummary(tx);
       totalCustomerPay += sum.customer_payment;
       totalOwnerDeposit += sum.owner_deposit;
@@ -5561,6 +5574,7 @@ app.post("/api/getAuditData", (req, res) => {
       kas_operasional: sum.outlet_cash,
       setoran_status: sStatus,
       audit_status: auditStatus,
+      exception_domain: auditEngineResult.exception_domain,
       audit_note: tx.owner_audit_note || "",
       audited_by: tx.owner_audited_by || "",
       timestamp: tx.created_at || tx.timestamp,
@@ -5784,9 +5798,9 @@ function getReportingRawTransactions(db: any) {
     let auditStatus = "BELUM_DIAUDIT";
     if (tx.owner_audit_status) {
       auditStatus = tx.owner_audit_status;
-    } else if (settlementStatus === "DISETUJUI") {
-      if (sum.customer_payment === 0) auditStatus = "PERLU_REVIEW";
-      else auditStatus = "SESUAI"; 
+    } else {
+      const auditResult = auditTransaction(db, tx);
+      auditStatus = auditResult.status === "VALID" ? "SESUAI" : auditResult.status;
     }
 
     raw.push({
@@ -8805,6 +8819,147 @@ app.get("/api/management-review/history/:id", (req, res) => {
   } catch (err: any) {
     return res.status(403).json({ status: "error", message: err.message });
   }
+});
+
+// ==========================================
+// PROMO REVIEW VALIDATION APIs
+// ==========================================
+
+app.get("/api/getPromoReviewValidations", async (req, res) => {
+  let db = readDb();
+  db = await syncDbWithAppsScript(db);
+  if (!db.PromoReviewValidations) db.PromoReviewValidations = [];
+  return res.json({ status: "success", data: db.PromoReviewValidations });
+});
+
+app.post("/api/submitPromoReviewValidation", (req, res) => {
+  const db = readDb();
+  const { transaction_id, resi_id, admin_id, evidence_file_url, review_rating, reviewer_name, review_url } = req.body;
+  
+  if (!transaction_id || !resi_id || !admin_id) {
+    return res.status(400).json({ status: "error", message: "Parameter tidak lengkap." });
+  }
+
+  const user = (db.Users || []).find((u: any) => u.user_id === admin_id || u.username === admin_id);
+  const role = user?.role || "ADMIN"; 
+  if (role !== "ADMIN" && admin_id !== "SYSTEM" && admin_id !== "ADMIN") {
+    if (role === "OWNER") {
+      return res.status(403).json({ status: "error", message: "OWNER tidak diperbolehkan mensubmit promo validation." });
+    }
+  }
+
+  const tx = (db.MASTER_TRANSAKSI || []).find((t: any) => t.id === transaction_id || t.transaksi_id === transaction_id || t.resi_id === resi_id || t.no_resi === resi_id);
+  if (!tx) {
+    return res.status(404).json({ status: "error", message: "Transaksi tidak ditemukan." });
+  }
+
+  const source = (tx.source_order || "VIP").toUpperCase();
+  const type = (tx.tipe_produk || "EZ").toUpperCase();
+  const discount = tx.discount_from_yoyi || 0;
+  
+  if (source !== "VIP" || type !== "EZ" || discount <= 0) {
+    return res.status(400).json({ status: "error", message: "Transaksi bukan Potential VIP Promo dengan diskon YoYi." });
+  }
+
+  if (!db.PromoReviewValidations) db.PromoReviewValidations = [];
+  const existing = db.PromoReviewValidations.find((v: any) => v.resi_id === tx.resi_id && (v.status === "PENDING" || v.status === "APPROVED"));
+  if (existing) {
+    return res.status(400).json({ status: "error", message: "Validasi untuk resi ini sudah ada (PENDING/APPROVED)." });
+  }
+
+  const newValidation = {
+    id: "PRV-" + Date.now(),
+    transaction_id: tx.id || tx.transaksi_id,
+    resi_id: tx.resi_id || tx.no_resi,
+    outlet_id: tx.outlet_id,
+    source_order: tx.source_order,
+    tipe_produk: tx.tipe_produk,
+    discount_from_yoyi: discount,
+    review_rating: review_rating || null,
+    reviewer_name: reviewer_name || null,
+    review_url: review_url || null,
+    evidence_file_url: evidence_file_url || null,
+    status: "PENDING",
+    submitted_by: admin_id,
+    submitted_at: new Date().toISOString(),
+  };
+
+  db.PromoReviewValidations.push(newValidation);
+  writeDb(db);
+  syncDbWithAppsScript(db).catch(console.error);
+
+  return res.json({ status: "success", data: newValidation });
+});
+
+app.post("/api/approvePromoReviewValidation", (req, res) => {
+  const db = readDb();
+  const { validation_id, owner_id } = req.body;
+
+  if (!validation_id || !owner_id) {
+    return res.status(400).json({ status: "error", message: "Parameter tidak lengkap." });
+  }
+
+  const user = (db.Users || []).find((u: any) => u.user_id === owner_id || u.username === owner_id);
+  const role = user?.role || "OWNER";
+  if (role !== "OWNER" && owner_id !== "OWNER") {
+    return res.status(403).json({ status: "error", message: "Hanya OWNER yang dapat menyetujui validasi promo." });
+  }
+
+  if (!db.PromoReviewValidations) db.PromoReviewValidations = [];
+  const val = db.PromoReviewValidations.find((v: any) => v.id === validation_id);
+  
+  if (!val) {
+    return res.status(404).json({ status: "error", message: "Data validasi tidak ditemukan." });
+  }
+
+  if (val.status !== "PENDING") {
+    return res.status(400).json({ status: "error", message: `Tidak dapat disetujui. Status saat ini: ${val.status}` });
+  }
+
+  val.status = "APPROVED";
+  val.reviewed_by = owner_id;
+  val.reviewed_at = new Date().toISOString();
+
+  writeDb(db);
+  syncDbWithAppsScript(db).catch(console.error);
+
+  return res.json({ status: "success", data: val });
+});
+
+app.post("/api/rejectPromoReviewValidation", (req, res) => {
+  const db = readDb();
+  const { validation_id, owner_id, reason } = req.body;
+
+  if (!validation_id || !owner_id || !reason) {
+    return res.status(400).json({ status: "error", message: "Parameter tidak lengkap atau alasan kosong." });
+  }
+
+  const user = (db.Users || []).find((u: any) => u.user_id === owner_id || u.username === owner_id);
+  const role = user?.role || "OWNER";
+  if (role !== "OWNER" && owner_id !== "OWNER") {
+    return res.status(403).json({ status: "error", message: "Hanya OWNER yang dapat menolak validasi promo." });
+  }
+
+  if (!db.PromoReviewValidations) db.PromoReviewValidations = [];
+  const val = db.PromoReviewValidations.find((v: any) => v.id === validation_id);
+  
+  if (!val) {
+    return res.status(404).json({ status: "error", message: "Data validasi tidak ditemukan." });
+  }
+
+  if (val.status !== "PENDING") {
+    return res.status(400).json({ status: "error", message: `Tidak dapat ditolak. Status saat ini: ${val.status}` });
+  }
+
+  val.status = "REJECTED";
+  val.reviewed_by = owner_id;
+  val.reviewed_at = new Date().toISOString();
+  val.rejection_reason = reason;
+
+  writeDb(db);
+  syncDbWithAppsScript(db).catch(console.error);
+
+  return res.json({ status: "success", data: val });
 });
 
 // === API 404 & ERROR HANDLING (Prevents falling through to SPA HTML) ===

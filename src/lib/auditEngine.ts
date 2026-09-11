@@ -24,6 +24,8 @@ import {
 
 export type AuditStatus = "VALID" | "WARNING" | "ERROR" | "CRITICAL";
 
+export type ExceptionDomain = "FINANCIAL" | "OPERATIONAL" | "COMPLIANCE" | "NONE";
+
 export interface AuditEligibility {
   countedInDashboard: boolean;
   countedInFinance: boolean;
@@ -34,6 +36,7 @@ export interface AuditEligibility {
 
 export interface AuditResult {
   status: AuditStatus;
+  exception_domain: ExceptionDomain;
   score: number;
   issues: string[];
   warnings: string[];
@@ -64,6 +67,7 @@ export function auditTransaction(db: any, txIdOrObj: any): AuditResult {
   if (!tx) {
     return {
       status: "CRITICAL",
+      exception_domain: "OPERATIONAL",
       score: 0,
       issues: ["Transaksi tidak ditemukan dalam database"],
       warnings: [],
@@ -248,11 +252,11 @@ export function auditTransaction(db: any, txIdOrObj: any): AuditResult {
   };
 
   // ------------------------------------------
-  // PART 11 & PART 12: Status, Score, & Recommendations
+  // PART 11 & PART 12: Status, Score, Domain & Recommendations
   // ------------------------------------------
   let status: AuditStatus = "VALID";
+  let exception_domain: ExceptionDomain = "NONE";
   let score = 100;
-
   const allIssues = [...errors, ...warnings];
 
   // Check CRITICAL conditions:
@@ -275,12 +279,24 @@ export function auditTransaction(db: any, txIdOrObj: any): AuditResult {
     status = "VALID";
     score = 100;
   }
+  
+  // Determine Exception Domain
+  if (status !== "VALID") {
+    if (finIssues.length > 0 || errors.some(e => e.includes("DUPLICATE DETECTED")) || errors.some(e => e.includes("setoran outlet belum di-approve") || e.includes("ditolak oleh Owner"))) {
+      exception_domain = "FINANCIAL";
+    } else if (!hasFotoPaket || !hasFotoResi || warnings.some(w => w.includes("Foto pendukung"))) {
+      exception_domain = "COMPLIANCE";
+    } else {
+      exception_domain = "OPERATIONAL";
+    }
+  }
 
   // Deduplicate recommendations
   const uniqueRecs = Array.from(new Set(recommendations));
 
   return {
     status,
+    exception_domain,
     score,
     issues: allIssues,
     warnings,

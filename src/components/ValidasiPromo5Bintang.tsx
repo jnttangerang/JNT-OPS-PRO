@@ -108,8 +108,8 @@ export default function ValidasiPromo5Bintang({ session, outlets }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fileBase64: evidencePreview,
-          fileName: "promo_evidence",
-          category: "BUKTI_ADD"
+          fileName: `FOTO_PROMO_${selectedCandidate.resi_id}`,
+          category: "BUKTI_PROMO"
         })
       });
       const uploadData = await uploadRes.json();

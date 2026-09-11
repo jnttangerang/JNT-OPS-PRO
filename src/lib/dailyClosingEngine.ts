@@ -347,8 +347,8 @@ export function validateDailyClosing(
   // 4. Compile Blocking Reasons
   const blocking_reasons: string[] = [];
 
-  if (reconClosingStatus.open_critical_count > 0) {
-    blocking_reasons.push(`Terdapat ${reconClosingStatus.open_critical_count} CRITICAL reconciliation exception belum selesai.`);
+  if ((reconClosingStatus as any).open_financial_critical_count > 0) {
+    blocking_reasons.push(`Terdapat ${(reconClosingStatus as any).open_financial_critical_count} FINANCIAL CRITICAL reconciliation exception belum selesai.`);
   }
 
   if (reconClosingStatus.open_error_count > 0) {

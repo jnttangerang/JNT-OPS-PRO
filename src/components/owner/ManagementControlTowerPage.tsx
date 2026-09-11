@@ -15,7 +15,7 @@ import {
   Search
 } from 'lucide-react';
 import { getTodayWIB } from '../../utils/dateUtils';
-
+import FinancialCloseCertificationModal from './FinancialCloseCertificationModal';
 
 interface ManagementControlTowerPageProps {
   session: any;
@@ -43,6 +43,7 @@ export default function ManagementControlTowerPage({
   const [trendData, setTrendData] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [isCertModalOpen, setIsCertModalOpen] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -659,7 +660,7 @@ export default function ManagementControlTowerPage({
             </div>
 
             {/* Evidence & Cert */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:border-purple-200 transition-colors cursor-pointer" onClick={() => onNavigate("reporting")}>
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm hover:border-purple-200 transition-colors cursor-pointer" onClick={() => setIsCertModalOpen(true)}>
               <div className="pb-2">
                 <div className="text-xs font-bold text-gray-500 uppercase tracking-wider flex justify-between">
                   <span>Evidence</span>
@@ -829,6 +830,17 @@ export default function ManagementControlTowerPage({
           </div>
         </>
       ) : null}
+
+      <FinancialCloseCertificationModal
+        isOpen={isCertModalOpen}
+        onClose={() => setIsCertModalOpen(false)}
+        outletId={activeOutletId}
+        tanggal={tanggal}
+        session={session}
+        onStatusChange={(newStatus) => {
+          fetchData(); // Refresh control tower summary
+        }}
+      />
     </div>
   );
 }
