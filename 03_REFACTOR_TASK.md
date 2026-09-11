@@ -48,6 +48,19 @@ This document outlines the current state of refactoring tasks and the technical 
 **DEPENDENCIES**: Provisioning of Cloud SQL instance.
 **ACCEPTANCE CRITERIA**: CRUD operations bypass Apps Script and persist directly to a relational database.
 
+### ID: P2-3
+**TITLE**: Eliminate UTILITY_ACTIONS Manual Whitelist
+**STATUS**: NEWLY IDENTIFIED
+**PROBLEM**: Middleware proxy di `server.ts` menggunakan whitelist manual (`UTILITY_ACTIONS`, 129 entri) untuk menentukan apakah sebuah request diproses lokal oleh Express atau di-forward ke Google Apps Script. Setiap route lokal baru HARUS didaftarkan secara manual. Commit 4908d90 menambahkan 4 route handler Promo Review Validation tetapi lupa mendaftarkannya di UTILITY_ACTIONS, menyebabkan production fallback ke Apps Script dan error "Aksi tidak dikenali".
+**CURRENT STATE**: 129 whitelist entries, 108 local routes, 21 legacy orphan entries, 1 duplicate entry (`getKeuanganOutlet`).
+**TARGET STATE**: Route lokal didaftarkan SEBELUM proxy middleware, atau implementasi `hasLocalRoute()` yang auto-detect dari router registry Express.
+**AFFECTED FILES**: `server.ts` (middleware + UTILITY_ACTIONS array).
+**DEPENDENCIES**: None.
+**ACCEPTANCE CRITERIA**: 
+- Tidak ada lagi whitelist manual di `server.ts`.
+- Setiap route lokal otomatis di-exempt dari proxy ke Apps Script.
+- Ada automated test yang gagal jika ada route lokal tanpa whitelist (guard test terhadap regresi).
+
 ## P3 — UX & Operational Improvements
 
 ### ID: P3-1
