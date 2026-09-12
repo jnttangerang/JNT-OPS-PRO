@@ -5133,21 +5133,15 @@ app.post("/api/analyzeReview", async (req, res) => {
 // MOCK ENDPOINTS FOR PHASE 5, 6, 7
 // ==========================================
 
-app.post(["/api/getOwnerClosingSummary", "/api/dailyClosing/ownerSummary"], async (req, res) => {
-  const CLOSING_SYNC_TTL_MS = 10000; // 10s — lebih panjang dari Riwayat (5s)
-  const now = Date.now();
-  const lastSync = (global as any)._lastClosingSync || 0;
-  let db: any;
-  if (now - lastSync > CLOSING_SYNC_TTL_MS) {
-    db = await syncDbWithAppsScript(readDb());
-    (global as any)._lastClosingSync = Date.now();
-  } else {
-    db = readDb();
+app.post(
+  ["/api/getOwnerClosingSummary", "/api/dailyClosing/ownerSummary"],
+  async (req, res) => {
+    const db = await syncDbWithAppsScript(readDb());
+    const filters = req.body || {};
+    const result = getOwnerClosingSummary(db, filters);
+    return res.json(result);
   }
-  const filters = req.body || {};
-  const result = getOwnerClosingSummary(db, filters);
-  return res.json(result);
-});
+);
 
 app.post("/api/getSetoranList", async (req, res) => {
   let db = readDb();
