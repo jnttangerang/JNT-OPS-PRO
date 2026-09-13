@@ -5455,6 +5455,14 @@ app.post(["/api/auditTrail", "/api/getAuditTrail"], (req, res) => {
   return res.json({ status: "success", data });
 });
 
+app.get("/api/reconciliation/logs", (req, res) => {
+  const db = readDb();
+  const tanggal = req.query.tanggal as string;
+  const filters = tanggal ? { tanggal } : {};
+  const data = getAuditTrail(db, filters);
+  return res.json({ status: "success", data });
+});
+
 app.post("/api/getAuditTrailByTransaction", (req, res) => {
   const db = readDb();
   const { transaksi_id } = req.body || {};
