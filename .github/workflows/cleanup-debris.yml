@@ -1,0 +1,70 @@
+name: Cleanup Debris Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Ketik HAPUS untuk konfirmasi'
+        required: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'HAPUS'
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Hapus debris files
+        run: |
+          # patch_*.js
+          git rm --ignore-unmatch -f \
+            patch_admin2.js patch_admin_dashboard.js patch_admin_dummy.js \
+            patch_admin_endpoint.js patch_admin_icons.js patch_admin_optional.js \
+            patch_admin_remove_dummy.js patch_app.js patch_app2.js patch_app3.js \
+            patch_app_icon.js patch_app_redirect.js patch_app_route.js \
+            patch_dashboard.js patch_db.js patch_global.js patch_initialDb.js \
+            patch_menu.js patch_owner_endpoint.js patch_riwayat.js patch_riwayat2.js \
+            patch_server.js patch_server2.js patch_server_dashboard.js \
+            patch_server_global.js patch_server_settings.js patch_types.js \
+            remove_admin_dash_owner.js update_server_dashboard.js
+
+          # fix/utility .cjs
+          git rm --ignore-unmatch -f \
+            add_audit_api.cjs assemble.cjs clean_daily.cjs count.cjs \
+            find_brace.cjs fix_admin_dash.cjs fix_again.cjs fix_card_jsx.cjs \
+            fix_classname.cjs fix_code_gs_mapping.cjs fix_control_ui.cjs \
+            fix_create_setoran.cjs
+
+          # test & debug
+          git rm --ignore-unmatch -f \
+            test-api.js test-fetch.js test-fetch2.js test-places.js \
+            test_puppeteer.js find_endpoints.js fix_toast.js fix-admin-filter.patch \
+            debug_admin.ts
+
+          # AI-generated reports
+          git rm --ignore-unmatch -f \
+            FINAL_REPORT_PHASE22.md FINANCIAL_ENGINE_REPORT.md README_review.md \
+            audit-report.md backend_audit_roadmap.md final-system-audit.md
+
+          # Floating files
+          git rm --ignore-unmatch -f \
+            admin_dashboard.txt owner_dashboard.txt dashboard_helpers.ts \
+            trx_engine.js temp_tx_service.js generated_tx.js
+
+          # db.json (data sensitif - untrack saja, jangan hapus dari disk)
+          git rm --cached --ignore-unmatch db.json
+
+      - name: Commit & push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: hapus debris AI Studio dari root repo
+
+          - Hapus patch_*.js, fix_*.cjs, test-*.js, debug files
+          - Hapus AI-generated report .md
+          - Untrack db.json (data sensitif)
+          - Sisakan hanya file inti project"
+          git push
