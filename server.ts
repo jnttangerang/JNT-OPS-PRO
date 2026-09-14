@@ -5268,7 +5268,7 @@ app.post("/api/getSetoranDetail", async (req, res) => {
   return res.json({ status: "success", data: { header: enrichedHeader, summary, transactions: txList } });
 });
 
-app.post("/api/createSetoran", (req, res) => {
+app.post("/api/createSetoran", async (req, res) => {
   const db = readDb();
   const { outlet_id, tanggal, admin_id, nominal_setor, actual_cash, catatan } = req.body;
   const adminPembuat = admin_id || "SYSTEM";
@@ -5354,34 +5354,46 @@ app.post("/api/createSetoran", (req, res) => {
     closing_at: "",
     closing_by: ""
   };
-  
-  if (!db.Master_Setoran) db.Master_Setoran = [];
-  if (existingIndex !== -1) {
-    db.Master_Setoran[existingIndex] = setoranObj;
-  } else {
-    db.Master_Setoran.push(setoranObj);
-  }
 
-  logAuditEvent(db, {
-    actor_id: adminPembuat,
-    actor_name: adminPembuat,
-    actor_role: "ADMIN",
-    outlet_id: outlet_id,
-    outlet_name: outletName,
-    entity_type: "SETORAN",
-    entity_id: setoranObj.setoran_id,
-    event_type: "SETORAN_CREATED",
-    action: "CREATE_SETORAN",
-    after: setoranObj,
-    result: "SUCCESS",
-    source: "FINANCIAL_ENGINE"
-  });
-  writeDb(db);
-  
-  return res.json({ status: "success", message: "Setoran berhasil diajukan ke Owner", data: setoranObj });
+  try {
+    const appsScriptResponse = await callAppsScript("createSetoran", setoranObj);
+    if (appsScriptResponse.status !== "success") {
+      return res.json({ status: "error", message: appsScriptResponse.message || "Gagal menyimpan setoran ke sistem pusat" });
+    }
+    
+    // Update local DB cache based on successful Apps Script write
+    if (!db.Master_Setoran) db.Master_Setoran = [];
+    if (existingIndex !== -1) {
+      db.Master_Setoran[existingIndex] = setoranObj;
+    } else {
+      db.Master_Setoran.push(setoranObj);
+    }
+
+    logAuditEvent(db, {
+      actor_id: adminPembuat,
+      actor_name: adminPembuat,
+      actor_role: "ADMIN",
+      outlet_id: outlet_id,
+      outlet_name: outletName,
+      entity_type: "SETORAN",
+      entity_id: setoranObj.setoran_id,
+      event_type: "SETORAN_CREATED",
+      action: "CREATE_SETORAN",
+      after: setoranObj,
+      result: "SUCCESS",
+      source: "FINANCIAL_ENGINE"
+    });
+
+    writeDb(db);
+    
+    return res.json({ status: "success", message: "Setoran berhasil diajukan ke Owner", data: setoranObj });
+  } catch (error: any) {
+    console.error("Error calling Apps Script createSetoran:", error);
+    return res.status(500).json({ status: "error", message: "Terjadi kesalahan sistem saat mengajukan setoran: " + error.message });
+  }
 });
 
-app.post("/api/approveSetoran", (req, res) => {
+app.post("/api/approveSetoran", async (req, res) => {
   const db = readDb();
   const { setoran_id, admin_id, catatan } = req.body;
   
@@ -5394,30 +5406,40 @@ app.post("/api/approveSetoran", (req, res) => {
   if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
   if (s.status === "DISETUJUI") return res.json({ status: "error", message: "Sudah disetujui sebelumnya." });
   
-  s.status = "DISETUJUI";
-  s.approved_at = new Date().toISOString();
-  s.approved_by = user.nama_lengkap || user.username || admin_id;
-  s.catatan_owner = catatan || "";
-  
-  logAuditEvent(db, {
-    actor_id: user.user_id || admin_id,
-    actor_name: user.nama_lengkap || user.username || "Owner",
-    actor_role: "OWNER",
-    outlet_id: s.outlet_id,
-    entity_type: "SETORAN",
-    entity_id: setoran_id,
-    event_type: "SETORAN_APPROVED",
-    action: "APPROVE_SETORAN",
-    after: s,
-    result: "SUCCESS",
-    source: "FINANCIAL_ENGINE"
-  });
+  try {
+    const appsScriptResponse = await callAppsScript("approveSetoran", { setoran_id, admin_id, catatan });
+    if (appsScriptResponse.status !== "success") {
+      return res.json({ status: "error", message: appsScriptResponse.message || "Gagal menyetujui setoran di sistem pusat" });
+    }
+    
+    s.status = "DISETUJUI";
+    s.approved_at = new Date().toISOString();
+    s.approved_by = user.nama_lengkap || user.username || admin_id;
+    s.catatan_owner = catatan || "";
+    
+    logAuditEvent(db, {
+      actor_id: user.user_id || admin_id,
+      actor_name: user.nama_lengkap || user.username || "Owner",
+      actor_role: "OWNER",
+      outlet_id: s.outlet_id,
+      entity_type: "SETORAN",
+      entity_id: setoran_id,
+      event_type: "SETORAN_APPROVED",
+      action: "APPROVE_SETORAN",
+      after: s,
+      result: "SUCCESS",
+      source: "FINANCIAL_ENGINE"
+    });
 
-  writeDb(db);
-  return res.json({ status: "success", message: "Setoran berhasil disetujui", data: s });
+    writeDb(db);
+    return res.json({ status: "success", message: "Setoran berhasil disetujui", data: s });
+  } catch (error: any) {
+    console.error("Error calling Apps Script approveSetoran:", error);
+    return res.status(500).json({ status: "error", message: "Terjadi kesalahan sistem saat menyetujui setoran: " + error.message });
+  }
 });
 
-app.post("/api/rejectSetoran", (req, res) => {
+app.post("/api/rejectSetoran", async (req, res) => {
   const db = readDb();
   const { setoran_id, admin_id, catatan } = req.body;
   
@@ -5427,28 +5449,41 @@ app.post("/api/rejectSetoran", (req, res) => {
   if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
   if (s.status === "DISETUJUI") return res.json({ status: "error", message: "Setoran yang sudah disetujui tidak dapat ditolak." });
   
-  s.status = "DITOLAK";
-  s.approved_at = new Date().toISOString();
-  s.approved_by = admin_id;
-  s.catatan_owner = catatan;
-  logAuditEvent(db, {
-    actor_id: admin_id || "OWNER",
-    actor_name: admin_id || "Owner",
-    actor_role: "OWNER",
-    outlet_id: s.outlet_id,
-    entity_type: "SETORAN",
-    entity_id: setoran_id,
-    event_type: "SETORAN_REJECTED",
-    action: "REJECT_SETORAN",
-    before: { status: s.status },
-    after: { status: "DITOLAK", approved_by: admin_id, catatan },
-    result: "SUCCESS",
-    reason: catatan,
-    source: "FINANCIAL_ENGINE"
-  });
-  
-  writeDb(db);
-  return res.json({ status: "success", message: "Setoran ditolak", data: s });
+  try {
+    const appsScriptResponse = await callAppsScript("rejectSetoran", { setoran_id, admin_id, catatan });
+    if (appsScriptResponse.status !== "success") {
+      return res.json({ status: "error", message: appsScriptResponse.message || "Gagal menolak setoran di sistem pusat" });
+    }
+
+    const beforeStatus = s.status;
+    
+    s.status = "DITOLAK";
+    s.approved_at = new Date().toISOString();
+    s.approved_by = admin_id;
+    s.catatan_owner = catatan;
+    
+    logAuditEvent(db, {
+      actor_id: admin_id || "OWNER",
+      actor_name: admin_id || "Owner",
+      actor_role: "OWNER",
+      outlet_id: s.outlet_id,
+      entity_type: "SETORAN",
+      entity_id: setoran_id,
+      event_type: "SETORAN_REJECTED",
+      action: "REJECT_SETORAN",
+      before: { status: beforeStatus },
+      after: { status: "DITOLAK", approved_by: admin_id, catatan },
+      result: "SUCCESS",
+      reason: catatan,
+      source: "FINANCIAL_ENGINE"
+    });
+    
+    writeDb(db);
+    return res.json({ status: "success", message: "Setoran ditolak", data: s });
+  } catch (error: any) {
+    console.error("Error calling Apps Script rejectSetoran:", error);
+    return res.status(500).json({ status: "error", message: "Terjadi kesalahan sistem saat menolak setoran: " + error.message });
+  }
 });
 
 

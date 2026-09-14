@@ -1863,59 +1863,47 @@ function apiSaveMapsReview(params) {
 function apiCreateSetoran(params) {
   var outletId = params.outlet_id;
   var tanggal = params.tanggal;
-  var adminPembuat = params.admin_id || "SYSTEM";
+  var adminPembuat = params.admin_pembuat || params.admin_id || "SYSTEM";
   
   if (!outletId || !tanggal) {
     return { status: "error", message: "Parameter outlet_id dan tanggal diperlukan." };
   }
   
-  // Prevent duplicate setoran for the same date and outlet that is not DITOLAK
+  // Canonical Identity Check: ADMIN + OUTLET + TANGGAL (excluding DITOLAK)
   var existing = DatabaseService.getSheetData("Master_Setoran");
   var headers = existing[0];
   if (headers) {
     for (var i = 1; i < existing.length; i++) {
       var row = rowToObject_(headers, existing[i]);
-      if (row.tanggal === tanggal && row.outlet_id === outletId && row.status !== "DITOLAK") {
-        return { status: "error", message: "Setoran untuk tanggal ini sudah ada dan tidak dalam status DITOLAK." };
+      var rowAdmin = row.admin_pembuat || row.admin_id || row.user_id || row.created_by || "";
+      if (row.tanggal === tanggal && row.outlet_id === outletId && rowAdmin === adminPembuat && row.status !== "DITOLAK") {
+        return { status: "error", message: "Setoran untuk admin " + adminPembuat + " pada outlet dan tanggal ini sudah diajukan." };
       }
     }
   }
 
-  // Gather transactions
-  var txDetail = getSetoranTransactions(tanggal, outletId);
-  var data = txDetail.data;
-  
-  if (data.length === 0) {
-    return { status: "error", message: "Tidak ada transaksi valid untuk disetor pada tanggal ini." };
+  // We expect params to already be the full setoranObj calculated by server.ts.
+  if (!params.setoran_id) {
+    params.setoran_id = "SET-" + new Date().getTime();
+  }
+  if (!params.status) {
+    params.status = "MENUNGGU_APPROVAL";
+  }
+  if (!params.created_at) {
+    params.created_at = new Date().toISOString();
   }
   
-  var setoranId = "SET-" + new Date().getTime();
-  var setoranObj = {
-    setoran_id: setoranId,
-    tanggal: tanggal,
-    outlet_id: outletId,
-    outlet_name: txDetail.outlet_name || outletId,
-    admin_pembuat: adminPembuat,
-    jumlah_resi: txDetail.jumlah_resi,
-    total_setoran_owner: txDetail.total_setoran_owner,
-    total_kas_outlet: txDetail.total_kas_outlet,
-    status: "MENUNGGU_APPROVAL",
-    created_at: new Date().toISOString(),
-    approved_at: "",
-    approved_by: "",
-    catatan_owner: ""
-  };
+  DatabaseService.insertRow("Master_Setoran", params);
   
-  DatabaseService.insertRow("Master_Setoran", setoranObj);
-  
+  var totalSetoranOwner = params.total_setoran_owner || 0;
   DatabaseService.appendAudit(
     adminPembuat, 
     "SETORAN_CREATE", 
-    "Membuat setoran harian untuk " + tanggal + " (Rp " + txDetail.total_setoran_owner + ")", 
+    "Membuat setoran harian untuk " + tanggal + " (Rp " + totalSetoranOwner + ")", 
     outletId
   );
   
-  return { status: "success", message: "Setoran berhasil dibuat dan menunggu persetujuan.", data: setoranObj };
+  return { status: "success", message: "Setoran berhasil dibuat dan menunggu persetujuan.", data: params };
 }
 
 function apiApproveSetoran(params) {
@@ -1946,7 +1934,10 @@ function apiApproveSetoran(params) {
     existing.outlet_id
   );
   
-  return { status: "success", message: "Setoran berhasil disetujui." };
+  for (var key in updateData) {
+    existing[key] = updateData[key];
+  }
+  return { status: "success", message: "Setoran berhasil disetujui.", data: existing };
 }
 
 function apiRejectSetoran(params) {
@@ -1979,7 +1970,10 @@ function apiRejectSetoran(params) {
     existing.outlet_id
   );
   
-  return { status: "success", message: "Setoran berhasil ditolak." };
+  for (var key in updateData) {
+    existing[key] = updateData[key];
+  }
+  return { status: "success", message: "Setoran berhasil ditolak.", data: existing };
 }
 
 function apiGetSetoranList(params) {
