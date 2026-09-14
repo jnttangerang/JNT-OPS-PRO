@@ -1,4 +1,6 @@
-"use client";
+const fs = require('fs');
+
+const content = `"use client";
 
 import React, { useState, useEffect, useCallback } from "react";
 import { ShieldCheck, Calendar, RefreshCw, X, Loader2, Lock, RotateCcw, AlertTriangle } from "lucide-react";
@@ -59,7 +61,7 @@ export default function OwnerDailyClosingDashboard({
       await Promise.all(
         outlets.map(async (o) => {
           try {
-            const res = await fetch(`/api/dailyClosing/status?outlet_id=${encodeURIComponent(o.outlet_id)}&tanggal=${closingDate}`);
+            const res = await fetch(\`/api/dailyClosing/status?outlet_id=\${encodeURIComponent(o.outlet_id)}&tanggal=\${closingDate}\`);
             if (res.ok) {
               const json = await res.json();
               const record = json.data || json;
@@ -140,7 +142,7 @@ export default function OwnerDailyClosingDashboard({
       });
       const json = await res.json();
       if (res.ok && json.status === "success") {
-        toast.success(json.message || `Tutup buku berhasil untuk outlet '${closeTargetOutlet.name}'.`);
+        toast.success(json.message || \`Tutup buku berhasil untuk outlet '\${closeTargetOutlet.name}'.\`);
         setShowCloseModal(false);
         setCloseNotes("");
         await fetchData();
@@ -183,7 +185,7 @@ export default function OwnerDailyClosingDashboard({
       });
       const json = await res.json();
       if (res.ok && json.status === "success") {
-        toast.success(json.message || `Buku harian outlet '${reopenTargetOutlet.name}' berhasil dibuka kembali (REOPENED).`);
+        toast.success(json.message || \`Buku harian outlet '\${reopenTargetOutlet.name}' berhasil dibuka kembali (REOPENED).\`);
         setShowReopenModal(false);
         setReopenReason("");
         await fetchData();
@@ -232,7 +234,7 @@ export default function OwnerDailyClosingDashboard({
             disabled={loading}
             className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-indigo-600" : ""}`} />
+            <RefreshCw className={\`w-3.5 h-3.5 \${loading ? "animate-spin text-indigo-600" : ""}\`} />
             Segarkan
           </button>
         </div>
@@ -282,7 +284,7 @@ export default function OwnerDailyClosingDashboard({
                       <span className="text-[10px] text-gray-400 font-bold">{o.outlet_id}</span>
                     </div>
                     <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                      className={\`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border \${
                         bookStatus === "CLOSED"
                           ? "bg-emerald-100 text-emerald-800 border-emerald-300"
                           : bookStatus === "READY"
@@ -290,7 +292,7 @@ export default function OwnerDailyClosingDashboard({
                           : bookStatus === "BLOCKED"
                           ? "bg-red-100 text-red-800 border-red-300"
                           : "bg-amber-100 text-amber-800 border-amber-300"
-                      }`}
+                      }\`}
                     >
                       {bookStatus === "CLOSED" ? "SUDAH DITUTUP" : bookStatus === "READY" ? "SIAP TUTUP" : bookStatus === "BLOCKED" ? "TERKENDALA" : bookStatus}
                     </span>
@@ -305,7 +307,7 @@ export default function OwnerDailyClosingDashboard({
                     <div className="flex justify-between">
                       <span className="text-gray-400">Settlement Status:</span>
                       {expected > 0 ? (
-                        <span className={`font-bold ${expected > actual ? "text-amber-600" : "text-emerald-600"}`}>
+                        <span className={\`font-bold \${expected > actual ? "text-amber-600" : "text-emerald-600"}\`}>
                           {expected > actual ? "Belum Lengkap / Kurang" : "LUNAS"}
                         </span>
                       ) : (
@@ -315,8 +317,8 @@ export default function OwnerDailyClosingDashboard({
 
                     <div className="flex justify-between">
                       <span className="text-gray-400">Financial Audit Gate:</span>
-                      <span className={`font-bold ${financialCritical > 0 ? "text-red-600" : "text-emerald-600"}`}>
-                        {financialCritical > 0 ? `${financialCritical} Isu Kritis (Blocked)` : "Bersih (0 Isu Kritis)"}
+                      <span className={\`font-bold \${financialCritical > 0 ? "text-red-600" : "text-emerald-600"}\`}>
+                        {financialCritical > 0 ? \`\${financialCritical} Isu Kritis (Blocked)\` : "Bersih (0 Isu Kritis)"}
                       </span>
                     </div>
 
@@ -535,3 +537,6 @@ export default function OwnerDailyClosingDashboard({
     </div>
   );
 }
+`
+
+fs.writeFileSync('src/components/owner/OwnerDailyClosingDashboard.tsx', content);
