@@ -5438,10 +5438,14 @@ app.post("/api/approveSetoran", async (req, res) => {
     return res.status(500).json({ status: "error", message: "Terjadi kesalahan sistem saat menyetujui setoran: " + error.message });
   }
 });
-
 app.post("/api/rejectSetoran", async (req, res) => {
   const db = readDb();
   const { setoran_id, admin_id, catatan } = req.body;
+
+  const user = (db.Users || []).find((u: any) => u.user_id === admin_id || u.username === admin_id);
+  if (!user || user.role !== "OWNER") {
+    return res.json({ status: "error", message: "Akses Ditolak: Hanya OWNER yang dapat menolak setoran." });
+  }
   
   if (!catatan) return res.json({ status: "error", message: "Catatan penolakan diperlukan" });
   
