@@ -248,10 +248,12 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
               <thead className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">
                 <tr>
                   <th className="p-3">Resi</th>
+                  <th className="p-3">Tanggal</th>
+                  <th className="p-3">Admin</th>
                   <th className="p-3">Layanan</th>
                   <th className="p-3">Metode Bayar</th>
                   <th className="p-3 text-right">Dibayar Customer</th>
-                  <th className="p-3 text-right">Setoran Owner</th>
+                  <th className="p-3 text-right">Setoran Fisik</th>
                   <th className="p-3 text-right">Kas Outlet</th>
                   <th className="p-3">Status</th>
                 </tr>
