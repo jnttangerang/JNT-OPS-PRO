@@ -261,17 +261,19 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                   transactions.map((tx: any) => (
                     <tr key={tx.resi_id} className="hover:bg-gray-50/50">
                       <td className="p-3 font-mono font-bold">{tx.resi_id}</td>
+                      <td className="p-3">{tx.tanggal || tx.waktu_transaksi || tx.waktu_dibuat}</td>
+                      <td className="p-3">{tx.admin_id || "SYSTEM"}</td>
                       <td className="p-3">{tx.tipe_layanan || (tx.ekspedisi === "CARGO" ? "Cargo" : "Express")}</td>
                       <td className="p-3 font-semibold">{tx.metode_bayar || tx.metode_pembayaran_ongkir || "CASH"}</td>
                       <td className="p-3 text-right font-mono text-gray-800">Rp {Number(tx.total_dibayar_customer).toLocaleString("id-ID")}</td>
-                      <td className="p-3 text-right font-mono font-semibold text-blue-700">Rp {Number(tx.setoran_ke_owner).toLocaleString("id-ID")}</td>
+                      <td className="p-3 text-right font-mono font-semibold text-blue-700">Rp {Number(tx.cash_payment || tx.setoran_ke_owner).toLocaleString("id-ID")}</td>
                       <td className="p-3 text-right font-mono font-semibold text-emerald-700">Rp {Number(tx.kas_operasional).toLocaleString("id-ID")}</td>
                       <td className="p-3"><span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold">{tx.status_resi}</span></td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-gray-400 italic">Tidak ada transaksi</td>
+                    <td colSpan={9} className="p-8 text-center text-gray-400 italic">Tidak ada transaksi</td>
                   </tr>
                 )}
               </tbody>

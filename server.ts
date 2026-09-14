@@ -5385,18 +5385,23 @@ app.post("/api/approveSetoran", (req, res) => {
   const db = readDb();
   const { setoran_id, admin_id, catatan } = req.body;
   
-  const s = (db.Master_Setoran || []).find(s => s.setoran_id === setoran_id);
+  const user = (db.Users || []).find((u: any) => u.user_id === admin_id || u.username === admin_id);
+  if (!user || user.role !== "OWNER") {
+    return res.json({ status: "error", message: "Akses Ditolak: Hanya OWNER yang dapat menyetujui setoran." });
+  }
+
+  const s = (db.Master_Setoran || []).find((s: any) => s.setoran_id === setoran_id);
   if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
   if (s.status === "DISETUJUI") return res.json({ status: "error", message: "Sudah disetujui sebelumnya." });
   
   s.status = "DISETUJUI";
   s.approved_at = new Date().toISOString();
-  s.approved_by = admin_id;
+  s.approved_by = user.nama_lengkap || user.username || admin_id;
   s.catatan_owner = catatan || "";
   
   logAuditEvent(db, {
-    actor_id: admin_id || "OWNER",
-    actor_name: admin_id || "Owner",
+    actor_id: user.user_id || admin_id,
+    actor_name: user.nama_lengkap || user.username || "Owner",
     actor_role: "OWNER",
     outlet_id: s.outlet_id,
     entity_type: "SETORAN",
