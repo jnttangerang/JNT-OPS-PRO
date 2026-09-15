@@ -2715,7 +2715,7 @@ var DB_SCHEMA = {
   MapsReviews: ["id", "outlet_id", "nama_outlet", "reviewer", "stars", "text", "timestamp", "status_analisis", "analisis"],
   Master_Setoran: ["setoran_id", "tanggal", "outlet_id", "outlet_name", "admin_pembuat", "jumlah_resi",
     "total_setoran_owner", "total_kas_outlet", "status", "created_at", "approved_at", "approved_by",
-    "catatan_owner", "closing_status", "closing_at", "closing_by"],
+    "catatan_owner", "closing_status", "closing_at", "closing_by", "expected_cash", "actual_cash", "variance", "variance_status", "wajib_setor_owner", "catatan_admin"],
   MASTER_KATEGORI_KEUANGAN: ["id", "jenis", "nama", "aktif", "urutan", "created_at", "updated_at", "created_by"],
   KEUANGAN_OUTLET: ["id", "tanggal", "outlet_id", "jenis", "kategori_id", "nominal", "deskripsi", "bukti_url",
     "dibuat_oleh", "created_at", "aktif", "resi_id", "lokasi_uang"],

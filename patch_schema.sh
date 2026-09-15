@@ -1,0 +1,1 @@
+sed -i 's/"catatan_owner", "closing_status", "closing_at", "closing_by"/"catatan_owner", "closing_status", "closing_at", "closing_by", "expected_cash", "actual_cash", "variance", "variance_status", "wajib_setor_owner", "catatan_admin"/g' Code.gs
