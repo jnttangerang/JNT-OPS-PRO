@@ -240,7 +240,7 @@ const getStatusBadge = (status: string) => {
             <p className="font-mono text-lg font-black text-emerald-800">Rp {(auditData.summary.total_kas_operasional/1000).toLocaleString("id-ID")}k</p>
           </div>
           <div className="bg-red-50 p-4 rounded-xl border border-red-100 shadow-sm flex flex-col justify-center">
-            <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider mb-1">Total Selisih</p>
+            <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider mb-1">Total Selisih Resi</p>
             <p className="font-mono text-lg font-black text-red-800">Rp {(auditData.summary.total_selisih).toLocaleString("id-ID")}</p>
           </div>
         </div>
@@ -572,7 +572,7 @@ const getStatusBadge = (status: string) => {
                    </span>
                 </div>
                 {selectedTx.selisih < 0 && (
-                   <p className="text-[10px] text-red-600 mt-2 font-medium">⚠️ Transaksi ini menyebabkan kerugian pada setoran owner sebesar Rp {Math.abs(selectedTx.selisih).toLocaleString("id-ID")} karena uang dari customer kurang dari YOYI.</p>
+                   <p className="text-[10px] text-red-600 mt-2 font-medium">⚠️ Resi ini mengalami margin negatif sebesar Rp {Math.abs(selectedTx.selisih).toLocaleString("id-ID")} karena total tagihan customer lebih kecil dari biaya YOYI/JTC.</p>
                 )}
              </div>
           </div>

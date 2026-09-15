@@ -253,8 +253,8 @@ export function validateDailyClosing(
 
   // Aggregate setoran actual per admin
   for (const s of activeSetoran) {
-    const sAdmin = s.admin_id || s.user_id || s.created_by || "UNKNOWN";
-    const nominal = Number(s.nominal || s.jumlah_setor || s.total_setor || 0);
+    const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "UNKNOWN";
+    const nominal = Number(s.actual_cash ?? s.nominal ?? s.jumlah_setor ?? s.total_setor ?? s.total_setoran_owner ?? 0);
     if (!adminMap[sAdmin]) {
       adminMap[sAdmin] = {
         admin_id: sAdmin,
@@ -319,7 +319,7 @@ export function validateDailyClosing(
   const setoran_required = dailyFin.total_cash_payment;
   let setoran_actual = 0;
   for (const s of activeSetoran) {
-    setoran_actual += Number(s.nominal || s.jumlah_setor || s.total_setor || 0);
+    setoran_actual += Number(s.actual_cash ?? s.nominal ?? s.jumlah_setor ?? s.total_setor ?? s.total_setoran_owner ?? 0);
   }
 
   // Contract: variance = actual_cash - expected_cash
@@ -361,9 +361,9 @@ export function validateDailyClosing(
 
   if (setoran_required > 0) {
     if (setoran_status === "MISSING") {
-      blocking_reasons.push("Setoran Fisik Tunai belum dibuat (wajib setor tunai > 0).");
+      blocking_reasons.push("Setoran Owner / Fisik Tunai belum dibuat (wajib setor tunai > 0).");
     } else if (setoran_status === "UNAPPROVED") {
-      blocking_reasons.push("Setoran Fisik Tunai belum disetujui (status masih PENDING).");
+      blocking_reasons.push("Setoran Owner / Fisik Tunai belum disetujui (status masih PENDING).");
     } else if (setoran_status === "MISMATCH") {
       const diffDesc = setoran_variance < 0 
         ? `Kurang Setor Rp ${Math.abs(setoran_variance).toLocaleString('id-ID')}` 
