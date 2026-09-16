@@ -253,8 +253,11 @@ export function validateDailyClosing(
   }
 
   // Aggregate setoran actual per admin
+  const transactionAdmins = Object.keys(adminMap).filter((id) => id !== "UNKNOWN");
+  const fallbackAdmin = transactionAdmins.length === 1 ? transactionAdmins[0] : "UNKNOWN";
+
   for (const s of activeSetoran) {
-    const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "UNKNOWN";
+    const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || fallbackAdmin;
     const nominal = Number(s.actual_cash ?? s.nominal ?? s.jumlah_setor ?? s.total_setor ?? s.total_setoran_owner ?? 0);
     if (!adminMap[sAdmin]) {
       adminMap[sAdmin] = {
@@ -281,7 +284,7 @@ export function validateDailyClosing(
   const adminBreakdown: AdminClosingBreakdown[] = Object.values(adminMap).map((adm) => {
     const variance = adm.setoran_actual - adm.expected_cash;
     const adminSetorans = activeSetoran.filter((s: any) => {
-      const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "UNKNOWN";
+      const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || fallbackAdmin;
       return sAdmin === adm.admin_id;
     });
 

@@ -102,7 +102,7 @@ export function reconcileTransaction(db: any, transaksiId: string): Reconciliati
       exceptions.push({
         id: "EXC-" + Math.floor(Math.random() * 100000),
         type: "SHIPMENT_WITHOUT_TRANSACTION",
-        severity: "WARNING",
+        severity: "ERROR",
         entity_type: "SHIPMENT",
         entity_id: matchingShips[0].id,
         transaksi_id: transaksiId,
@@ -163,7 +163,7 @@ export function reconcileTransaction(db: any, transaksiId: string): Reconciliati
         exceptions.push({
           id: "EXC-" + Math.floor(Math.random() * 100000),
           type: "MISSING_SENDER",
-          severity: "WARNING",
+          severity: "ERROR",
           entity_type: "CUSTOMER",
           entity_id: tx.pengirim_id,
           transaksi_id: tx.id,
@@ -184,7 +184,7 @@ export function reconcileTransaction(db: any, transaksiId: string): Reconciliati
         exceptions.push({
           id: "EXC-" + Math.floor(Math.random() * 100000),
           type: "MISSING_RECEIVER",
-          severity: "WARNING",
+          severity: "ERROR",
           entity_type: "CUSTOMER",
           entity_id: tx.penerima_id,
           transaksi_id: tx.id,
@@ -223,7 +223,7 @@ export function reconcileTransaction(db: any, transaksiId: string): Reconciliati
         exceptions.push({
           id: "EXC-" + Math.floor(Math.random() * 100000),
           type: "SNAPSHOT_MISMATCH",
-          severity: "WARNING",
+          severity: "ERROR",
           entity_type: "TRANSACTION",
           entity_id: tx.id,
           transaksi_id: tx.id,

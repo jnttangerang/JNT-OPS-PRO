@@ -229,6 +229,7 @@ function runPhase40ProductionStabilizationSuite() {
     db.MASTER_TRANSAKSI.push(crossTx as any);
     assert.strictEqual(crossTx.outlet_id, "OUTLET-BETA");
     assert.strictEqual(crossTx.admin_id, "ADMIN-1");
+    db.MASTER_TRANSAKSI.pop();
   });
 
   // --- SECTION 3: FINANCIAL ENGINE SSOT & SETTLEMENT INTEGRITY (16-20) ---
@@ -320,6 +321,7 @@ function runPhase40ProductionStabilizationSuite() {
 
   test("25. ADMIN cross-outlet daily closing allowed for available active outlet BETA", () => {
     const closeResB = executeDailyClosing(db, { outlet_id: "OUTLET-BETA", tanggal: "2026-08-10", actor: adminA });
+    console.log("TEST 25 CLOSERESB:", JSON.stringify(closeResB, null, 2));
     assert.strictEqual(closeResB.status, "success");
   });
 
@@ -331,7 +333,9 @@ function runPhase40ProductionStabilizationSuite() {
   });
 
   test("27. OWNER can perform financial certification", () => {
+    console.log("EXCEPTIONS IN TEST 27:", JSON.stringify(db.ReconciliationExceptions, null, 2));
     const certRes = certifyFinancialClose(db, { outlet_id: "OUTLET-ALPHA", tanggal: "2026-08-10", actor: owner });
+    console.log("TEST 27 CERTRES:", JSON.stringify(certRes, null, 2));
     assert.strictEqual(certRes.status, "success");
     assert.strictEqual(certRes.data?.status, "CERTIFIED");
   });

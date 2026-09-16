@@ -43,7 +43,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
     return "";
   };
 
-  const loadData = async () => {
+  const loadData = async (isRetry = false) => {
     try {
       const res = await callBackend("getAdminDashboardData", {
         user_id: session.user_id,
@@ -55,7 +55,7 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
       if (res.status === "success") {
         setData(res.data);
       } else {
-        setData({
+        setData((prev: any) => prev || {
           summary: { totalTransaksi: 0, totalResiExpress: 0, totalResiCargo: 0, grandTotalCustomer: 0, totalWajibSetorOwner: 0, totalKasOutlet: 0 },
           targetHarian: { current: 0, target: 100 },
           byAdmin: [],
@@ -69,19 +69,23 @@ export default function AdminDashboardPage({ session, activeOutletId, outlets, o
         });
       }
     } catch (e) {
-      console.error("Dashboard error:", e);
-      setData({
-          summary: { totalTransaksi: 0, totalResiExpress: 0, totalResiCargo: 0, grandTotalCustomer: 0, totalWajibSetorOwner: 0, totalKasOutlet: 0 },
-          targetHarian: { current: 0, target: 100 },
-          byAdmin: [],
-          byEkspedisi: { Express: { resi: 0, setoran: 0 }, Cargo: { resi: 0, setoran: 0 } },
-          statusSetoranList: [],
-          aktivitasLogs: [],
-          pembatalanLogs: [],
-          grafik: [],
-          alerts: [],
-          recentTransactions: []
-        });
+      if (!isRetry && !data) {
+        setTimeout(() => loadData(true), 1500);
+        return;
+      }
+      console.warn("Dashboard load warning:", e);
+      setData((prev: any) => prev || {
+        summary: { totalTransaksi: 0, totalResiExpress: 0, totalResiCargo: 0, grandTotalCustomer: 0, totalWajibSetorOwner: 0, totalKasOutlet: 0 },
+        targetHarian: { current: 0, target: 100 },
+        byAdmin: [],
+        byEkspedisi: { Express: { resi: 0, setoran: 0 }, Cargo: { resi: 0, setoran: 0 } },
+        statusSetoranList: [],
+        aktivitasLogs: [],
+        pembatalanLogs: [],
+        grafik: [],
+        alerts: [],
+        recentTransactions: []
+      });
     }
   };
 

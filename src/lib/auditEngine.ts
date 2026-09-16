@@ -107,24 +107,42 @@ export function auditTransaction(db: any, txIdOrObj: any): AuditResult {
   const pengirimId = tx.pengirim_id || "";
   const penerimaId = tx.penerima_id || "";
 
+  const senderName = (tx.snapshot_nama_pengirim || tx.nama_pengirim || tx.pengirim || "").toString().trim();
+  const recipientName = (tx.snapshot_nama_penerima || tx.nama_penerima || tx.penerima || "").toString().trim();
+  const senderPhone = (tx.snapshot_hp_pengirim || tx.hp_pengirim || tx.telepon_pengirim || "").toString().trim();
+  const recipientPhone = (tx.snapshot_hp_penerima || tx.hp_penerima || tx.telepon_penerima || "").toString().trim();
+
   const pengirimExists = pengirimId
     ? customers.some((c: any) => c.id === pengirimId || c.pelanggan_id === pengirimId)
-    : false;
+    : (!!senderName || !!senderPhone);
+
   const penerimaExists = penerimaId
     ? customers.some((c: any) => c.id === penerimaId || c.pelanggan_id === penerimaId)
-    : false;
+    : (!!recipientName || !!recipientPhone);
 
-  const hasSenderSnap = !!(tx.snapshot_nama_pengirim || tx.nama_pengirim);
-  const hasRecipientSnap = !!(tx.snapshot_nama_penerima || tx.nama_penerima);
+  const hasSenderSnap = !!senderName;
+  const hasRecipientSnap = !!recipientName;
 
-  if (!pengirimId || !pengirimExists) {
+  if (pengirimId && !customers.some((c: any) => c.id === pengirimId || c.pelanggan_id === pengirimId)) {
     errors.push(`Pengirim ID ('${pengirimId}') tidak valid atau tidak terdaftar di Master Pelanggan`);
     recommendations.push("Lengkapi Pengirim & Daftarkan di Master Pelanggan");
+  } else if (!pengirimId && !senderName && !senderPhone) {
+    errors.push("Data identitas pengirim (ID/Nama/Telepon) tidak ditemukan");
+    recommendations.push("Lengkapi Data Pengirim");
+  } else if (!pengirimId) {
+    warnings.push("Pengirim belum memiliki ID terdaftar di Master Pelanggan");
+    recommendations.push("Daftarkan Pengirim di Master Pelanggan");
   }
 
-  if (!penerimaId || !penerimaExists) {
+  if (penerimaId && !customers.some((c: any) => c.id === penerimaId || c.pelanggan_id === penerimaId)) {
     errors.push(`Penerima ID ('${penerimaId}') tidak valid atau tidak terdaftar di Master Pelanggan`);
     recommendations.push("Lengkapi Penerima & Daftarkan di Master Pelanggan");
+  } else if (!penerimaId && !recipientName && !recipientPhone) {
+    errors.push("Data identitas penerima (ID/Nama/Telepon) tidak ditemukan");
+    recommendations.push("Lengkapi Data Penerima");
+  } else if (!penerimaId) {
+    warnings.push("Penerima belum memiliki ID terdaftar di Master Pelanggan");
+    recommendations.push("Daftarkan Penerima di Master Pelanggan");
   }
 
   if (!hasSenderSnap || !hasRecipientSnap) {
@@ -260,10 +278,13 @@ export function auditTransaction(db: any, txIdOrObj: any): AuditResult {
   const allIssues = [...errors, ...warnings];
 
   // Check CRITICAL conditions:
-  // - Customer completely missing or not found
+  // - Customer completely missing or invalid non-existent ID provided
   // - Duplicate resi
   const isCritical =
-    (!pengirimId || !pengirimExists || !penerimaId || !penerimaExists) ||
+    ((pengirimId && !customers.some((c: any) => c.id === pengirimId || c.pelanggan_id === pengirimId)) ||
+     (penerimaId && !customers.some((c: any) => c.id === penerimaId || c.pelanggan_id === penerimaId)) ||
+     (!pengirimId && !senderName && !senderPhone) ||
+     (!penerimaId && !recipientName && !recipientPhone)) ||
     errors.some((e) => e.includes("DUPLICATE DETECTED"));
 
   if (isCritical) {

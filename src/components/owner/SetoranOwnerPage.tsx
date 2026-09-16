@@ -179,6 +179,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
     const expected = Number(summary.expected_cash ?? summary.total_wajib_setor_owner ?? header.expected_cash ?? header.wajib_setor_owner ?? 0);
     const actual = Number(summary.actual_cash ?? summary.total_setoran_owner ?? header.actual_cash ?? header.total_setoran_owner ?? expected);
     const variance = actual - expected;
+    const outstanding = Math.max(0, expected - actual);
 
     return (
       <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -194,6 +195,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             <div>
               <h2 className="text-lg font-bold text-gray-800">Detail Setoran {header.tanggal}</h2>
               <p className="text-sm text-gray-500 font-mono mt-1">{header.setoran_id} • {summary.outlet_name || header.outlet_name}</p>
+              <p className="text-xs text-slate-600 font-semibold mt-1">Dibuat Oleh: <span className="font-bold text-slate-900">{header.admin_pembuat_name || header.admin_pembuat}</span></p>
               
               <div className="mt-3 flex items-center gap-3">
                 <span className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg border border-gray-200">
@@ -233,7 +235,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
               <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Total Resi</p>
               <p className="font-mono text-lg font-black text-gray-800">{summary.jumlah_resi ?? transactions.length}</p>
@@ -246,8 +248,12 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
               <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider mb-1">Uang Disetor</p>
               <p className="font-mono text-lg font-black text-blue-800">Rp {actual.toLocaleString("id-ID")}</p>
             </div>
+            <div className="bg-amber-50 p-4 rounded-xl border border-amber-100">
+              <p className="text-[10px] text-amber-600 font-bold uppercase tracking-wider mb-1">Outstanding</p>
+              <p className="font-mono text-lg font-black text-amber-800">Rp {outstanding.toLocaleString("id-ID")}</p>
+            </div>
             <div className={`p-4 rounded-xl border ${Math.abs(variance) < 0.01 ? "bg-emerald-50 border-emerald-100" : variance < 0 ? "bg-red-50 border-red-100" : "bg-blue-50 border-blue-100"}`}>
-              <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-600">Selisih Rekonsiliasi</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider mb-1 text-gray-600">Selisih</p>
               <p className={`font-mono text-lg font-black ${Math.abs(variance) < 0.01 ? "text-emerald-700" : variance < 0 ? "text-red-700" : "text-blue-700"}`}>
                 {variance === 0 ? "Rp 0 (MATCH)" : (variance < 0 ? `-Rp ${Math.abs(variance).toLocaleString("id-ID")}` : `+Rp ${variance.toLocaleString("id-ID")}`)}
               </p>

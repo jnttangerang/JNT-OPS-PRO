@@ -3880,7 +3880,8 @@ app.post("/api/getAdminDashboardData", async (req, res) => {
   try {
     const { user_id, role, filterOutlet, dateStart, dateEnd } = req.body;
 
-    if (role !== "ADMIN" && role !== "OWNER") {
+    const userRole = (role || "").toString().toUpperCase();
+    if (userRole !== "ADMIN" && userRole !== "OWNER") {
       return res.status(403).json({ status: "error", message: "Akses ditolak." });
     }
 
@@ -5312,8 +5313,18 @@ app.post("/api/getSetoranDetail", async (req, res) => {
   const variance = actual_cash - expected_cash;
   const variance_status = Math.abs(variance) < 0.01 ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
 
+  const adminIdRaw = header.admin_pembuat || header.admin_id || header.user_id || "UNKNOWN";
+  const userMap: Record<string, string> = {};
+  (db.Users || []).forEach((u: any) => {
+    if (u.user_id) userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
+    if (u.username) userMap[u.username] = u.nama_lengkap || u.username;
+  });
+  const mappedAdminName = userMap[adminIdRaw] || adminIdRaw;
+
   const enrichedHeader = {
     ...header,
+    admin_pembuat: adminIdRaw,
+    admin_pembuat_name: mappedAdminName,
     expected_cash,
     actual_cash,
     pending_cash,
@@ -9119,7 +9130,7 @@ app.post("/api/rejectPromoReviewValidation", (req, res) => {
 });
 
 // === API 404 & ERROR HANDLING (Prevents falling through to SPA HTML) ===
-app.all("/api/*", (req, res) => {
+app.all(["/api", "/api/*"], (req, res) => {
   return res.status(404).json({
     status: "error",
     message: `Endpoint API '${req.originalUrl}' tidak ditemukan.`

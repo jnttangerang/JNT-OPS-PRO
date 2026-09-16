@@ -1,3 +1,6 @@
+process.env.VITE_APPS_SCRIPT_URL = "";
+process.env.APPS_SCRIPT_URL = "";
+
 import request from "supertest";
 import app from "./server";
 import fs from "fs";
@@ -94,6 +97,7 @@ function resetDb() {
     DailyClosing: []
   };
   fs.writeFileSync(dbPath, JSON.stringify(initialDb, null, 2), "utf-8");
+  (global as any)._lastClosingSync = Date.now() + 100000000;
 }
 
 async function runPhase31E2ESuite() {

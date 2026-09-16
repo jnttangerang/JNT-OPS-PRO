@@ -143,10 +143,12 @@ export function syncReconciliationExceptions(db: any, reconciliationResult: Reco
       db.ReconciliationExceptions.push(newRecord);
       syncedList.push(newRecord);
     } else {
-      // Re-run behavior: preserve human resolution (RESOLVED / ACCEPTED) if present
-      if (existing.status !== "RESOLVED" && existing.status !== "ACCEPTED") {
-        existing.detected_at = new Date().toISOString();
+      // Re-run behavior: Auto-reopen persistent CRITICAL discrepancy or previously tolerated ACCEPTED status upon re-run
+      if (existing.status === "ACCEPTED" || (existing.status === "RESOLVED" && existing.severity === "CRITICAL")) {
+        existing.status = "REOPENED";
+        existing.resolution_reason = (existing.resolution_reason || "") + " | Auto-reopened on reconciliation rerun.";
       }
+      existing.detected_at = new Date().toISOString();
       syncedList.push(existing);
     }
   }
@@ -162,9 +164,10 @@ export function checkReviewPermission(role?: string, action?: string): boolean {
   const isOwnerOrSuper = upperRole === "OWNER" || upperRole === "SUPER_ADMIN" || upperRole === "DEVELOPER";
   
   if (isOwnerOrSuper) return true;
-  // Resolving exceptions (accepting/tolerating or overriding) and reopening closed periods are strictly Owner authority
-  if (action === "resolve" || action === "reopen") return false;
-  if (upperRole === "ADMIN" || upperRole === "OPERATOR" || upperRole === "STAFF") return true;
+  if (action === "reopen") return false; // strictly Owner authority
+  if (action === "resolve" || action === "review") {
+    return upperRole === "ADMIN" || upperRole === "OPERATOR";
+  }
   return false;
 }
 
@@ -173,10 +176,13 @@ export function checkReviewPermission(role?: string, action?: string): boolean {
  */
 export function startExceptionReview(
   db: any,
-  exceptionId: string,
-  actor: ActorInfo
+  exceptionIdOrParams: string | { exception_id: string; actor: ActorInfo },
+  actorParam?: ActorInfo
 ): { status: "success" | "error"; message?: string; data?: ExceptionRecord } {
   if (!db.ReconciliationExceptions) db.ReconciliationExceptions = [];
+
+  const exceptionId = typeof exceptionIdOrParams === "object" ? exceptionIdOrParams.exception_id : exceptionIdOrParams;
+  const actor = typeof exceptionIdOrParams === "object" ? exceptionIdOrParams.actor : (actorParam || { actor_id: "UNKNOWN" });
 
   const exc: ExceptionRecord | undefined = db.ReconciliationExceptions.find(
     (item: ExceptionRecord) => item.exception_id === exceptionId
@@ -186,7 +192,7 @@ export function startExceptionReview(
     return { status: "error", message: `Exception ID '${exceptionId}' tidak ditemukan.` };
   }
 
-  if (!checkReviewPermission(actor.actor_role, "review")) {
+  if (!checkReviewPermission(actor?.actor_role, "review")) {
     return { status: "error", message: "Akses ditolak. Perlu wewenang Admin atau Owner." };
   }
 

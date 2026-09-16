@@ -20,7 +20,7 @@ declare global {
 export function useAppsScript() {
   const [loading, setLoading] = useState(false);
 
-  const callLocalApi = async <T = any>(action: string, params: any = {}, retries = 2): Promise<T> => {
+  const callLocalApi = async <T = any>(action: string, params: any = {}, retries = 4): Promise<T> => {
     let url = `/api/${action}`;
     let method = "POST";
     let body: any = params;
@@ -31,7 +31,8 @@ export function useAppsScript() {
       body = undefined;
     }
 
-    for (let attempt = 0; attempt <= retries; attempt++) {
+    const maxRetries = Math.max(retries, 4);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const response = await fetch(url, {
           method,
@@ -42,17 +43,23 @@ export function useAppsScript() {
           body: body ? JSON.stringify(body) : undefined,
         });
 
+        const contentType = response.headers.get("content-type") || "";
         const text = await response.text();
         let json: any;
         try {
+          if (!contentType.includes("application/json") && (text.trim().startsWith("<") || text.trim() === "")) {
+            throw new Error("RELOAD_OR_HTML_RESPONSE");
+          }
           json = JSON.parse(text);
         } catch {
-          // If response is HTML/empty during server reload or proxy glitch, retry briefly
-          if (attempt < retries) {
-            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          // If response is HTML/empty during server reload or proxy glitch, retry with progressive backoff
+          if (attempt < maxRetries) {
+            const delay = Math.min(400 * Math.pow(1.5, attempt), 2000);
+            await new Promise((r) => setTimeout(r, delay));
             continue;
           }
           setLoading(false);
+          console.error(`[useAppsScript] Non-JSON response for ${url} (HTTP ${response.status}):`, text.slice(0, 200));
           throw new Error(`Respons dari server lokal bukan JSON yang valid (HTTP ${response.status}).`);
         }
         setLoading(false);
@@ -63,8 +70,9 @@ export function useAppsScript() {
 
         return json as T;
       } catch (err: any) {
-        if (attempt < retries && !err.message?.includes("Akses ditolak") && !err.message?.includes("HTTP 4")) {
-          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+        if (attempt < maxRetries && !err.message?.includes("Akses ditolak") && !err.message?.includes("HTTP 4")) {
+          const delay = Math.min(400 * Math.pow(1.5, attempt), 2000);
+          await new Promise((r) => setTimeout(r, delay));
           continue;
         }
         setLoading(false);

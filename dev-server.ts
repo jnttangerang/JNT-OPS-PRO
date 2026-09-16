@@ -7,6 +7,14 @@ async function startDevServer() {
     appType: "spa",
   });
 
+  // Ensure unhandled API requests never fall through to Vite SPA index.html
+  app.use("/api", (req, res) => {
+    res.status(404).json({
+      status: "error",
+      message: `API endpoint '${req.originalUrl}' tidak ditemukan.`
+    });
+  });
+
   app.use(vite.middlewares);
 
   const PORT = 3000;
