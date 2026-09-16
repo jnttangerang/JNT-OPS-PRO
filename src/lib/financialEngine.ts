@@ -152,7 +152,13 @@ export function calculateFinancialSummary(tx: any): any {
   // Pure inputs
   let ongkir_customer = safeNum(tx.ongkir_customer ?? tx.ongkir_dasar ?? tx.ongkir ?? tx.biaya_kirim ?? tx.biaya_ongkir ?? tx.ongkir_yoyi);
   const asuransi = safeNum(tx.biaya_asuransi ?? tx.asuransi);
-  let biaya_lain = safeNum(tx.biaya_lain !== undefined && tx.biaya_lain !== null && tx.biaya_lain !== "" ? tx.biaya_lain : tx.biaya_lain_yoyi);
+  let biaya_lain = safeNum(
+    tx.biaya_lain !== undefined && tx.biaya_lain !== null && tx.biaya_lain !== "" 
+      ? tx.biaya_lain 
+      : (tx.biaya_lain_lain !== undefined && tx.biaya_lain_lain !== null && tx.biaya_lain_lain !== "" 
+          ? tx.biaya_lain_lain 
+          : tx.biaya_lain_yoyi)
+  );
 
   if (isDoc && biaya_lain === 0) {
     const refWajibSetor = safeNum(tx.wajib_setor_owner ?? tx.setoran_ke_owner ?? tx.setoran_owner ?? 0);

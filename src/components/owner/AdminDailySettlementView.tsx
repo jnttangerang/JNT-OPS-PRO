@@ -46,6 +46,10 @@ export default function AdminDailySettlementView({
   const [targetOutletId, setTargetOutletId] = useState<string>("");
   const [targetOutletName, setTargetOutletName] = useState<string>("");
   const [nominalSetorInput, setNominalSetorInput] = useState<number | string>("");
+  const [metodeSetoran, setMetodeSetoran] = useState<string>("TUNAI");
+  const [buktiTransferUrl, setBuktiTransferUrl] = useState<string>("");
+  const [targetKasOutlet, setTargetKasOutlet] = useState<number>(0);
+  const [uploadingBukti, setUploadingBukti] = useState<boolean>(false);
   const [setoranNotes, setSetoranNotes] = useState<string>("");
   const [submittingSetoran, setSubmittingSetoran] = useState<boolean>(false);
 
@@ -88,7 +92,7 @@ export default function AdminDailySettlementView({
         const statusRes = await fetch(`/api/dailyClosing/status?outlet_id=${encodeURIComponent(selectedClosingOutlet)}&tanggal=${closingDate}`);
         if (statusRes.ok) {
           const statusJson = await statusRes.json();
-          setActiveOutletClosingStatus(statusJson);
+          setActiveOutletClosingStatus(statusJson.data || statusJson);
         }
       }
     } catch (err) {
@@ -115,11 +119,14 @@ export default function AdminDailySettlementView({
   const totalOutstanding = Math.max(0, totalWajibSetor - totalDisetor);
 
   // Modal Action: Open Setoran
-  const handleOpenSetoran = (outletId: string, outletName: string, expectedCash: number) => {
+  const handleOpenSetoran = (outletId: string, outletName: string, expectedCash: number, kasOutlet: number) => {
     setTargetOutletId(outletId);
     setTargetOutletName(outletName);
     setNominalSetorInput(expectedCash);
     setSetoranNotes("");
+    setMetodeSetoran("TUNAI");
+    setBuktiTransferUrl("");
+    setTargetKasOutlet(kasOutlet);
     setShowSetoranModal(true);
   };
 
@@ -131,6 +138,16 @@ export default function AdminDailySettlementView({
       return;
     }
 
+    if (metodeSetoran === "TRANSFER" && !buktiTransferUrl) {
+      toast.error("Bukti transfer wajib diunggah.");
+      return;
+    }
+
+    if (metodeSetoran === "KAS_OUTLET" && nominal > targetKasOutlet) {
+      toast.error(`Nominal Kas Outlet tidak boleh melebihi sisa kas operasional (Rp ${targetKasOutlet.toLocaleString("id-ID")}).`);
+      return;
+    }
+
     setSubmittingSetoran(true);
     try {
       const res = await callBackend("createSetoran", {
@@ -139,7 +156,9 @@ export default function AdminDailySettlementView({
         admin_id: currentUserId,
         nominal_setor: nominal,
         actual_cash: nominal,
-        catatan: setoranNotes.trim()
+        catatan: setoranNotes.trim(),
+        metode_setor: metodeSetoran,
+        bukti_url: buktiTransferUrl
       });
 
       if (res.status === "success") {
@@ -409,7 +428,7 @@ export default function AdminDailySettlementView({
                       </div>
                     ) : (
                       <button
-                        onClick={() => handleOpenSetoran(item.outlet_id, item.outlet_name, reqCash)}
+                        onClick={() => handleOpenSetoran(item.outlet_id, item.outlet_name, reqCash, brk.outlet_cash || 0)}
                         className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer transition-all active:scale-[0.98]"
                       >
                         <DollarSign className="w-4 h-4" /> BUAT SETORAN INI
@@ -619,6 +638,69 @@ export default function AdminDailySettlementView({
                   className="w-full border border-gray-200 rounded-xl p-3 text-sm font-black text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-gray-50"
                 />
               </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Bentuk / Metode Uang
+                </label>
+                <select
+                  value={metodeSetoran}
+                  onChange={(e) => setMetodeSetoran(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl p-3 text-sm font-black text-gray-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 bg-gray-50"
+                >
+                  <option value="TUNAI">Tunai Fisik</option>
+                  <option value="TRANSFER">Transfer Bank</option>
+                  <option value="KAS_OUTLET">Tahan Kas Operasional</option>
+                </select>
+              </div>
+
+              {metodeSetoran === "TRANSFER" && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 mb-1">
+                    Upload Bukti Transfer
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      
+                      setUploadingBukti(true);
+                      try {
+                        const reader = new FileReader();
+                        reader.readAsDataURL(file);
+                        reader.onload = async () => {
+                          const base64 = reader.result as string;
+                          const res = await fetch("/api/uploadFile", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              fileBase64: base64,
+                              fileName: `BUKTI_TF_${targetOutletId}_${closingDate}`,
+                              category: "SETORAN"
+                            })
+                          });
+                          const data = await res.json();
+                          if (res.ok && data.url) {
+                            setBuktiTransferUrl(data.url);
+                            toast.success("Bukti transfer berhasil diunggah.");
+                          } else {
+                            toast.error(data.message || "Gagal mengunggah bukti.");
+                          }
+                          setUploadingBukti(false);
+                        };
+                      } catch (err) {
+                        toast.error("Terjadi kesalahan upload.");
+                        setUploadingBukti(false);
+                      }
+                    }}
+                    className="w-full text-xs text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+                  />
+                  {uploadingBukti && <p className="text-[10px] text-emerald-600 font-medium mt-1"><Loader2 className="w-3 h-3 animate-spin inline mr-1" /> Mengunggah...</p>}
+                  {buktiTransferUrl && !uploadingBukti && <p className="text-[10px] text-emerald-600 font-medium mt-1">✔ Bukti terlampir</p>}
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">

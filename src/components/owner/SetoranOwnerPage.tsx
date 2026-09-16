@@ -184,6 +184,22 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             <div>
               <h2 className="text-lg font-bold text-gray-800">Detail Setoran {header.tanggal}</h2>
               <p className="text-sm text-gray-500 font-mono mt-1">{header.setoran_id} • {summary.outlet_name || header.outlet_name}</p>
+              
+              <div className="mt-3 flex items-center gap-3">
+                <span className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg border border-gray-200">
+                  Metode: {header.metode_setor || "TUNAI"}
+                </span>
+                {header.bukti_url && (
+                  <a 
+                    href={header.bukti_url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold rounded-lg transition-colors border border-blue-200"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Lihat Bukti
+                  </a>
+                )}
+              </div>
             </div>
             <div className="flex items-center gap-3">
               {getAgingBadge(header.tanggal, header.created_at, true)}

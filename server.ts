@@ -5168,14 +5168,24 @@ app.post("/api/getSetoranList", async (req, res) => {
     return true;
   });
 
-  // Enrich with expected_cash, actual_cash, variance, variance_status
+  // Enrich with expected_cash, actual_cash, variance, variance_status, and admin name
+  const userMap: Record<string, string> = {};
+  (db.Users || []).forEach((u: any) => {
+    userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
+  });
+
   list = list.map((s: any) => {
     const expected = Number(s.expected_cash ?? s.wajib_setor_owner ?? s.total_setoran_owner ?? 0);
     const actual = Number(s.actual_cash ?? s.nominal_setor ?? s.nominal ?? s.total_setoran_owner ?? 0);
     const variance = actual - expected;
     const variance_status = Math.abs(variance) < 0.01 ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
+    
+    const adminIdRaw = s.admin_pembuat || s.admin_id || s.user_id || "UNKNOWN";
+    const mappedAdminName = userMap[adminIdRaw] || adminIdRaw;
+
     return {
       ...s,
+      admin_pembuat: mappedAdminName,
       expected_cash: expected,
       actual_cash: actual,
       variance,
@@ -5215,9 +5225,13 @@ app.post("/api/getSetoranDetail", async (req, res) => {
   
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
-    let txDate = extractBusinessDate(tx);
-    const txAdmin = tx.admin_id || "SYSTEM";
-    if (txDate === hTanggal && tx.outlet_id === hOutletId && (!hAdmin || hAdmin === "SYSTEM" || txAdmin === hAdmin)) {
+    let txDate = extractBusinessDate(tx).trim();
+    const txAdmin = (tx.admin_id || tx.user_id || "").trim();
+    const hTanggalTrimmed = (header.tanggal || "").trim();
+    const hOutletIdTrimmed = (header.outlet_id || "").trim();
+    const hAdminTrimmed = (header.admin_pembuat || header.admin_id || "").trim();
+
+    if (txDate === hTanggalTrimmed && (tx.outlet_id || "").trim() === hOutletIdTrimmed && txAdmin === hAdminTrimmed) {
       const sum = calculateFinancialSummary(tx);
       totalCustomerPay += sum.customer_payment;
       totalOwnerDeposit += sum.owner_deposit;
@@ -5270,7 +5284,7 @@ app.post("/api/getSetoranDetail", async (req, res) => {
 
 app.post("/api/createSetoran", async (req, res) => {
   const db = readDb();
-  const { outlet_id, tanggal, admin_id, nominal_setor, actual_cash, catatan } = req.body;
+  const { outlet_id, tanggal, admin_id, nominal_setor, actual_cash, catatan, metode_setor, bukti_url } = req.body;
   const adminPembuat = admin_id || "SYSTEM";
   
   if (!outlet_id || !tanggal) {
@@ -5345,6 +5359,8 @@ app.post("/api/createSetoran", async (req, res) => {
     total_setoran_owner: submittedCash,
     total_kas_outlet: totalKasOutlet,
     catatan_admin: catatan || "",
+    metode_setor: metode_setor || "TUNAI",
+    bukti_url: bukti_url || "",
     status: "MENUNGGU_APPROVAL",
     created_at: new Date().toISOString(),
     approved_at: "",
