@@ -5174,9 +5174,41 @@ app.post("/api/getSetoranList", async (req, res) => {
     userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
   });
 
+  const realizations = db.Setoran_Realization || [];
+
   list = list.map((s: any) => {
     const expected = Number(s.expected_cash ?? s.wajib_setor_owner ?? s.total_setoran_owner ?? 0);
-    const actual = Number(s.actual_cash ?? s.nominal_setor ?? s.nominal ?? s.total_setoran_owner ?? 0);
+    
+    // Calculate actual cash from realizations if they exist
+    const setoranReals = realizations.filter((r: any) => r.setoran_id === s.setoran_id);
+    let actual = 0;
+    let pending = 0;
+    
+    if (setoranReals.length > 0) {
+      setoranReals.forEach((r: any) => {
+        if (r.status === "DISETUJUI") {
+          actual += Number(r.nominal || 0);
+        } else if (r.status === "MENUNGGU_APPROVAL") {
+          pending += Number(r.nominal || 0);
+        }
+      });
+      // Update header status dynamically if all are processed
+      if (s.status !== "DISETUJUI" && s.status !== "DITOLAK") {
+         if (actual > 0 && pending === 0 && actual >= expected) {
+            s.status = "DISETUJUI";
+         } else if (pending > 0) {
+            s.status = "MENUNGGU_APPROVAL";
+         }
+      }
+    } else {
+      // Legacy behavior
+      actual = Number(s.actual_cash ?? s.nominal_setor ?? s.nominal ?? s.total_setoran_owner ?? 0);
+      if (s.status === "MENUNGGU_APPROVAL") {
+         pending = actual;
+         actual = 0;
+      }
+    }
+
     const variance = actual - expected;
     const variance_status = Math.abs(variance) < 0.01 ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
     
@@ -5185,9 +5217,11 @@ app.post("/api/getSetoranList", async (req, res) => {
 
     return {
       ...s,
-      admin_pembuat: mappedAdminName,
+      admin_pembuat: adminIdRaw,
+      admin_pembuat_name: mappedAdminName,
       expected_cash: expected,
       actual_cash: actual,
+      pending_cash: pending,
       variance,
       variance_status,
       total_setoran_owner: actual,
@@ -5226,12 +5260,13 @@ app.post("/api/getSetoranDetail", async (req, res) => {
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
     let txDate = extractBusinessDate(tx).trim();
-    const txAdmin = (tx.admin_id || tx.user_id || "").trim();
+    const txAdmin = (tx.admin_pembuat || tx.admin_id || tx.user_id || tx.created_by || "").trim();
+    const txOutlet = (tx.outlet_id || tx.outlet_id_input || tx.outlet || "OUT-001").trim();
     const hTanggalTrimmed = (header.tanggal || "").trim();
     const hOutletIdTrimmed = (header.outlet_id || "").trim();
     const hAdminTrimmed = (header.admin_pembuat || header.admin_id || "").trim();
 
-    if (txDate === hTanggalTrimmed && (tx.outlet_id || "").trim() === hOutletIdTrimmed && txAdmin === hAdminTrimmed) {
+    if (txDate === hTanggalTrimmed && txOutlet === hOutletIdTrimmed && txAdmin === hAdminTrimmed) {
       const sum = calculateFinancialSummary(tx);
       totalCustomerPay += sum.customer_payment;
       totalOwnerDeposit += sum.owner_deposit;
@@ -5251,8 +5286,29 @@ app.post("/api/getSetoranDetail", async (req, res) => {
     }
   });
 
-  const expected_cash = Number(header.expected_cash ?? header.wajib_setor_owner ?? totalExpectedCash);
-  const actual_cash = Number(header.actual_cash ?? header.nominal_setor ?? header.nominal ?? header.total_setoran_owner ?? expected_cash);
+  const setoranReals = (db.Setoran_Realization || []).filter((r: any) => r.setoran_id === header.setoran_id);
+  
+  let expected_cash = Number(header.expected_cash ?? header.wajib_setor_owner ?? totalExpectedCash);
+  let actual_cash = 0;
+  let pending_cash = 0;
+
+  if (setoranReals.length > 0) {
+    setoranReals.forEach((r: any) => {
+      if (r.status === "DISETUJUI") {
+        actual_cash += Number(r.nominal || 0);
+      } else if (r.status === "MENUNGGU_APPROVAL") {
+        pending_cash += Number(r.nominal || 0);
+      }
+    });
+  } else {
+    // Legacy behavior
+    actual_cash = Number(header.actual_cash ?? header.nominal_setor ?? header.nominal ?? header.total_setoran_owner ?? expected_cash);
+    if (header.status === "MENUNGGU_APPROVAL") {
+      pending_cash = actual_cash;
+      actual_cash = 0;
+    }
+  }
+
   const variance = actual_cash - expected_cash;
   const variance_status = Math.abs(variance) < 0.01 ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
 
@@ -5260,6 +5316,7 @@ app.post("/api/getSetoranDetail", async (req, res) => {
     ...header,
     expected_cash,
     actual_cash,
+    pending_cash,
     variance,
     variance_status,
     total_setoran_owner: actual_cash,
@@ -5271,6 +5328,7 @@ app.post("/api/getSetoranDetail", async (req, res) => {
     jumlah_resi: txList.length,
     expected_cash,
     actual_cash,
+    pending_cash,
     variance,
     variance_status,
     total_customer_payment: totalCustomerPay,
@@ -5279,7 +5337,7 @@ app.post("/api/getSetoranDetail", async (req, res) => {
     total_kas_outlet: totalKasOutlet
   };
   
-  return res.json({ status: "success", data: { header: enrichedHeader, summary, transactions: txList } });
+  return res.json({ status: "success", data: { header: enrichedHeader, summary, transactions: txList, realizations: setoranReals } });
 });
 
 app.post("/api/createSetoran", async (req, res) => {
@@ -5318,16 +5376,9 @@ app.post("/api/createSetoran", async (req, res) => {
   let existingIndex = (db.Master_Setoran || []).findIndex((s: any) => {
     const sDate = extractBusinessDate(s);
     const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || "";
-    return sDate === tanggal && s.outlet_id === outlet_id && sAdmin === adminPembuat;
+    return sDate === tanggal && s.outlet_id === outlet_id && sAdmin === adminPembuat && s.status !== "DITOLAK";
   });
 
-  if (existingIndex !== -1) {
-    const existing = db.Master_Setoran[existingIndex];
-    if (existing.status !== "DITOLAK") {
-      return res.json({ status: "error", message: `Setoran untuk admin ${adminPembuat} pada outlet dan tanggal ini sudah diajukan (status: ${existing.status}).` });
-    }
-  }
-  
   let outletName = outlet_id;
   let outData = (db.Outlets || []).find((o: any) => o.outlet_id === outlet_id);
   if (outData) outletName = outData.nama_outlet;
@@ -5377,12 +5428,22 @@ app.post("/api/createSetoran", async (req, res) => {
       return res.json({ status: "error", message: appsScriptResponse.message || "Gagal menyimpan setoran ke sistem pusat" });
     }
     
+    // Server expects Apps Script to return { header: ..., realization: ... }
+    const resData = appsScriptResponse.data || {};
+    const finalHeader = resData.header || setoranObj;
+    const finalRealization = resData.realization;
+
     // Update local DB cache based on successful Apps Script write
     if (!db.Master_Setoran) db.Master_Setoran = [];
     if (existingIndex !== -1) {
-      db.Master_Setoran[existingIndex] = setoranObj;
+      db.Master_Setoran[existingIndex] = finalHeader;
     } else {
-      db.Master_Setoran.push(setoranObj);
+      db.Master_Setoran.push(finalHeader);
+    }
+
+    if (finalRealization) {
+      if (!db.Setoran_Realization) db.Setoran_Realization = [];
+      db.Setoran_Realization.push(finalRealization);
     }
 
     logAuditEvent(db, {
@@ -5411,7 +5472,7 @@ app.post("/api/createSetoran", async (req, res) => {
 
 app.post("/api/approveSetoran", async (req, res) => {
   const db = readDb();
-  const { setoran_id, admin_id, catatan } = req.body;
+  const { setoran_id, realization_id, admin_id, catatan } = req.body;
   
   const user = (db.Users || []).find((u: any) => u.user_id === admin_id || u.username === admin_id);
   if (!user || user.role !== "OWNER") {
@@ -5420,35 +5481,46 @@ app.post("/api/approveSetoran", async (req, res) => {
 
   const s = (db.Master_Setoran || []).find((s: any) => s.setoran_id === setoran_id);
   if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
-  if (s.status === "DISETUJUI") return res.json({ status: "error", message: "Sudah disetujui sebelumnya." });
-  
+
   try {
-    const appsScriptResponse = await callAppsScript("approveSetoran", { setoran_id, admin_id, catatan });
+    const appsScriptResponse = await callAppsScript("approveSetoran", { setoran_id, realization_id, admin_id, catatan });
     if (appsScriptResponse.status !== "success") {
       return res.json({ status: "error", message: appsScriptResponse.message || "Gagal menyetujui setoran di sistem pusat" });
     }
     
-    s.status = "DISETUJUI";
-    s.approved_at = new Date().toISOString();
-    s.approved_by = user.nama_lengkap || user.username || admin_id;
-    s.catatan_owner = catatan || "";
+    const { header, realization } = appsScriptResponse.data || {};
+    
+    if (realization && realization_id) {
+       const rIndex = (db.Setoran_Realization || []).findIndex((r: any) => r.realization_id === realization_id);
+       if (rIndex !== -1) db.Setoran_Realization[rIndex] = realization;
+    }
+    if (header) {
+       const sIndex = (db.Master_Setoran || []).findIndex((s: any) => s.setoran_id === setoran_id);
+       if (sIndex !== -1) db.Master_Setoran[sIndex] = header;
+    } else {
+       // Legacy fallback if apps script didn't return updated objects
+       s.status = "DISETUJUI";
+       s.approved_at = new Date().toISOString();
+       s.approved_by = user.nama_lengkap || user.username || admin_id;
+       s.catatan_owner = catatan || "";
+    }
     
     logAuditEvent(db, {
       actor_id: user.user_id || admin_id,
       actor_name: user.nama_lengkap || user.username || "Owner",
       actor_role: "OWNER",
       outlet_id: s.outlet_id,
-      entity_type: "SETORAN",
-      entity_id: setoran_id,
+      entity_type: realization_id ? "SETORAN_REALIZATION" : "SETORAN",
+      entity_id: realization_id || setoran_id,
       event_type: "SETORAN_APPROVED",
       action: "APPROVE_SETORAN",
-      after: s,
+      after: realization || header || s,
       result: "SUCCESS",
       source: "FINANCIAL_ENGINE"
     });
 
     writeDb(db);
-    return res.json({ status: "success", message: "Setoran berhasil disetujui", data: s });
+    return res.json({ status: "success", message: appsScriptResponse.message || "Setoran berhasil disetujui", data: header || s });
   } catch (error: any) {
     console.error("Error calling Apps Script approveSetoran:", error);
     return res.status(500).json({ status: "error", message: "Terjadi kesalahan sistem saat menyetujui setoran: " + error.message });
@@ -5456,7 +5528,7 @@ app.post("/api/approveSetoran", async (req, res) => {
 });
 app.post("/api/rejectSetoran", async (req, res) => {
   const db = readDb();
-  const { setoran_id, admin_id, catatan } = req.body;
+  const { setoran_id, realization_id, admin_id, catatan } = req.body;
 
   const user = (db.Users || []).find((u: any) => u.user_id === admin_id || u.username === admin_id);
   if (!user || user.role !== "OWNER") {
@@ -5467,39 +5539,48 @@ app.post("/api/rejectSetoran", async (req, res) => {
   
   const s = (db.Master_Setoran || []).find(s => s.setoran_id === setoran_id);
   if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
-  if (s.status === "DISETUJUI") return res.json({ status: "error", message: "Setoran yang sudah disetujui tidak dapat ditolak." });
-  
+
   try {
-    const appsScriptResponse = await callAppsScript("rejectSetoran", { setoran_id, admin_id, catatan });
+    const appsScriptResponse = await callAppsScript("rejectSetoran", { setoran_id, realization_id, admin_id, catatan });
     if (appsScriptResponse.status !== "success") {
       return res.json({ status: "error", message: appsScriptResponse.message || "Gagal menolak setoran di sistem pusat" });
     }
 
+    const { header, realization } = appsScriptResponse.data || {};
     const beforeStatus = s.status;
     
-    s.status = "DITOLAK";
-    s.approved_at = new Date().toISOString();
-    s.approved_by = admin_id;
-    s.catatan_owner = catatan;
+    if (realization && realization_id) {
+       const rIndex = (db.Setoran_Realization || []).findIndex((r: any) => r.realization_id === realization_id);
+       if (rIndex !== -1) db.Setoran_Realization[rIndex] = realization;
+    }
+    if (header) {
+       const sIndex = (db.Master_Setoran || []).findIndex((s: any) => s.setoran_id === setoran_id);
+       if (sIndex !== -1) db.Master_Setoran[sIndex] = header;
+    } else {
+       s.status = "DITOLAK";
+       s.approved_at = new Date().toISOString();
+       s.approved_by = admin_id;
+       s.catatan_owner = catatan;
+    }
     
     logAuditEvent(db, {
       actor_id: admin_id || "OWNER",
       actor_name: admin_id || "Owner",
       actor_role: "OWNER",
       outlet_id: s.outlet_id,
-      entity_type: "SETORAN",
-      entity_id: setoran_id,
+      entity_type: realization_id ? "SETORAN_REALIZATION" : "SETORAN",
+      entity_id: realization_id || setoran_id,
       event_type: "SETORAN_REJECTED",
       action: "REJECT_SETORAN",
       before: { status: beforeStatus },
-      after: { status: "DITOLAK", approved_by: admin_id, catatan },
+      after: realization || header || s,
       result: "SUCCESS",
       reason: catatan,
       source: "FINANCIAL_ENGINE"
     });
-    
+
     writeDb(db);
-    return res.json({ status: "success", message: "Setoran ditolak", data: s });
+    return res.json({ status: "success", message: appsScriptResponse.message || "Setoran ditolak", data: header || s });
   } catch (error: any) {
     console.error("Error calling Apps Script rejectSetoran:", error);
     return res.status(500).json({ status: "error", message: "Terjadi kesalahan sistem saat menolak setoran: " + error.message });

@@ -1872,108 +1872,226 @@ function apiCreateSetoran(params) {
   // Canonical Identity Check: ADMIN + OUTLET + TANGGAL (excluding DITOLAK)
   var existing = DatabaseService.getSheetData("Master_Setoran");
   var headers = existing[0];
+  var existingSetoranId = null;
   if (headers) {
     for (var i = 1; i < existing.length; i++) {
       var row = rowToObject_(headers, existing[i]);
       var rowAdmin = row.admin_pembuat || row.admin_id || row.user_id || row.created_by || "";
       if (row.tanggal === tanggal && row.outlet_id === outletId && rowAdmin === adminPembuat && row.status !== "DITOLAK") {
-        return { status: "error", message: "Setoran untuk admin " + adminPembuat + " pada outlet dan tanggal ini sudah diajukan." };
+        existingSetoranId = row.setoran_id;
+        break;
       }
     }
   }
 
   // We expect params to already be the full setoranObj calculated by server.ts.
-  if (!params.setoran_id) {
-    params.setoran_id = "SET-" + new Date().getTime();
+  var isNewHeader = false;
+  if (!existingSetoranId) {
+    isNewHeader = true;
+    if (!params.setoran_id) {
+      params.setoran_id = "SET-" + new Date().getTime();
+    }
+    if (!params.status) {
+      params.status = "MENUNGGU_APPROVAL";
+    }
+    if (!params.created_at) {
+      params.created_at = new Date().toISOString();
+    }
+    DatabaseService.insertRow("Master_Setoran", params);
+    existingSetoranId = params.setoran_id;
+  } else {
+    // If it exists, we just update the status to pending if we are adding a new realization
+    var updateData = { status: "MENUNGGU_APPROVAL" };
+    DatabaseService.updateRowByColumn("Master_Setoran", "setoran_id", existingSetoranId, updateData);
+    params.setoran_id = existingSetoranId; // Ensure realization links to existing header
   }
-  if (!params.status) {
-    params.status = "MENUNGGU_APPROVAL";
-  }
-  if (!params.created_at) {
-    params.created_at = new Date().toISOString();
-  }
-  
-  DatabaseService.insertRow("Master_Setoran", params);
-  
+
+  // Always create a realization
+  var realizationObj = {
+    realization_id: "REAL-" + new Date().getTime(),
+    setoran_id: existingSetoranId,
+    metode: params.metode_setor || "TUNAI",
+    nominal: params.nominal_setor || params.actual_cash || 0,
+    bukti_url: params.bukti_url || "",
+    status: "MENUNGGU_APPROVAL",
+    created_at: new Date().toISOString(),
+    approved_at: "",
+    approved_by: "",
+    catatan: params.catatan_admin || ""
+  };
+  DatabaseService.insertRow("Setoran_Realization", realizationObj);
+
   var totalSetoranOwner = params.total_setoran_owner || 0;
   DatabaseService.appendAudit(
     adminPembuat, 
     "SETORAN_CREATE", 
-    "Membuat setoran harian untuk " + tanggal + " (Rp " + totalSetoranOwner + ")", 
+    (isNewHeader ? "Membuat" : "Menambah realisasi") + " setoran harian untuk " + tanggal + " (Rp " + realizationObj.nominal + " via " + realizationObj.metode + ")", 
     outletId
   );
   
-  return { status: "success", message: "Setoran berhasil dibuat dan menunggu persetujuan.", data: params };
+  return { status: "success", message: "Setoran berhasil diajukan dan menunggu persetujuan.", data: { header: params, realization: realizationObj } };
 }
 
 function apiApproveSetoran(params) {
   var setoranId = params.setoran_id;
+  var realizationId = params.realization_id;
   var adminId = params.admin_id; // The owner
   
   if (!setoranId) return { status: "error", message: "setoran_id diperlukan" };
   
-  var existing = DatabaseService.findRowByColumn("Master_Setoran", "setoran_id", setoranId);
-  if (!existing) return { status: "error", message: "Data setoran tidak ditemukan" };
+  var existingHeader = DatabaseService.findRowByColumn("Master_Setoran", "setoran_id", setoranId);
+  if (!existingHeader) return { status: "error", message: "Data setoran tidak ditemukan" };
   
-  if (existing.status === "DISETUJUI") {
-    return { status: "error", message: "Setoran ini sudah disetujui sebelumnya." };
+  var existingRealization = null;
+  if (realizationId) {
+    existingRealization = DatabaseService.findRowByColumn("Setoran_Realization", "realization_id", realizationId);
+    if (!existingRealization) return { status: "error", message: "Data realisasi tidak ditemukan" };
+    if (existingRealization.status === "DISETUJUI") {
+      return { status: "error", message: "Realisasi ini sudah disetujui sebelumnya." };
+    }
+  } else {
+    if (existingHeader.status === "DISETUJUI") {
+      return { status: "error", message: "Setoran ini sudah disetujui sebelumnya." };
+    }
   }
   
-  var updateData = {
-    status: "DISETUJUI",
-    approved_at: new Date().toISOString(),
-    approved_by: adminId || "OWNER"
-  };
+  var now = new Date().toISOString();
   
-  DatabaseService.updateRowByColumn("Master_Setoran", "setoran_id", setoranId, updateData);
-  
-  DatabaseService.appendAudit(
-    updateData.approved_by,
-    "SETORAN_APPROVE",
-    "Menyetujui setoran " + setoranId + " tanggal " + existing.tanggal,
-    existing.outlet_id
-  );
-  
-  for (var key in updateData) {
-    existing[key] = updateData[key];
+  if (realizationId && existingRealization) {
+    var updateData = {
+      status: "DISETUJUI",
+      approved_at: now,
+      approved_by: adminId || "OWNER"
+    };
+    DatabaseService.updateRowByColumn("Setoran_Realization", "realization_id", realizationId, updateData);
+    for (var key in updateData) {
+      existingRealization[key] = updateData[key];
+    }
+    
+    // Check if we need to update the header
+    var allRealizations = DatabaseService.getSheetData("Setoran_Realization");
+    var hRealizations = [];
+    if (allRealizations && allRealizations.length > 1) {
+      var rHeaders = allRealizations[0];
+      for (var i = 1; i < allRealizations.length; i++) {
+        var r = rowToObject_(rHeaders, allRealizations[i]);
+        if (r.setoran_id === setoranId) {
+          if (r.realization_id === realizationId) r.status = "DISETUJUI";
+          hRealizations.push(r);
+        }
+      }
+    }
+    
+    var totalActual = 0;
+    var hasPending = false;
+    for (var j = 0; j < hRealizations.length; j++) {
+      if (hRealizations[j].status === "DISETUJUI") {
+        totalActual += Number(hRealizations[j].nominal || 0);
+      } else if (hRealizations[j].status === "MENUNGGU_APPROVAL") {
+        hasPending = true;
+      }
+    }
+    
+    var expected = Number(existingHeader.expected_cash || existingHeader.wajib_setor_owner || 0);
+    if (!hasPending && totalActual >= expected) {
+      var headerUpdate = { status: "DISETUJUI", approved_at: now, approved_by: adminId || "OWNER" };
+      DatabaseService.updateRowByColumn("Master_Setoran", "setoran_id", setoranId, headerUpdate);
+      for (var k in headerUpdate) existingHeader[k] = headerUpdate[k];
+    }
+    
+    DatabaseService.appendAudit(
+      updateData.approved_by,
+      "SETORAN_APPROVE",
+      "Menyetujui realisasi " + existingRealization.metode + " (Rp" + existingRealization.nominal + ") untuk setoran " + setoranId,
+      existingHeader.outlet_id
+    );
+    
+    return { status: "success", message: "Realisasi setoran disetujui.", data: { header: existingHeader, realization: existingRealization } };
+  } else {
+    // Approve header
+    var updateData = {
+      status: "DISETUJUI",
+      approved_at: now,
+      approved_by: adminId || "OWNER"
+    };
+    DatabaseService.updateRowByColumn("Master_Setoran", "setoran_id", setoranId, updateData);
+    for (var key in updateData) existingHeader[key] = updateData[key];
+    
+    DatabaseService.appendAudit(
+      updateData.approved_by,
+      "SETORAN_APPROVE",
+      "Menyetujui setoran " + setoranId + " tanggal " + existingHeader.tanggal,
+      existingHeader.outlet_id
+    );
+    return { status: "success", message: "Setoran berhasil disetujui.", data: { header: existingHeader } };
   }
-  return { status: "success", message: "Setoran berhasil disetujui.", data: existing };
 }
 
 function apiRejectSetoran(params) {
   var setoranId = params.setoran_id;
+  var realizationId = params.realization_id;
   var adminId = params.admin_id; // The owner
   var catatan = params.catatan || "";
   
   if (!setoranId) return { status: "error", message: "setoran_id diperlukan" };
   
-  var existing = DatabaseService.findRowByColumn("Master_Setoran", "setoran_id", setoranId);
-  if (!existing) return { status: "error", message: "Data setoran tidak ditemukan" };
+  var existingHeader = DatabaseService.findRowByColumn("Master_Setoran", "setoran_id", setoranId);
+  if (!existingHeader) return { status: "error", message: "Data setoran tidak ditemukan" };
   
-  if (existing.status === "DISETUJUI") {
-    return { status: "error", message: "Setoran yang sudah disetujui tidak dapat ditolak." };
+  var existingRealization = null;
+  if (realizationId) {
+    existingRealization = DatabaseService.findRowByColumn("Setoran_Realization", "realization_id", realizationId);
+    if (!existingRealization) return { status: "error", message: "Data realisasi tidak ditemukan" };
+    if (existingRealization.status === "DISETUJUI") {
+      return { status: "error", message: "Realisasi yang sudah disetujui tidak dapat ditolak." };
+    }
+  } else {
+    if (existingHeader.status === "DISETUJUI") {
+      return { status: "error", message: "Setoran yang sudah disetujui tidak dapat ditolak." };
+    }
   }
   
-  var updateData = {
-    status: "DITOLAK",
-    catatan_owner: catatan,
-    approved_at: new Date().toISOString(),
-    approved_by: adminId || "OWNER"
-  };
+  var now = new Date().toISOString();
   
-  DatabaseService.updateRowByColumn("Master_Setoran", "setoran_id", setoranId, updateData);
-  
-  DatabaseService.appendAudit(
-    updateData.approved_by,
-    "SETORAN_REJECT",
-    "Menolak setoran " + setoranId + " tanggal " + existing.tanggal + " (" + catatan + ")",
-    existing.outlet_id
-  );
-  
-  for (var key in updateData) {
-    existing[key] = updateData[key];
+  if (realizationId && existingRealization) {
+    var updateData = {
+      status: "DITOLAK",
+      catatan: catatan,
+      approved_at: now,
+      approved_by: adminId || "OWNER"
+    };
+    DatabaseService.updateRowByColumn("Setoran_Realization", "realization_id", realizationId, updateData);
+    for (var key in updateData) {
+      existingRealization[key] = updateData[key];
+    }
+    
+    DatabaseService.appendAudit(
+      updateData.approved_by,
+      "SETORAN_REJECT",
+      "Menolak realisasi " + existingRealization.metode + " (Rp" + existingRealization.nominal + ") untuk setoran " + setoranId + " (" + catatan + ")",
+      existingHeader.outlet_id
+    );
+    
+    return { status: "success", message: "Realisasi setoran ditolak.", data: { header: existingHeader, realization: existingRealization } };
+  } else {
+    // Reject header
+    var updateData = {
+      status: "DITOLAK",
+      catatan_owner: catatan,
+      approved_at: now,
+      approved_by: adminId || "OWNER"
+    };
+    DatabaseService.updateRowByColumn("Master_Setoran", "setoran_id", setoranId, updateData);
+    for (var key in updateData) existingHeader[key] = updateData[key];
+    
+    DatabaseService.appendAudit(
+      updateData.approved_by,
+      "SETORAN_REJECT",
+      "Menolak setoran " + setoranId + " tanggal " + existingHeader.tanggal + " (" + catatan + ")",
+      existingHeader.outlet_id
+    );
+    return { status: "success", message: "Setoran berhasil ditolak.", data: { header: existingHeader } };
   }
-  return { status: "success", message: "Setoran berhasil ditolak.", data: existing };
 }
 
 function apiGetSetoranList(params) {
@@ -2716,6 +2834,7 @@ var DB_SCHEMA = {
   Master_Setoran: ["setoran_id", "tanggal", "outlet_id", "outlet_name", "admin_pembuat", "jumlah_resi",
     "total_setoran_owner", "total_kas_outlet", "status", "created_at", "approved_at", "approved_by",
     "catatan_owner", "closing_status", "closing_at", "closing_by", "expected_cash", "actual_cash", "variance", "variance_status", "wajib_setor_owner", "catatan_admin"],
+  Setoran_Realization: ["realization_id", "setoran_id", "metode", "nominal", "bukti_url", "status", "created_at", "approved_at", "approved_by", "catatan"],
   MASTER_KATEGORI_KEUANGAN: ["id", "jenis", "nama", "aktif", "urutan", "created_at", "updated_at", "created_by"],
   KEUANGAN_OUTLET: ["id", "tanggal", "outlet_id", "jenis", "kategori_id", "nominal", "deskripsi", "bukti_url",
     "dibuat_oleh", "created_at", "aktif", "resi_id", "lokasi_uang"],

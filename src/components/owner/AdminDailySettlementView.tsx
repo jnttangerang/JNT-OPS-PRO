@@ -420,19 +420,22 @@ export default function AdminDailySettlementView({
                   <div className="pt-3 border-t border-gray-100">
                     {isMatched ? (
                       <div className="w-full py-2.5 px-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-xs font-black flex items-center justify-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4" /> SETORAN SELESAI
-                      </div>
-                    ) : isPending ? (
-                      <div className="w-full py-2.5 px-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-xs font-black flex items-center justify-center gap-1.5">
-                        <Clock className="w-4 h-4" /> MENUNGGU PERSETUJUAN OWNER
+                        <CheckCircle2 className="w-4 h-4" /> SETORAN LUNAS
                       </div>
                     ) : (
-                      <button
-                        onClick={() => handleOpenSetoran(item.outlet_id, item.outlet_name, reqCash, brk.outlet_cash || 0)}
-                        className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer transition-all active:scale-[0.98]"
-                      >
-                        <DollarSign className="w-4 h-4" /> BUAT SETORAN INI
-                      </button>
+                      <div className="space-y-2">
+                        {isPending && (
+                          <div className="w-full py-2 px-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1.5">
+                            <Clock className="w-3 h-3" /> ADA SETORAN MENUNGGU PERSETUJUAN
+                          </div>
+                        )}
+                        <button
+                          onClick={() => handleOpenSetoran(item.outlet_id, item.outlet_name, reqCash, brk.outlet_cash || 0)}
+                          className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 cursor-pointer transition-all active:scale-[0.98]"
+                        >
+                          <DollarSign className="w-4 h-4" /> {(brk.setoran_actual || 0) > 0 ? "TAMBAH SETORAN (SISA)" : "BUAT SETORAN"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

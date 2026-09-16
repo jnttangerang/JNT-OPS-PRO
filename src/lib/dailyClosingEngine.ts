@@ -182,7 +182,8 @@ export function validateDailyClosing(
   const allTx = db.MASTER_TRANSAKSI || [];
   const outletDateTx = allTx.filter((tx: any) => {
     const d = extractBusinessDate(tx);
-    return tx.outlet_id === outlet_id && d === tanggal;
+    const txOutlet = tx.outlet_id || tx.outlet_id_input || tx.outlet || "OUT-001";
+    return txOutlet === outlet_id && d === tanggal;
   });
 
   const dailyFin = calculateDailyFinancial(outletDateTx);

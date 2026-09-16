@@ -79,12 +79,13 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
     }
   };
 
-  const handleApprove = async () => {
+  const handleApprove = async (realizationId?: string) => {
     if (!detail) return;
-    if (!confirm("Setujui setoran ini?")) return;
+    if (!confirm(realizationId ? "Setujui realisasi ini?" : "Setujui setoran ini?")) return;
     try {
       const res = await callBackend("approveSetoran", {
         setoran_id: detail.header.setoran_id,
+        realization_id: typeof realizationId === "string" ? realizationId : undefined,
         admin_id: session.user_id
       });
       if (res.status === "success") {
@@ -99,6 +100,13 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
     }
   };
 
+  const [rejectingRealizationId, setRejectingRealizationId] = useState<string | null>(null);
+
+  const handleOpenRejectModal = (realizationId?: string) => {
+    setRejectingRealizationId(typeof realizationId === "string" ? realizationId : null);
+    setShowRejectModal(true);
+  };
+
   const handleReject = async () => {
     if (!detail) return;
     if (!rejectReason) {
@@ -108,6 +116,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
     try {
       const res = await callBackend("rejectSetoran", {
         setoran_id: detail.header.setoran_id,
+        realization_id: rejectingRealizationId,
         admin_id: session.user_id,
         catatan: rejectReason
       });
@@ -115,6 +124,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
         toast.success(res.message);
         setShowRejectModal(false);
         setRejectReason("");
+        setRejectingRealizationId(null);
         fetchDetail(detail.header.setoran_id);
         fetchList();
       } else {
@@ -252,8 +262,53 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             <div className="mb-6 p-4 bg-red-50 text-red-800 text-sm rounded-xl border border-red-100 flex items-start gap-2">
               <MessageSquare className="w-4 h-4 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold mb-0.5">Catatan Penolakan:</p>
+                <p className="font-bold mb-0.5">Catatan Penolakan (Header):</p>
                 <p>{header.catatan_owner}</p>
+              </div>
+            </div>
+          )}
+
+          {detail.realizations && detail.realizations.length > 0 && (
+            <div className="mb-6">
+              <h3 className="text-sm font-bold text-gray-800 mb-3 border-b border-gray-100 pb-2">Realisasi Setoran</h3>
+              <div className="overflow-x-auto rounded-xl border border-gray-100">
+                <table className="w-full text-xs text-left text-gray-700 divide-y divide-gray-100">
+                  <thead className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">
+                    <tr>
+                      <th className="p-3">Metode</th>
+                      <th className="p-3 text-right">Nominal</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-3 text-center">Bukti</th>
+                      <th className="p-3">Catatan</th>
+                      <th className="p-3 text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {detail.realizations.map((r: any) => (
+                      <tr key={r.realization_id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-3 font-semibold text-gray-800">{r.metode}</td>
+                        <td className="p-3 text-right font-mono font-bold text-blue-700">Rp {Number(r.nominal).toLocaleString("id-ID")}</td>
+                        <td className="p-3">{getStatusBadge(r.status)}</td>
+                        <td className="p-3 text-center">
+                          {r.bukti_url ? (
+                            <a href={r.bukti_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded border border-blue-200" title="Lihat Bukti">
+                              <Eye className="w-3.5 h-3.5" />
+                            </a>
+                          ) : "-"}
+                        </td>
+                        <td className="p-3 text-[10px] max-w-[150px] truncate text-gray-500" title={r.catatan}>{r.catatan || "-"}</td>
+                        <td className="p-3 text-center">
+                          {r.status === "MENUNGGU_APPROVAL" && (
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button onClick={() => handleApprove(r.realization_id)} className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded border border-emerald-200" title="Setujui Realisasi"><CheckCircle className="w-3.5 h-3.5" /></button>
+                              <button onClick={() => handleOpenRejectModal(r.realization_id)} className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded border border-red-200" title="Tolak Realisasi"><XCircle className="w-3.5 h-3.5" /></button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -460,7 +515,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                     <td className="p-4 text-right font-mono font-semibold text-blue-700">Rp {Number(item.actual_cash ?? item.total_setoran_owner ?? 0).toLocaleString("id-ID")}</td>
                     <td className="p-4 text-center">{getVarianceBadge(Number(item.variance ?? 0))}</td>
                     <td className="p-4 text-right font-mono font-semibold text-emerald-700">Rp {Number(item.total_kas_outlet ?? 0).toLocaleString("id-ID")}</td>
-                    <td className="p-4 text-xs font-semibold text-gray-700">{item.admin_pembuat}</td>
+                    <td className="p-4 text-xs font-semibold text-gray-700">{item.admin_pembuat_name || item.admin_pembuat}</td>
                     <td className="p-4 text-center">{getAgingBadge(item.tanggal, item.created_at, item.status !== "BELUM_SUBMIT")}</td>
                     <td className="p-4">{getStatusBadge(item.status)}</td>
                     <td className="p-4 text-center">
