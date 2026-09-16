@@ -81,6 +81,8 @@ function handleRouting(action, params) {
       return apiSaveDataPreInput(params);
     case "deletePreInputDraft":
       return apiDeletePreInputDraft(params);
+    case "updateYoYiTransaction":
+      return apiUpdateYoYiTransaction(params);
     case "importYoYi":
       return apiImportYoYi(params);
     case "saveTransaksi":
@@ -2817,13 +2819,13 @@ var DB_SCHEMA = {
     "nilai_barang", "foto_paket_url", "status", "catatan_admin",
     "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat",
     "foto_resi_url", "alamat_penerima_asli", "alamat_asli"],
-  EXP_Resi: ["resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
+  EXP_Resi: ["customer_maps_5star", "bukti_maps_url", "resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
     "biaya_lain", "biaya_asuransi", "ongkir_dasar", "biaya_yoyi", "total_dibayar_customer", "pembulatan",
     "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing", "metode_bayar_tambahan",
     "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi",
     "owner_audit_status", "owner_audit_note", "owner_audited_by", "owner_audited_at",
     "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat", "berat_kg"],
-  CRG_Resi: ["resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
+  CRG_Resi: ["customer_maps_5star", "bukti_maps_url", "resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
     "merk_motor", "cc_motor", "tahun_motor", "kelengkapan_motor", "biaya_asuransi", "ongkir_dasar", "biaya_jtc",
     "total_dibayar_customer", "pembulatan", "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing",
     "metode_bayar_tambahan", "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional",
@@ -2848,6 +2850,7 @@ var DB_SCHEMA = {
     "kode_pos", "alamat", "jumlah_diterima", "tanggal_pertama", "tanggal_terakhir", "status",
     "created_at", "updated_at", "outlet_id_asal", "telepon_alternatif", "import_id"],
   MASTER_TRANSAKSI: [
+    "bukti_bayar_url", "metode_bayar_tambahan", "bukti_tambahan_url", "customer_maps_5star", "bukti_maps_url",
     "id", "created_at", "updated_at", "import_id", "outlet_id", "outlet_name",
     "admin_id", "admin_name", "tanggal_transaksi", "jam_transaksi", "no_resi",
     "ekspedisi", "tipe_produk", "pengirim_id", "penerima_id",
@@ -6452,5 +6455,68 @@ function apiDebugSpreadsheet() {
     };
   } catch (err) {
     return { status: "error", message: err.message || err.toString() };
+  }
+}
+
+
+
+function apiUpdateYoYiTransaction(params) {
+  try {
+    var targetResi = params.resi_id;
+    var txId = params.transaksi_id;
+    if (!targetResi && !txId) {
+      return { status: "error", message: "resi_id atau transaksi_id diperlukan" };
+    }
+
+    var updateMap = {};
+    if (params.ongkir_customer !== undefined) updateMap.ongkir_customer = Number(params.ongkir_customer) || 0;
+    if (params.metode_bayar !== undefined) updateMap.metode_bayar = params.metode_bayar;
+    if (params.bukti_bayar_url !== undefined) updateMap.bukti_bayar_url = params.bukti_bayar_url;
+    if (params.biaya_lain !== undefined) updateMap.biaya_lain = Number(params.biaya_lain) || 0;
+    if (params.metode_bayar_tambahan !== undefined) updateMap.metode_bayar_tambahan = params.metode_bayar_tambahan;
+    if (params.bukti_tambahan_url !== undefined) updateMap.bukti_tambahan_url = params.bukti_tambahan_url;
+    if (params.customer_maps_5star !== undefined) updateMap.customer_maps_5star = params.customer_maps_5star;
+    if (params.bukti_maps_url !== undefined) updateMap.bukti_maps_url = params.bukti_maps_url;
+    if (params.nama_pengirim !== undefined) updateMap.snapshot_nama_pengirim = params.nama_pengirim;
+    if (params.hp_pengirim !== undefined) updateMap.snapshot_hp_pengirim = params.hp_pengirim;
+    if (params.nama_penerima !== undefined) updateMap.snapshot_nama_penerima = params.nama_penerima;
+    if (params.hp_penerima !== undefined) updateMap.snapshot_hp_penerima = params.hp_penerima;
+    
+    // Also update Wajib Setor Owner recalculating
+    var existingTx = null;
+    if (txId) {
+      existingTx = DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "transaksi_id", txId) || DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "id", txId);
+    } else {
+      existingTx = DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "no_resi", targetResi);
+    }
+    
+    if (existingTx) {
+       var o_cust = params.ongkir_customer !== undefined ? Number(params.ongkir_customer) || 0 : Number(existingTx.ongkir_customer || 0);
+       var asuransi = Number(existingTx.asuransi || 0);
+       var b_lain = params.biaya_lain !== undefined ? Number(params.biaya_lain) || 0 : Number(existingTx.biaya_lain || 0);
+       var m_bayar = params.metode_bayar !== undefined ? params.metode_bayar : existingTx.metode_bayar;
+       var total_dibayar = Number(existingTx.total_customer || 0);
+       
+       var biayaDasarLayanan = o_cust + asuransi + b_lain;
+       var biayaDitagihkan = m_bayar === "DFOD" ? 0 : biayaDasarLayanan;
+       var pembulatan = total_dibayar > 0 ? (total_dibayar - biayaDitagihkan) : 0;
+       updateMap.wajib_setor_owner = biayaDitagihkan + pembulatan;
+       
+       var expTx = null;
+       if (existingTx.tipe_produk === "Cargo") {
+          expTx = DatabaseService.findRowByColumn("CRG_Resi", "transaksi_id", existingTx.id);
+          if (expTx) DatabaseService.updateRowByColumn("CRG_Resi", "transaksi_id", existingTx.id, updateMap);
+       } else {
+          expTx = DatabaseService.findRowByColumn("EXP_Resi", "transaksi_id", existingTx.id);
+          if (expTx) DatabaseService.updateRowByColumn("EXP_Resi", "transaksi_id", existingTx.id, updateMap);
+       }
+       DatabaseService.updateRowByColumn("MASTER_TRANSAKSI", "id", existingTx.id, updateMap);
+       
+       return { status: "success", message: "Transaksi YoYi berhasil dilengkapi", data: updateMap };
+    }
+    
+    return { status: "error", message: "Transaksi tidak ditemukan" };
+  } catch(e) {
+    return { status: "error", message: e.message };
   }
 }

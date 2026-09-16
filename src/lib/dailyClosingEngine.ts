@@ -222,7 +222,7 @@ export function validateDailyClosing(
   const adminMap: Record<string, AdminClosingBreakdown> = {};
   for (const tx of outletDateTx) {
     if (!isTransactionValidForFinance(tx)) continue;
-    const admin = tx.admin_id || "UNKNOWN";
+    const admin = tx.admin_pembuat || tx.admin_id || tx.user_id || tx.created_by || "UNKNOWN";
     if (!adminMap[admin]) {
       adminMap[admin] = {
         admin_id: admin,

@@ -13,6 +13,7 @@ import AdminDashboardPage from "./components/admin/AdminDashboardPage";
 import { LayoutDashboard, Settings } from "lucide-react";
 import RiwayatTransaksiPage from "./components/RiwayatTransaksiPage";
 import UlasanMapsPage from "./components/UlasanMapsPage";
+import LengkapiYoYiPage from "./components/admin/LengkapiYoYiPage";
 import CustomerPage from "./components/CustomerPage";
 import ImportCustomerPage from "./components/customer/ImportCustomerPage";
 import DeveloperPage from "./components/DeveloperPage";
@@ -589,6 +590,9 @@ function AppContent() {
                 />
               } />
               
+              <Route path="/lengkapi-yoyi" element={
+                <LengkapiYoYiPage session={session} outlets={outlets} />
+              } />
               <Route path="/riwayat-transaksi" element={
                 <RiwayatTransaksiPage
                   session={session}
