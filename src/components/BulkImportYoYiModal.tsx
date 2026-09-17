@@ -422,6 +422,8 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
       const resolvedAdminId = row.mapped_admin_id;
       
       const transactionData = {
+        import_id: row.pre_id || `PRE-YY-${Math.floor(Date.now() / 1000)}-${Math.random().toString(36).substring(2, 5)}`,
+        transaksi_id: `TRX-${Math.floor(Date.now() / 1000)}-${Math.random().toString(36).substring(2, 5)}`,
         resi_id: row.resi_id,
         ekspedisi: "Express",
         tipe_produk: (row.tipe_produk === "DOC" || row.tipe_produk === "DOKUMEN") ? "DOC" : (row.tipe_produk || "EZ"),

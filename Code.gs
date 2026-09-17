@@ -2819,18 +2819,24 @@ var DB_SCHEMA = {
     "nilai_barang", "foto_paket_url", "status", "catatan_admin",
     "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat",
     "foto_resi_url", "alamat_penerima_asli", "alamat_asli"],
-  EXP_Resi: ["customer_maps_5star", "bukti_maps_url", "resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
+  EXP_Resi: [
+    "resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
     "biaya_lain", "biaya_asuransi", "ongkir_dasar", "biaya_yoyi", "total_dibayar_customer", "pembulatan",
     "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing", "metode_bayar_tambahan",
     "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional", "status_resi",
     "owner_audit_status", "owner_audit_note", "owner_audited_by", "owner_audited_at",
-    "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat", "berat_kg"],
-  CRG_Resi: ["customer_maps_5star", "bukti_maps_url", "resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
+    "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat", "berat_kg",
+    "customer_maps_5star", "bukti_maps_url"
+  ],
+  CRG_Resi: [
+    "resi_id", "transaksi_id", "timestamp", "admin_id_pencatat", "outlet_id_input", "tipe_produk",
     "merk_motor", "cc_motor", "tahun_motor", "kelengkapan_motor", "biaya_asuransi", "ongkir_dasar", "biaya_jtc",
     "total_dibayar_customer", "pembulatan", "metode_bayar", "bukti_bayar_url", "biaya_amplop", "biaya_packing",
     "metode_bayar_tambahan", "bukti_tambahan_url", "grand_total", "setoran_ke_owner", "kas_operasional",
     "status_resi", "owner_audit_status", "owner_audit_note", "owner_audited_by", "owner_audited_at",
-    "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat", "berat_kg"],
+    "ekspedisi", "berat_timbangan", "panjang_cm", "lebar_cm", "tinggi_cm", "berat_volume", "dasar_berat", "berat_kg",
+    "customer_maps_5star", "bukti_maps_url"
+  ],
   AuditLogs: ["log_id", "timestamp", "user_id", "aksi", "detail", "outlet_id"],
   MapsReviews: ["id", "outlet_id", "nama_outlet", "reviewer", "stars", "text", "timestamp", "status_analisis", "analisis"],
   Master_Setoran: ["setoran_id", "tanggal", "outlet_id", "outlet_name", "admin_pembuat", "jumlah_resi",
@@ -2850,7 +2856,6 @@ var DB_SCHEMA = {
     "kode_pos", "alamat", "jumlah_diterima", "tanggal_pertama", "tanggal_terakhir", "status",
     "created_at", "updated_at", "outlet_id_asal", "telepon_alternatif", "import_id"],
   MASTER_TRANSAKSI: [
-    "bukti_bayar_url", "metode_bayar_tambahan", "bukti_tambahan_url", "customer_maps_5star", "bukti_maps_url",
     "id", "created_at", "updated_at", "import_id", "outlet_id", "outlet_name",
     "admin_id", "admin_name", "tanggal_transaksi", "jam_transaksi", "no_resi",
     "ekspedisi", "tipe_produk", "pengirim_id", "penerima_id",
@@ -2860,7 +2865,9 @@ var DB_SCHEMA = {
     "metode_bayar", "ongkir_customer", "packing", "amplop", "biaya_lain",
     "total_customer", "ongkir_yoyi", "asuransi", "biaya_lain_yoyi",
     "wajib_setor_owner", "kas_outlet", "status_transaksi", "status_setoran",
-    "status_audit", "status_sync", "sumber_data", "catatan"
+    "status_audit", "status_sync", "sumber_data", "catatan",
+    "bukti_bayar_url", "metode_bayar_tambahan", "bukti_tambahan_url",
+    "customer_maps_5star", "bukti_maps_url"
   ],
   MASTER_PENGIRIMAN: [
     "id", "created_at", "updated_at", "transaksi_id", "import_id", "outlet_id", "outlet_name",
@@ -3390,9 +3397,24 @@ var DatabaseService = {
     }
     return true;
   },
+  getEffectiveSchema: function(sheet, sheetName) {
+    if (sheet && sheet.getLastColumn() > 0) {
+      var headerValues = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      if (headerValues && headerValues.length > 0 && String(headerValues[0] || "").trim()) {
+        var cleanHeaders = [];
+        for (var h = 0; h < headerValues.length; h++) {
+          var colTitle = String(headerValues[h] || "").trim();
+          if (colTitle) cleanHeaders.push(colTitle);
+        }
+        if (cleanHeaders.length > 0) return cleanHeaders;
+      }
+    }
+    return DB_SCHEMA[sheetName] || [];
+  },
+
   insertRow: function(sheetName, rowDataMap) {
     var sheet = getSheetByName(sheetName);
-    var schema = DB_SCHEMA[sheetName];
+    var schema = this.getEffectiveSchema(sheet, sheetName);
     var row = schema.map(function(col) { return rowDataMap[col] !== undefined ? rowDataMap[col] : ""; });
     sheet.insertRowAfter(1);
     sheet.getRange(2, 1, 1, row.length).setValues([row]);
@@ -3400,7 +3422,7 @@ var DatabaseService = {
   
   appendRow: function(sheetName, rowDataMap) {
     var sheet = getSheetByName(sheetName);
-    var schema = DB_SCHEMA[sheetName];
+    var schema = this.getEffectiveSchema(sheet, sheetName);
     var row = schema.map(function(col) { return rowDataMap[col] !== undefined ? rowDataMap[col] : ""; });
     sheet.appendRow(row);
   },
@@ -3434,7 +3456,7 @@ var DatabaseService = {
 
   updateFullRowByColumn: function(sheetName, searchColName, searchValue, rowDataMap) {
      var sheet = getSheetByName(sheetName);
-     var schema = DB_SCHEMA[sheetName];
+     var schema = this.getEffectiveSchema(sheet, sheetName);
      var data = sheet.getDataRange().getValues();
      var colIdx = getColIndex_(sheet, searchColName);
      if (colIdx === -1) return null;
@@ -3465,7 +3487,7 @@ var DatabaseService = {
   
   findRowByColumn: function(sheetName, searchColName, searchValue) {
     var sheet = getSheetByName(sheetName);
-    var schema = DB_SCHEMA[sheetName];
+    var schema = this.getEffectiveSchema(sheet, sheetName);
     var data = sheet.getDataRange().getValues();
     var colIdx = getColIndex_(sheet, searchColName);
     if (colIdx === -1) return null;
@@ -3555,7 +3577,11 @@ function validateLifecycleTransition(currentStatus, targetStatus) {
 }
 
 function autoUpsertMasterTransaksiAndPengiriman(params) {
-  var txId = (params.transaksi_id || "").toString().trim();
+  var rawTxId = (params.transaksi_id || params.id || "").toString().trim();
+  var isPre = rawTxId.indexOf("PRE-") === 0;
+  var importId = (params.import_id || "").toString().trim() || (isPre ? rawTxId : "");
+  var txId = isPre ? (params.id && String(params.id).indexOf("PRE-") !== 0 ? params.id : ("TRX-" + new Date().getTime() + "-" + Math.floor(Math.random() * 1000))) : (rawTxId || ("TRX-" + new Date().getTime() + "-" + Math.floor(Math.random() * 1000)));
+
   if (!txId) return { success: false, message: "transaksi_id wajib diisi" };
 
   var nowIso = new Date().toISOString();
@@ -3564,7 +3590,31 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
 
   var targetStatus = normalizeLifecycleStatus(params.status_transaksi || "DRAFT");
 
+  var outletId = params.outlet_id || "OUT-001";
+  var outletName = params.outlet_name || "";
+  if (!outletName && outletId) {
+    try {
+      var outRow = DatabaseService.findRowByColumn("Outlets", "outlet_id", outletId);
+      if (outRow) outletName = outRow.nama_outlet || outRow.nama || "";
+    } catch (e) {}
+  }
+
+  var adminId = params.admin_id || "SYSTEM";
+  var adminName = params.admin_name || "";
+  if (!adminName && adminId && adminId !== "SYSTEM") {
+    try {
+      var userRow = DatabaseService.findRowByColumn("Users", "user_id", adminId);
+      if (userRow) adminName = userRow.nama_lengkap || userRow.username || "";
+    } catch (e) {}
+  }
+
   var existingTx = DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "id", txId);
+  if (!existingTx && importId) {
+    existingTx = DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "import_id", importId);
+  }
+  if (!existingTx && params.no_resi) {
+    existingTx = DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "no_resi", params.no_resi);
+  }
 
   if (existingTx) {
     var transitionCheck = validateLifecycleTransition(existingTx.status_transaksi, targetStatus);
@@ -3578,6 +3628,11 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
       existingTx.status_transaksi = targetStatus;
     }
 
+    if (importId && !existingTx.import_id) existingTx.import_id = importId;
+    if (outletId && !existingTx.outlet_id) existingTx.outlet_id = outletId;
+    if (outletName && !existingTx.outlet_name) existingTx.outlet_name = outletName;
+    if (adminId && !existingTx.admin_id) existingTx.admin_id = adminId;
+    if (adminName && !existingTx.admin_name) existingTx.admin_name = adminName;
     if (params.no_resi) existingTx.no_resi = params.no_resi;
     if (params.ekspedisi) existingTx.ekspedisi = params.ekspedisi;
     if (params.tipe_produk) existingTx.tipe_produk = params.tipe_produk;
@@ -3608,18 +3663,23 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
     if (params.status_audit) existingTx.status_audit = params.status_audit;
     if (params.sumber_data) existingTx.sumber_data = params.sumber_data;
     if (params.catatan) existingTx.catatan = params.catatan;
+    if (params.bukti_bayar_url !== undefined) existingTx.bukti_bayar_url = params.bukti_bayar_url;
+    if (params.metode_bayar_tambahan !== undefined) existingTx.metode_bayar_tambahan = params.metode_bayar_tambahan;
+    if (params.bukti_tambahan_url !== undefined) existingTx.bukti_tambahan_url = params.bukti_tambahan_url;
+    if (params.customer_maps_5star !== undefined) existingTx.customer_maps_5star = params.customer_maps_5star;
+    if (params.bukti_maps_url !== undefined) existingTx.bukti_maps_url = params.bukti_maps_url;
 
-    DatabaseService.updateRowByColumn("MASTER_TRANSAKSI", "id", txId, existingTx);
+    DatabaseService.updateRowByColumn("MASTER_TRANSAKSI", "id", existingTx.id || txId, existingTx);
   } else {
     var txObj = {
       id: txId,
       created_at: nowIso,
       updated_at: nowIso,
-      import_id: params.import_id || "",
-      outlet_id: params.outlet_id || "OUT-001",
-      outlet_name: params.outlet_name || "",
-      admin_id: params.admin_id || "SYSTEM",
-      admin_name: params.admin_name || "",
+      import_id: importId,
+      outlet_id: outletId,
+      outlet_name: outletName,
+      admin_id: adminId,
+      admin_name: adminName,
       tanggal_transaksi: dateStr,
       jam_transaksi: timeStr,
       no_resi: params.no_resi || "",
@@ -3654,7 +3714,12 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
       status_audit: params.status_audit || "PENDING",
       status_sync: params.status_sync || "LOCAL",
       sumber_data: params.sumber_data || "Pre Input",
-      catatan: params.catatan || ""
+      catatan: params.catatan || "",
+      bukti_bayar_url: params.bukti_bayar_url || "",
+      metode_bayar_tambahan: params.metode_bayar_tambahan || "",
+      bukti_tambahan_url: params.bukti_tambahan_url || "",
+      customer_maps_5star: params.customer_maps_5star || "",
+      bukti_maps_url: params.bukti_maps_url || ""
     };
     DatabaseService.insertRow("MASTER_TRANSAKSI", txObj);
   }
@@ -3986,13 +4051,28 @@ var TransactionService = {
       throw new Error("Setoran harian untuk tanggal ini sudah dibuat. Hubungi Owner apabila transaksi tersebut memang harus dimasukkan ke dalam setoran.");
     }
 
-    var transId = data.transaksi_id || this.generateTransactionId();
+    var rawTxId = (data.transaksi_id || "").toString().trim();
+    var isPreInput = rawTxId.indexOf("PRE-") === 0;
+    var importId = (data.import_id || "").toString().trim() || (isPreInput ? rawTxId : "");
+    var transId = isPreInput ? this.generateTransactionId() : (rawTxId || this.generateTransactionId());
     var fin = this.calculateFinancial(data, jenisLayanan);
     
+    var txTimestamp = "";
+    if (data.timestamp && String(data.timestamp).indexOf("T") !== -1) {
+      txTimestamp = String(data.timestamp);
+    } else if (txDate && txTime) {
+      txTimestamp = txDate + "T" + txTime;
+      if (txTimestamp.indexOf("Z") === -1 && txTimestamp.indexOf("+") === -1) {
+        txTimestamp += ".000Z";
+      }
+    } else {
+      txTimestamp = new Date().toISOString();
+    }
+
     var rowObj = {
       resi_id: resiId,
       transaksi_id: transId,
-      timestamp: timestamp,
+      timestamp: txTimestamp,
       admin_id_pencatat: data.admin_id_pencatat,
       outlet_id_input: data.outlet_id_input,
       tipe_produk: data.tipe_produk,
@@ -4002,6 +4082,8 @@ var TransactionService = {
       bukti_tambahan_url: data.bukti_tambahan_url || "",
       foto_paket_url: data.foto_paket_url || "",
       foto_resi_url: data.foto_resi_url || "",
+      customer_maps_5star: data.customer_maps_5star || "",
+      bukti_maps_url: data.bukti_maps_url || "",
       status_resi: "AKTIF"
     };
     for (var k in fin) { rowObj[k] = fin[k]; }
@@ -4152,8 +4234,12 @@ var TransactionService = {
 
     autoUpsertMasterTransaksiAndPengiriman({
       transaksi_id: transId,
+      id: transId,
+      import_id: importId,
       outlet_id: data.outlet_id_input,
+      outlet_name: data.outlet_name || "",
       admin_id: data.admin_id_pencatat,
+      admin_name: data.admin_name || "",
       tanggal_transaksi: txDate,
       jam_transaksi: txTime,
       no_resi: resiId,
@@ -4182,8 +4268,13 @@ var TransactionService = {
       kas_outlet: Number(fin.kas_operasional) || 0,
       foto_barang: data.foto_paket_url || "",
       foto_resi: data.foto_resi_url || "",
+      bukti_bayar_url: data.bukti_bayar_url || "",
+      metode_bayar_tambahan: data.metode_bayar_tambahan || "",
+      bukti_tambahan_url: data.bukti_tambahan_url || "",
+      customer_maps_5star: data.customer_maps_5star || "",
+      bukti_maps_url: data.bukti_maps_url || "",
       status_transaksi: "SELESAI",
-      sumber_data: "Resi & Bayar"
+      sumber_data: data.sumber_data || "Resi & Bayar"
     });
     
     // Ambil record yang baru ditulis untuk dikirim balik ke server.ts

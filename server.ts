@@ -777,6 +777,11 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
   status_sync?: string;
   sumber_data?: string;
   catatan?: string;
+  bukti_bayar_url?: string;
+  metode_bayar_tambahan?: string;
+  bukti_tambahan_url?: string;
+  customer_maps_5star?: string;
+  bukti_maps_url?: string;
   actor_id?: string;
   actor_name?: string;
   correlation_id?: string;
@@ -784,7 +789,11 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
   if (!db.MASTER_TRANSAKSI) db.MASTER_TRANSAKSI = [];
   if (!db.MASTER_PENGIRIMAN) db.MASTER_PENGIRIMAN = [];
 
-  const txId = String(params.transaksi_id || "").trim();
+  const rawTxId = String(params.transaksi_id || (params as any).id || "").trim();
+  const isPre = rawTxId.startsWith("PRE-");
+  const importId = String(params.import_id || "").trim() || (isPre ? rawTxId : "");
+  const txId = isPre ? ((params as any).id && !(params as any).id.startsWith("PRE-") ? (params as any).id : `TRX-${Date.now()}-${Math.floor(Math.random() * 1000)}`) : (rawTxId || `TRX-${Date.now()}-${Math.floor(Math.random() * 1000)}`);
+
   if (!txId) return { success: false, message: "transaksi_id wajib diisi" };
 
   const nowIso = new Date().toISOString();
@@ -793,9 +802,23 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
 
   let targetStatus = normalizeLifecycleStatus(params.status_transaksi || "DRAFT");
 
+  let outletId = params.outlet_id || "OUT-001";
+  let outletName = params.outlet_name || "";
+  if (!outletName && outletId && db.Outlets) {
+    const o = db.Outlets.find((x: any) => x.outlet_id === outletId);
+    if (o) outletName = o.nama_outlet || o.nama || "";
+  }
+
+  let adminId = params.admin_id || "SYSTEM";
+  let adminName = params.admin_name || "";
+  if (!adminName && adminId && adminId !== "SYSTEM" && db.Users) {
+    const u = db.Users.find((x: any) => x.user_id === adminId);
+    if (u) adminName = u.nama_lengkap || u.username || "";
+  }
+
   // 1. MASTER_TRANSAKSI (Finance Single Source of Truth)
-  // DUPLICATE PROTECTION: 1 transaksi = 1 row in MASTER_TRANSAKSI (unique key: id = transaksi_id)
-  let existingTx = db.MASTER_TRANSAKSI.find((t: any) => t.id === txId);
+  // DUPLICATE PROTECTION: 1 transaksi = 1 row in MASTER_TRANSAKSI
+  let existingTx = db.MASTER_TRANSAKSI.find((t: any) => t.id === txId || (importId && t.import_id === importId) || (params.no_resi && t.no_resi === params.no_resi));
   if (existingTx) {
     const transitionCheck = validateLifecycleTransition(existingTx.status_transaksi, targetStatus);
     if (!transitionCheck.valid) {
@@ -841,6 +864,11 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
       existingTx.status_transaksi = targetStatus;
     }
 
+    if (importId && !existingTx.import_id) existingTx.import_id = importId;
+    if (outletId && !existingTx.outlet_id) existingTx.outlet_id = outletId;
+    if (outletName && !existingTx.outlet_name) existingTx.outlet_name = outletName;
+    if (adminId && !existingTx.admin_id) existingTx.admin_id = adminId;
+    if (adminName && !existingTx.admin_name) existingTx.admin_name = adminName;
     if (params.no_resi) existingTx.no_resi = params.no_resi;
     if (params.ekspedisi) existingTx.ekspedisi = params.ekspedisi;
     if (params.tipe_produk) existingTx.tipe_produk = params.tipe_produk;
@@ -881,6 +909,11 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
     if (params.tanggal_transaksi) existingTx.tanggal_transaksi = params.tanggal_transaksi;
     if (params.jam_transaksi) existingTx.jam_transaksi = params.jam_transaksi;
     if (params.timestamp) existingTx.timestamp = params.timestamp;
+    if (params.bukti_bayar_url !== undefined) existingTx.bukti_bayar_url = params.bukti_bayar_url;
+    if (params.metode_bayar_tambahan !== undefined) existingTx.metode_bayar_tambahan = params.metode_bayar_tambahan;
+    if (params.bukti_tambahan_url !== undefined) existingTx.bukti_tambahan_url = params.bukti_tambahan_url;
+    if (params.customer_maps_5star !== undefined) existingTx.customer_maps_5star = params.customer_maps_5star;
+    if (params.bukti_maps_url !== undefined) existingTx.bukti_maps_url = params.bukti_maps_url;
   } else {
     const newTx = {
       id: txId,
@@ -888,11 +921,11 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
       updated_at: nowIso,
       timestamp: params.timestamp || `${dateStr}T${timeStr}`,
       imported_at: params.imported_at,
-      import_id: params.import_id || "",
-      outlet_id: params.outlet_id || "OUT-001",
-      outlet_name: params.outlet_name || "",
-      admin_id: params.admin_id || "SYSTEM",
-      admin_name: params.admin_name || "",
+      import_id: importId,
+      outlet_id: outletId,
+      outlet_name: outletName,
+      admin_id: adminId,
+      admin_name: adminName,
       tanggal_transaksi: dateStr,
       jam_transaksi: timeStr,
       no_resi: params.no_resi || "",
@@ -934,7 +967,12 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
       status_audit: params.status_audit || "PENDING",
       status_sync: params.status_sync || "LOCAL",
       sumber_data: params.sumber_data || "Pre Input",
-      catatan: params.catatan || ""
+      catatan: params.catatan || "",
+      bukti_bayar_url: params.bukti_bayar_url || "",
+      metode_bayar_tambahan: params.metode_bayar_tambahan || "",
+      bukti_tambahan_url: params.bukti_tambahan_url || "",
+      customer_maps_5star: params.customer_maps_5star || "",
+      bukti_maps_url: params.bukti_maps_url || ""
     };
     db.MASTER_TRANSAKSI.unshift(newTx);
     existingTx = newTx;
@@ -9339,18 +9377,29 @@ app.use((err: any, req: any, res: any, next: any) => {
   next(err);
 });
 
-// === PRODUCTION STANDALONE INTEGRATION ===
+// === VITE & STATIC SERVING INTEGRATION ===
 
-if (!isVercel && process.env.NODE_ENV === "production") {
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
+async function startServer() {
+  if (!isVercel && process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else if (!isVercel) {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server J&T OPS PRO running on http://localhost:${PORT}`);
   });
 }
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server J&T OPS PRO running on http://localhost:${PORT}`);
-});
+startServer();
 
 export default app; 
