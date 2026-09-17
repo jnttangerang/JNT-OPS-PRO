@@ -8,6 +8,7 @@ import { useAppsScript } from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
 import { highlightText } from "../../utils/highlight";
 import { getTodayWIB, getWIBDate } from "../../utils/dateUtils";
+import { getDisplayImageUrl } from "../../utils/image";
 import { SessionData, Outlet, KeuanganOutlet, KategoriKeuangan, User, OpeningBalanceKasOutlet } from "../../types";
 
 interface KeuanganOutletPageProps {
@@ -1087,9 +1088,10 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
                 {formBuktiUrl && (
                   <div className="mt-2">
                     <img
-                      src={formBuktiUrl}
+                      src={getDisplayImageUrl(formBuktiUrl)}
                       alt="Preview Bukti"
                       className="h-20 w-auto object-cover rounded-xl border border-gray-200"
+                      referrerPolicy="no-referrer"
                     />
                   </div>
                 )}
@@ -1138,9 +1140,10 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
             </div>
             <div className="p-4 flex justify-center bg-gray-900/5">
               <img
-                src={previewBuktiUrl}
+                src={getDisplayImageUrl(previewBuktiUrl)}
                 alt="Bukti Transaksi"
                 className="max-h-[70vh] w-auto object-contain rounded-xl shadow-sm"
+                referrerPolicy="no-referrer"
               />
             </div>
           </div>
