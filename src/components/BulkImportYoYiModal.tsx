@@ -262,18 +262,13 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
           if (found) {
             mapped_outlet_id = found.outlet_id;
             mapped_outlet_name = found.nama_outlet;
-            if (activeOutletId && found.outlet_id !== activeOutletId) {
-              is_skipped = true;
-              skip_reason = "INVALID_OUTLET";
-            }
           } else {
-            if (activeOutletId) {
-              mapped_outlet_id = activeOutletId;
-              mapped_outlet_name = activeOutletObj?.nama_outlet || activeOutletId;
-            } else {
-              is_skipped = true;
-              skip_reason = "INVALID_OUTLET";
-            }
+            // Keep the raw outlet name if we can't map it to an ID, but still use activeOutletId for the ID if forced, or just leave it blank.
+            // Wait, the requirement says "jangan hardcode nama outlet" and "Gunakan existing MASTER_OUTLET sebagai lookup".
+            // If it's not found in MASTER_OUTLET (outlets), we shouldn't force it to activeOutletId. We should either keep the raw value or let it pass so the backend can handle it.
+            // Let's just set mapped_outlet_id to rawStr and mapped_outlet_name to rawStr.
+            mapped_outlet_id = rawStr || activeOutletId;
+            mapped_outlet_name = rawStr || activeOutletObj?.nama_outlet || activeOutletId;
           }
         }
 

@@ -4769,7 +4769,7 @@ app.post("/api/getDetailTransaksi", (req, res) => {
 });
 
 // 10.9 UPDATE TRANSAKSI (FOR OWNER EDIT)
-app.post("/api/updateTransaksi", (req, res) => {
+app.post("/api/updateTransaksi", async (req, res) => {
   const db = readDb();
   const { 
     resi_id, 
@@ -4802,6 +4802,18 @@ app.post("/api/updateTransaksi", (req, res) => {
   const targetResi = old_resi_id || resi_id;
   if (!targetResi && !transaksi_id) {
     return res.status(400).json({ status: "error", message: "resi_id atau transaksi_id diperlukan" });
+  }
+
+  try {
+    const gasResult = await callAppsScript("updateTransaksi", {
+      jenis_layanan: tipe || "Express",
+      data: req.body
+    });
+    if (gasResult.status === "error") {
+      return res.status(400).json({ status: "error", message: gasResult.message || "Gagal update di Apps Script" });
+    }
+  } catch (e: any) {
+    return res.status(503).json({ status: "error", message: "Gagal menyinkronkan dengan database pusat: " + e.message });
   }
 
   let exp = (db.EXP_Resi || []).find((r: any) => r.resi_id === targetResi || (transaksi_id && r.transaksi_id === transaksi_id));

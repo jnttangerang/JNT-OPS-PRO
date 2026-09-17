@@ -3755,7 +3755,12 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
       existingShip.status_pengiriman = shipStatus;
       existingShip.status_pickup = pickupStatus;
       existingShip.status_delivery = deliveryStatus;
-
+      
+      if (outletId && !existingShip.outlet_id) existingShip.outlet_id = outletId;
+      if (outletName && !existingShip.outlet_name) existingShip.outlet_name = outletName;
+      if (adminId && !existingShip.admin_id) existingShip.admin_id = adminId;
+      if (adminName && !existingShip.admin_name) existingShip.admin_name = adminName;
+      
       if (params.no_resi) existingShip.no_resi = params.no_resi;
       if (params.ekspedisi) existingShip.ekspedisi = params.ekspedisi;
       if (params.tipe_produk) existingShip.tipe_produk = params.tipe_produk;
@@ -3777,10 +3782,10 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
         updated_at: nowIso,
         transaksi_id: txId,
         import_id: params.import_id || "",
-        outlet_id: params.outlet_id || "OUT-001",
-        outlet_name: params.outlet_name || "",
-        admin_id: params.admin_id || "SYSTEM",
-        admin_name: params.admin_name || "",
+        outlet_id: outletId,
+        outlet_name: outletName,
+        admin_id: adminId,
+        admin_name: adminName,
         tanggal_pengiriman: dateStr,
         jam_pengiriman: timeStr,
         no_resi: params.no_resi || "",
@@ -4352,6 +4357,42 @@ var TransactionService = {
     }
     
     DatabaseService.updateFullRowByColumn(sheetName, "resi_id", resiId, rowObj);
+    
+    autoUpsertMasterTransaksiAndPengiriman({
+      transaksi_id: existingTx.transaksi_id,
+      id: existingTx.transaksi_id,
+      outlet_id: data.outlet_id_input || existingTx.outlet_id_input,
+      no_resi: resiId,
+      ekspedisi: data.ekspedisi || jenisLayanan,
+      tipe_produk: data.tipe_produk,
+      snapshot_nama_pengirim: data.nama_pengirim,
+      snapshot_hp_pengirim: data.hp_pengirim,
+      snapshot_alamat_pengirim: data.alamat_pengirim,
+      snapshot_nama_penerima: data.nama_penerima,
+      snapshot_hp_penerima: data.hp_penerima,
+      snapshot_alamat_penerima: data.alamat_penerima,
+      nama_barang: data.nama_barang,
+      berat_barang: Number(data.berat_kg) || 0,
+      volume_barang: data.volume,
+      nilai_barang: Number(data.nilai_barang) || 0,
+      metode_bayar: data.metode_bayar,
+      ongkir_customer: Number(data.ongkir_dasar) || 0,
+      packing: Number(data.biaya_packing) || 0,
+      amplop: Number(data.biaya_amplop) || 0,
+      biaya_lain: Number(data.biaya_lain) || 0,
+      total_customer: Number(data.total_dibayar_customer) || Number(fin.grand_total) || 0,
+      ongkir_yoyi: Number(data.biaya_yoyi) || 0,
+      asuransi: Number(data.biaya_asuransi) || 0,
+      biaya_lain_yoyi: Number(data.biaya_jtc) || 0,
+      wajib_setor_owner: Number(fin.setoran_ke_owner) || 0,
+      kas_outlet: Number(fin.kas_operasional) || 0,
+      foto_barang: data.foto_paket_url !== undefined ? data.foto_paket_url : existingTx.foto_paket_url,
+      foto_resi: data.foto_resi_url !== undefined ? data.foto_resi_url : existingTx.foto_resi_url,
+      catatan: data.catatan || "",
+      bukti_bayar_url: data.bukti_bayar_url !== undefined ? data.bukti_bayar_url : existingTx.bukti_bayar_url,
+      metode_bayar_tambahan: data.metode_bayar_tambahan !== undefined ? data.metode_bayar_tambahan : existingTx.metode_bayar_tambahan,
+      bukti_tambahan_url: data.bukti_tambahan_url !== undefined ? data.bukti_tambahan_url : existingTx.bukti_tambahan_url,
+    });
     
     DatabaseService.appendAudit(
       data.admin_id_pencatat,
