@@ -51,6 +51,8 @@ interface ParsedRow {
   is_skipped: boolean;
   skip_reason: string;
   mapped_outlet_id: string;
+  mapped_admin_id: string;
+  import_error?: string;
 }
 
 export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, adminId, outlets, users = [], onImportComplete }: BulkImportYoYiModalProps) {
@@ -220,7 +222,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         const isDfodDetected = String(rawMetode).toUpperCase().includes("DFOD") || String(tipeProduk).toUpperCase().includes("DFOD") || String(sumber).toUpperCase().includes("DFOD");
         const metodeBayar = isDfodDetected ? "DFOD" : (rawMetode || "Tunai");
         
-        const kodeOutletRaw = getColValue(row, ["Outlet", "Kode Outlet", "Nama Outlet", "Kode Tempat"]);
+        const kodeOutletRaw = getColValue(row, ["Nama Outlet", "Outlet", "Kode Outlet", "Kode Tempat"]);
         
         let is_skipped = false;
         let skip_reason = "";
@@ -258,6 +260,24 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
           // if not found, we assume the format changed or it's just not mapped. 
           // We DO NOT skip, we just use activeOutletId.
         }
+
+        let mapped_admin_id = adminId;
+        const operatorTrimmed = String(operator || "").trim();
+        if (operatorTrimmed && users && users.length > 0) {
+          const normOperator = operatorTrimmed.toUpperCase();
+          const matchedUser = users.find(u => 
+            (u.nama_lengkap || "").trim().toUpperCase() === normOperator ||
+            (u.username || "").trim().toUpperCase() === normOperator
+          );
+          if (matchedUser) {
+            mapped_admin_id = matchedUser.user_id;
+          } else {
+            is_skipped = true;
+            if (!skip_reason) {
+              skip_reason = "OPERATOR_TIDAK_DIKENALI";
+            }
+          }
+        }
         
         const resiClean = String(resi).trim().toUpperCase();
         
@@ -287,6 +307,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
           tipe_asuransi: String(tipeAsuransi).trim(),
           kode_outlet: String(kodeOutletRaw).trim(),
           mapped_outlet_id,
+          mapped_admin_id,
           tipe_produk: String(tipeProduk).trim() || "EZ",
           metode_bayar: String(metodeBayar).trim(),
           metode_bayar_tambahan: rawMetodeTambahan ? String(rawMetodeTambahan).trim() : undefined,
@@ -350,6 +371,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
     
     setIsImporting(true);
     let successCount = 0;
+    const importErrors: Record<string, string> = {};
     
     // Process sequentially to prevent DB race conditions and adhere to concurrency rules
     for (let i = 0; i < rowsToImport.length; i++) {
@@ -380,17 +402,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
 
       const setoranKeOwner = isDfod ? 0 : summary.owner_deposit;
       
-      let resolvedAdminId = adminId;
-      if (row.operator && users && users.length > 0) {
-        const normOperator = row.operator.trim().toUpperCase();
-        const matchedUser = users.find(u => 
-          (u.nama_lengkap || "").trim().toUpperCase() === normOperator ||
-          (u.username || "").trim().toUpperCase() === normOperator
-        );
-        if (matchedUser) {
-          resolvedAdminId = matchedUser.user_id;
-        }
-      }
+      const resolvedAdminId = row.mapped_admin_id;
       
       const transactionData = {
         resi_id: row.resi_id,
@@ -444,28 +456,52 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
          });
          if (res && res.status === "success") {
             successCount++;
+         } else {
+            importErrors[row.resi_id] = res?.message || "Gagal disimpan (tidak diketahui sebabnya)";
          }
-      } catch (err) {
+      } catch (err: any) {
          console.warn(`Row ${row.resi_id} import failed:`, err);
+         importErrors[row.resi_id] = err?.message || "Gagal terhubung ke server";
       }
       
       setImportProgress(Math.round(((i + 1) / rowsToImport.length) * 100));
     }
     
+    const failedResiList = Object.keys(importErrors);
+
+    if (failedResiList.length > 0) {
+      setParsedData(prev => prev.map(r => {
+        if (importErrors[r.resi_id]) {
+          return { ...r, is_valid: false, import_error: importErrors[r.resi_id] };
+        }
+        return r;
+      }));
+      const sampleFailed = failedResiList.slice(0, 5).join(", ");
+      toast.error(`${failedResiList.length} transaksi gagal diimport: ${sampleFailed}${failedResiList.length > 5 ? "..." : ""}`);
+    }
+
     // Create Audit Log for Bulk Import
     try {
+      let auditDetail = `Berhasil mengimport ${successCount} dari ${rowsToImport.length} transaksi secara bulk. (Duplikat: ${duplicateRows}, Skipped: ${skippedRows})`;
+      if (failedResiList.length > 0) {
+        auditDetail += ` Gagal (${failedResiList.length}): ${failedResiList.join(", ")}`;
+      }
       await callBackend("saveAuditLog", {
         action: "BULK_IMPORT_YOYI",
-        detail: `Berhasil mengimport ${successCount} dari ${rowsToImport.length} transaksi secara bulk. (Duplikat: ${duplicateRows}, Skipped: ${skippedRows})`,
+        detail: auditDetail,
         admin_id: adminId,
         outlet_id: activeOutletId
       });
     } catch(e) {}
     
     setIsImporting(false);
-    toast.success(`Berhasil mengimport ${successCount} transaksi.`);
-    onImportComplete();
-    handleClose();
+    if (successCount > 0) {
+      toast.success(`Berhasil mengimport ${successCount} transaksi.`);
+      onImportComplete();
+    }
+    if (failedResiList.length === 0) {
+      handleClose();
+    }
   };
 
   if (!isOpen) return null;
@@ -576,9 +612,13 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {parsedData.slice(0, 50).map((row, idx) => (
-                        <tr key={idx} className={row.is_valid ? "hover:bg-gray-50" : "bg-red-50/30"}>
+                        <tr key={idx} className={row.is_valid && !row.import_error ? "hover:bg-gray-50" : "bg-red-50/30"}>
                           <td className="px-4 py-3">
-                            {row.is_valid && !row.is_duplicate ? (
+                            {row.import_error ? (
+                              <span className="inline-flex items-center gap-1 text-rose-600 bg-rose-50 px-2 py-0.5 rounded font-bold text-[10px]">
+                                <AlertCircle className="w-3 h-3" /> GAGAL: {row.import_error}
+                              </span>
+                            ) : row.is_valid && !row.is_duplicate ? (
                               <span className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-bold text-[10px]">
                                 <CheckCircle className="w-3 h-3" /> READY
                               </span>
