@@ -591,7 +591,7 @@ function AppContent() {
               } />
               
               <Route path="/lengkapi-yoyi" element={
-                <LengkapiYoYiPage session={session} outlets={outlets} />
+                <LengkapiYoYiPage session={session} outlets={outlets} activeOutletId={activeOutletId} />
               } />
               <Route path="/riwayat-transaksi" element={
                 <RiwayatTransaksiPage

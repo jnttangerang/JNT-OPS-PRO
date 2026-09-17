@@ -7,9 +7,10 @@ import { DollarSign, Loader2, Check } from 'lucide-react';
 interface LengkapiYoYiPageProps {
   session: any;
   outlets: any[];
+  activeOutletId?: string;
 }
 
-export default function LengkapiYoYiPage({ session, outlets }: LengkapiYoYiPageProps) {
+export default function LengkapiYoYiPage({ session, outlets, activeOutletId }: LengkapiYoYiPageProps) {
   const { callBackend } = useAppsScript();
   const [summary, setSummary] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +27,7 @@ export default function LengkapiYoYiPage({ session, outlets }: LengkapiYoYiPageP
       setLoading(true);
       const qs = new URLSearchParams();
       if (session.role === "ADMIN") qs.append("admin_id", session.user_id);
-      if (session.active_outlet_id) qs.append("outlet_id", session.active_outlet_id);
+      if (activeOutletId) qs.append("outlet_id", activeOutletId);
       
       const resData = await fetch('/api/yoyi/summary?' + qs.toString());
       const res = await resData.json();
@@ -43,7 +44,7 @@ export default function LengkapiYoYiPage({ session, outlets }: LengkapiYoYiPageP
 
   useEffect(() => {
     fetchSummary();
-  }, [session.active_outlet_id]);
+  }, [activeOutletId]);
 
   const filteredSummary = summary.filter(s => {
     const isLengkap = s.transaksi_lengkap >= s.total_transaksi;
@@ -97,7 +98,7 @@ export default function LengkapiYoYiPage({ session, outlets }: LengkapiYoYiPageP
               <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Tanggal</th>
               <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Progress</th>
               <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Nominal Transaksi</th>
-              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Wajib Setor Cash</th>
+              <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Wajib Setor ADMIN → OWNER</th>
               <th className="px-6 py-4 text-left text-xs font-semibold text-gray-500 uppercase">Status</th>
               <th className="px-6 py-4 text-right text-xs font-semibold text-gray-500 uppercase">Aksi</th>
             </tr>
@@ -146,8 +147,8 @@ export default function LengkapiYoYiPage({ session, outlets }: LengkapiYoYiPageP
           outletCash={setoranKasOutlet}
           adminId={session.user_id}
           adminName={session.nama_lengkap}
-          activeOutletId={session.active_outlet_id}
-          activeOutletName={outlets.find(o => o.outlet_id === session.active_outlet_id)?.nama_outlet || ''}
+          activeOutletId={activeOutletId}
+          activeOutletName={outlets.find(o => o.outlet_id === activeOutletId)?.nama_outlet || ''}
           onSuccess={() => {
             setSetoranModalOpen(false);
             fetchSummary();
@@ -159,7 +160,7 @@ export default function LengkapiYoYiPage({ session, outlets }: LengkapiYoYiPageP
   );
 }
 
-function YoYiDetailView({ tanggal, onBack, session, outlets, onSetoran }: any) {
+function YoYiDetailView({ tanggal, onBack, session, outlets, onSetoran, activeOutletId }: any) {
   const { callBackend } = useAppsScript();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,7 +171,7 @@ function YoYiDetailView({ tanggal, onBack, session, outlets, onSetoran }: any) {
       const qs = new URLSearchParams();
       qs.append("tanggal", tanggal);
       if (session.role === "ADMIN") qs.append("admin_id", session.user_id);
-      if (session.active_outlet_id) qs.append("outlet_id", session.active_outlet_id);
+      if (activeOutletId) qs.append("outlet_id", activeOutletId);
 
       const resData = await fetch('/api/yoyi/transactions?' + qs.toString());
       const res = await resData.json();
@@ -231,7 +232,7 @@ function YoYiDetailView({ tanggal, onBack, session, outlets, onSetoran }: any) {
         </div>
         <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
           <div>
-            <p className="text-sm font-medium text-gray-500">Kas Outlet</p>
+            <p className="text-sm font-medium text-gray-500">KAS OUTLET</p>
             <p className="text-xl font-bold text-green-600 mt-1">Rp {kasOutlet.toLocaleString('id-ID')}</p>
           </div>
           {allComplete && (

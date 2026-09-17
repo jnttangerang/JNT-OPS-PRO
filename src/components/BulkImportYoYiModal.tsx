@@ -62,7 +62,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
-  const [metodeBayarTambahanDefault, setMetodeBayarTambahanDefault] = useState<string>("QRIS");
+  
   
   // Summary
   const totalRows = parsedData.length;
@@ -230,13 +230,12 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         
         let mapped_outlet_id = activeOutletId;
         if (kodeOutletRaw) {
-          const found = outlets.find(o => 
-            (o.kode_outlet && o.kode_outlet.toLowerCase() === String(kodeOutletRaw).trim().toLowerCase()) ||
-            (o.nama_outlet && o.nama_outlet.toLowerCase() === String(kodeOutletRaw).trim().toLowerCase()) ||
-            (o.outlet_id && o.outlet_id.toLowerCase() === String(kodeOutletRaw).trim().toLowerCase())
-          );
+          const rawOutlet = String(kodeOutletRaw).trim().toLowerCase();
+          const found = outlets.find(o => Object.values(o).some(v => String(v).trim().toLowerCase() === rawOutlet));
           if (found) {
-            mapped_outlet_id = found.outlet_id;
+            mapped_outlet_id = found.outlet_id || found.id || rawOutlet; // Fallback to rawOutlet if key is missing but it matched
+          } else if (rawOutlet === String(activeOutletId).trim().toLowerCase()) {
+            mapped_outlet_id = activeOutletId;
           } else {
              is_skipped = true;
              skip_reason = "INVALID_OUTLET";
@@ -348,9 +347,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
       const biayaLain = (isDoc && row.biaya_lain === 0) ? 1000 : row.biaya_lain;
 
       const metodeBayarOngkir = isDfod ? "DFOD" : (row.metode_bayar || "Tunai");
-      const resolvedMetodeTambahan = row.metode_bayar_tambahan || 
-        (metodeBayarTambahanDefault === "IKUT_ONGKIR" ? (isDfod ? "Tunai" : metodeBayarOngkir) : metodeBayarTambahanDefault) || 
-        "QRIS";
+      const resolvedMetodeTambahan = row.metode_bayar_tambahan || "";
 
       const summary = calculateFinancialSummary({
         ...row,
@@ -532,24 +529,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
               </div>
 
               {/* Settings and Options */}
-              <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold text-amber-900">Metode Bayar Tambahan (Amplop / Packing)</p>
-                  <p className="text-[11px] text-amber-700">Pilih metode pembayaran default untuk biaya amplop dokumen & packing:</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={metodeBayarTambahanDefault}
-                    onChange={(e) => setMetodeBayarTambahanDefault(e.target.value)}
-                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-bold text-gray-800 shadow-xs focus:ring-2 focus:ring-amber-500 cursor-pointer"
-                  >
-                    <option value="QRIS">QRIS (Default)</option>
-                    <option value="Tunai">Tunai (Cash)</option>
-                    <option value="Transfer">Transfer Bank</option>
-                    <option value="IKUT_ONGKIR">Sama dengan Metode Ongkir</option>
-                  </select>
-                </div>
-              </div>
+              
 
               {/* Preview Table */}
               <div className="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
@@ -558,7 +538,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
                     <TableIcon className="w-4 h-4 text-gray-500" />
                     <span className="text-sm font-bold text-gray-800">Data Preview (50 Baris Pertama)</span>
                   </div>
-                  <span className="text-xs text-gray-500 font-medium">Metode Tambahan: <span className="font-bold text-indigo-600 font-mono">{metodeBayarTambahanDefault}</span></span>
+                  
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs whitespace-nowrap">
@@ -602,7 +582,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
                           </td>
                           <td className="px-4 py-3">
                             <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-semibold text-[11px]">
-                              {row.metode_bayar_tambahan || (metodeBayarTambahanDefault === "IKUT_ONGKIR" ? row.metode_bayar : metodeBayarTambahanDefault)}
+                              {row.metode_bayar_tambahan || "-"}
                             </span>
                           </td>
                           <td className="px-4 py-3 font-mono font-bold text-gray-800">
