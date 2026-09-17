@@ -2750,6 +2750,19 @@ const handleSaveTransaksiRequest = async (req: any, res: any) => {
         };
       }
     }
+
+    // Auto-upsert sender and recipient to customer address book (P0-12)
+    const txToUpsert = gasResult.data?.transaksi || data;
+    autoUpsertCustomerAndAddressBook(currentDb, {
+      outlet_id: outletId,
+      nama_pengirim: txToUpsert.snapshot_nama_pengirim || txToUpsert.nama_pengirim,
+      hp_pengirim: txToUpsert.snapshot_hp_pengirim || txToUpsert.hp_pengirim,
+      alamat_pengirim: txToUpsert.snapshot_alamat_pengirim || txToUpsert.alamat_pengirim,
+      nama_penerima: txToUpsert.snapshot_nama_penerima || txToUpsert.nama_penerima,
+      hp_penerima: txToUpsert.snapshot_hp_penerima || txToUpsert.hp_penerima,
+      alamat_penerima: txToUpsert.snapshot_alamat_penerima || txToUpsert.alamat_penerima
+    });
+
     writeDb(currentDb);
     // Tahan sync selama 10 detik — beri waktu local db terbaca dulu
     (global as any)._lastRiwayatSync = Date.now();
@@ -9129,35 +9142,6 @@ app.post("/api/rejectPromoReviewValidation", (req, res) => {
   return res.json({ status: "success", data: val });
 });
 
-// === API 404 & ERROR HANDLING (Prevents falling through to SPA HTML) ===
-app.all(["/api", "/api/*"], (req, res) => {
-  return res.status(404).json({
-    status: "error",
-    message: `Endpoint API '${req.originalUrl}' tidak ditemukan.`
-  });
-});
-
-app.use((err: any, req: any, res: any, next: any) => {
-  if (req.originalUrl && req.originalUrl.startsWith("/api")) {
-    console.error("Unhandled API Error:", err);
-    return res.status(500).json({
-      status: "error",
-      message: err?.message || "Terjadi kesalahan internal pada server API."
-    });
-  }
-  next(err);
-});
-
-// === PRODUCTION STANDALONE INTEGRATION ===
-
-if (!isVercel && process.env.NODE_ENV === "production") {
-  const distPath = path.join(process.cwd(), "dist");
-  app.use(express.static(distPath));
-  app.get("*", (req, res) => {
-    res.sendFile(path.join(distPath, "index.html"));
-  });
-
-  
 // ==========================================
 // YOYI COMPLETION ENDPOINTS
 // ==========================================
@@ -9207,18 +9191,17 @@ function checkYoyiCompletion(tx: any) {
 }
 
 app.get("/api/yoyi/summary", async (req, res) => {
-  const db = readDb(); // Could sync if needed, but for speed let's just read
+  const db = readDb();
   const admin_id = req.query.admin_id;
   const outlet_id = req.query.outlet_id;
   
   const yoyiTx = (db.MASTER_TRANSAKSI || []).filter((tx: any) => {
     if (!isYoyiTx(tx)) return false;
-    if (outlet_id && tx.outlet_id !== outlet_id) return false;
-    // Admins only see their own, Owner sees all
+    if (outlet_id && tx.outlet_id !== outlet_id && tx.outlet_id_input !== outlet_id) return false;
     if (admin_id) {
        const user = (db.Users || []).find((u: any) => u.user_id === admin_id);
        if (user && user.role === "ADMIN") {
-         const txAdmin = tx.admin_pembuat || tx.admin_id || tx.user_id || tx.created_by || "UNKNOWN";
+         const txAdmin = tx.admin_pembuat || tx.admin_id || tx.admin_id_pencatat || tx.user_id || tx.created_by || "UNKNOWN";
          if (txAdmin !== user.user_id && txAdmin !== user.username && txAdmin !== user.nama_lengkap) {
            return false;
          }
@@ -9234,13 +9217,17 @@ app.get("/api/yoyi/summary", async (req, res) => {
     if (!tgl) continue;
 
     if (!dateMap[tgl]) {
+      const setoran = (db.Master_Setoran || []).find((s: any) => 
+        s.tanggal === tgl && (!outlet_id || s.outlet_id === outlet_id)
+      );
       dateMap[tgl] = {
         tanggal: tgl,
         total_transaksi: 0,
         transaksi_lengkap: 0,
         total_nominal: 0,
         wajib_setor: 0,
-        kas_outlet: 0
+        kas_outlet: 0,
+        status_setoran: setoran ? (setoran.status || "SUDAH_SETOR") : "BELUM_SETOR"
       };
     }
     
@@ -9268,14 +9255,18 @@ app.get("/api/yoyi/transactions", async (req, res) => {
   
   if (!tanggal) return res.status(400).json({ status: "error", message: "Tanggal wajib diisi" });
 
+  const setoran = (db.Master_Setoran || []).find((s: any) => 
+    s.tanggal === tanggal && (!outlet_id || s.outlet_id === outlet_id)
+  );
+
   const txList = (db.MASTER_TRANSAKSI || []).filter((tx: any) => {
     if (!isYoyiTx(tx)) return false;
     if (extractBusinessDate(tx) !== tanggal) return false;
-    if (outlet_id && tx.outlet_id !== outlet_id) return false;
+    if (outlet_id && tx.outlet_id !== outlet_id && tx.outlet_id_input !== outlet_id) return false;
     if (admin_id) {
        const user = (db.Users || []).find((u: any) => u.user_id === admin_id);
        if (user && user.role === "ADMIN") {
-         const txAdmin = tx.admin_pembuat || tx.admin_id || tx.user_id || tx.created_by || "UNKNOWN";
+         const txAdmin = tx.admin_pembuat || tx.admin_id || tx.admin_id_pencatat || tx.user_id || tx.created_by || "UNKNOWN";
          if (txAdmin !== user.user_id && txAdmin !== user.username && txAdmin !== user.nama_lengkap) {
            return false;
          }
@@ -9284,10 +9275,10 @@ app.get("/api/yoyi/transactions", async (req, res) => {
     return true;
   }).map((tx: any) => {
     const { isLengkap, alasan } = checkYoyiCompletion(tx);
-    return { ...tx, isLengkap, alasan_belum_lengkap: alasan };
+    return { ...tx, isLengkap, alasan_belum_lengkap: alasan, status_setoran: setoran ? (setoran.status || "SUDAH_SETOR") : "BELUM_SETOR" };
   });
 
-  return res.json({ status: "success", data: txList });
+  return res.json({ status: "success", data: txList, status_setoran: setoran ? (setoran.status || "SUDAH_SETOR") : "BELUM_SETOR" });
 });
 
 app.post("/api/yoyi/update", async (req, res) => {
@@ -9305,29 +9296,22 @@ app.post("/api/yoyi/update", async (req, res) => {
     const masterTx = (db.MASTER_TRANSAKSI || []).find((t: any) => t.id === transaksi_id || t.transaksi_id === transaksi_id || t.no_resi === resi_id);
     if (masterTx) {
        Object.assign(masterTx, appsScriptRes.data);
+       if (updates.nama_pengirim !== undefined) masterTx.snapshot_nama_pengirim = updates.nama_pengirim;
+       if (updates.hp_pengirim !== undefined) masterTx.snapshot_hp_pengirim = updates.hp_pengirim;
+       if (updates.nama_penerima !== undefined) masterTx.snapshot_nama_penerima = updates.nama_penerima;
+       if (updates.hp_penerima !== undefined) masterTx.snapshot_hp_penerima = updates.hp_penerima;
+       
+       autoUpsertCustomerAndAddressBook(db, {
+         outlet_id: masterTx.outlet_id || "OUTLET-YOYI",
+         nama_pengirim: masterTx.snapshot_nama_pengirim,
+         hp_pengirim: masterTx.snapshot_hp_pengirim,
+         alamat_pengirim: masterTx.snapshot_alamat_pengirim,
+         nama_penerima: masterTx.snapshot_nama_penerima,
+         hp_penerima: masterTx.snapshot_hp_penerima,
+         alamat_penerima: masterTx.snapshot_alamat_penerima
+       });
        writeDb(db);
-    }
-    
-    // Trigger customer upsert pipeline
-    if (masterTx) {
-      if (updates.nama_pengirim !== undefined) masterTx.snapshot_nama_pengirim = updates.nama_pengirim;
-      if (updates.hp_pengirim !== undefined) masterTx.snapshot_hp_pengirim = updates.hp_pengirim;
-      if (updates.nama_penerima !== undefined) masterTx.snapshot_nama_penerima = updates.nama_penerima;
-      if (updates.hp_penerima !== undefined) masterTx.snapshot_hp_penerima = updates.hp_penerima;
-      
-      autoUpsertCustomerAndAddressBook(db, {
-        outlet_id: masterTx.outlet_id || "OUTLET-YOYI",
-        nama_pengirim: masterTx.snapshot_nama_pengirim,
-        hp_pengirim: masterTx.snapshot_hp_pengirim,
-        alamat_pengirim: masterTx.snapshot_alamat_pengirim,
-        nama_penerima: masterTx.snapshot_nama_penerima,
-        hp_penerima: masterTx.snapshot_hp_penerima,
-        alamat_penerima: masterTx.snapshot_alamat_penerima
-      });
-      writeDb(db);
-    }
-    if (masterTx) {
-      callAppsScript("apiSaveTransaksi", { jenis_layanan: "Express", data: masterTx }).catch(e => console.error("Trigger customer upsert failed", e));
+       callAppsScript("apiSaveTransaksi", { jenis_layanan: "Express", data: masterTx }).catch(e => console.error("Trigger customer upsert failed", e));
     }
     
     return res.json(appsScriptRes);
@@ -9336,9 +9320,37 @@ app.post("/api/yoyi/update", async (req, res) => {
   }
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server J&T OPS PRO running on http://localhost:${PORT}`);
+// === API 404 & ERROR HANDLING (Prevents falling through to SPA HTML) ===
+app.all(["/api", "/api/*"], (req, res) => {
+  return res.status(404).json({
+    status: "error",
+    message: `Endpoint API '${req.originalUrl}' tidak ditemukan.`
+  });
+});
+
+app.use((err: any, req: any, res: any, next: any) => {
+  if (req.originalUrl && req.originalUrl.startsWith("/api")) {
+    console.error("Unhandled API Error:", err);
+    return res.status(500).json({
+      status: "error",
+      message: err?.message || "Terjadi kesalahan internal pada server API."
+    });
+  }
+  next(err);
+});
+
+// === PRODUCTION STANDALONE INTEGRATION ===
+
+if (!isVercel && process.env.NODE_ENV === "production") {
+  const distPath = path.join(process.cwd(), "dist");
+  app.use(express.static(distPath));
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(distPath, "index.html"));
   });
 }
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server J&T OPS PRO running on http://localhost:${PORT}`);
+});
 
 export default app; 

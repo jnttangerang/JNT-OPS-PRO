@@ -51,6 +51,7 @@ interface ParsedRow {
   is_skipped: boolean;
   skip_reason: string;
   mapped_outlet_id: string;
+  mapped_outlet_name?: string;
   mapped_admin_id: string;
   import_error?: string;
 }
@@ -238,27 +239,42 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         }
         
         let mapped_outlet_id = activeOutletId;
+        const activeOutletObj = outlets.find(o => o.outlet_id === activeOutletId);
+        let mapped_outlet_name = activeOutletObj?.nama_outlet || activeOutletId;
+
         if (kodeOutletRaw) {
-          const rawOutlet = String(kodeOutletRaw).toLowerCase().replace(/^yz_\s*/, '').replace(/\s+/g, ' ').trim();
-          
-          // Try to find if rawOutlet contains our outlet name or vice versa
+          const rawStr = String(kodeOutletRaw).trim();
+          const rawUpper = rawStr.toUpperCase().replace(/^YZ[_\s-]*/i, '').trim();
+          const rawLower = rawStr.toLowerCase().replace(/^yz[_\s-]*/i, '').replace(/\s+/g, ' ').trim();
+
           const found = outlets.find(o => {
-            if (!o.nama_outlet) return false;
-            const normNama = String(o.nama_outlet).toLowerCase().replace(/\s+/g, ' ').trim();
-            return rawOutlet.includes(normNama) || normNama.includes(rawOutlet);
+            const oId = (o.outlet_id || "").trim().toUpperCase();
+            const oKode = (o.kode_outlet || "").trim().toUpperCase();
+            const oName = (o.nama_outlet || "").trim().toLowerCase().replace(/\s+/g, ' ');
+
+            if (oId && (rawUpper === oId || rawUpper.includes(oId) || oId.includes(rawUpper))) return true;
+            if (oKode && (rawUpper === oKode || rawUpper.includes(oKode) || oKode.includes(rawUpper))) return true;
+            if (oName && (rawLower === oName || rawLower.includes(oName) || oName.includes(rawLower))) return true;
+
+            return false;
           });
-          
+
           if (found) {
-            // Found a matching outlet in the system
-            if (found.outlet_id !== activeOutletId) {
-               // The row belongs to a DIFFERENT outlet than the currently active one
-               is_skipped = true;
-               skip_reason = "INVALID_OUTLET";
+            mapped_outlet_id = found.outlet_id;
+            mapped_outlet_name = found.nama_outlet;
+            if (activeOutletId && found.outlet_id !== activeOutletId) {
+              is_skipped = true;
+              skip_reason = "INVALID_OUTLET";
             }
-            // else: it matches activeOutletId, mapped_outlet_id remains activeOutletId (no skip)
-          } 
-          // if not found, we assume the format changed or it's just not mapped. 
-          // We DO NOT skip, we just use activeOutletId.
+          } else {
+            if (activeOutletId) {
+              mapped_outlet_id = activeOutletId;
+              mapped_outlet_name = activeOutletObj?.nama_outlet || activeOutletId;
+            } else {
+              is_skipped = true;
+              skip_reason = "INVALID_OUTLET";
+            }
+          }
         }
 
         let mapped_admin_id = adminId;
@@ -307,6 +323,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
           tipe_asuransi: String(tipeAsuransi).trim(),
           kode_outlet: String(kodeOutletRaw).trim(),
           mapped_outlet_id,
+          mapped_outlet_name,
           mapped_admin_id,
           tipe_produk: String(tipeProduk).trim() || "EZ",
           metode_bayar: String(metodeBayar).trim(),
@@ -437,7 +454,9 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
         jam_transaksi: row.jam_transaksi,
         timestamp: `${row.tanggal_transaksi}T${row.jam_transaksi}`,
         imported_at: `${getWIBDate(new Date())} ${getWIBTime(new Date())}`,
+        outlet_id: row.mapped_outlet_id,
         outlet_id_input: row.mapped_outlet_id,
+        outlet_name: row.mapped_outlet_name || "",
         admin_id_pencatat: resolvedAdminId,
         operator_nama: row.operator,
         catatan_admin: `Bulk Import YoYi | Operator: ${row.operator || "Unknown"}`,
@@ -630,7 +649,7 @@ export default function BulkImportYoYiModal({ isOpen, onClose, activeOutletId, a
                           </td>
                           <td className="px-4 py-3 font-mono font-bold text-gray-800">{row.resi_id}</td>
                           <td className="px-4 py-3 text-gray-600">{row.tanggal_transaksi}</td>
-                          <td className="px-4 py-3 text-gray-600">{row.mapped_outlet_id}</td>
+                          <td className="px-4 py-3 text-gray-800 font-medium">{row.mapped_outlet_name || row.mapped_outlet_id}</td>
                           <td className="px-4 py-3 text-gray-600 font-semibold">{row.tipe_produk}</td>
                           <td className="px-4 py-3">
                             <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold text-[11px]">
