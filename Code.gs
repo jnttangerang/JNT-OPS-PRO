@@ -1763,56 +1763,6 @@ function apiGetDetailTransaksi(params) {
 /**
  * Edit / Update Transaksi oleh Owner
  */
-function apiUpdateTransaksi(params) {
-  try {
-    var targetResi = params.old_resi_id || params.resi_id;
-    var txId = params.transaksi_id;
-    if (!targetResi && !txId) {
-      return { status: "error", message: "resi_id atau transaksi_id diperlukan" };
-    }
-
-    var resiUpdate = {};
-    if (params.resi_id) resiUpdate.resi_id = params.resi_id;
-    if (params.tipe_produk) resiUpdate.tipe_produk = params.tipe_produk;
-    if (params.berat_kg !== undefined) resiUpdate.berat_kg = Number(params.berat_kg) || 0;
-    if (params.metode_bayar) resiUpdate.metode_bayar = params.metode_bayar;
-    if (params.grand_total !== undefined) resiUpdate.grand_total = Number(params.grand_total) || 0;
-    if (params.ongkir_dasar !== undefined) resiUpdate.ongkir_dasar = Number(params.ongkir_dasar) || 0;
-    if (params.biaya_packing !== undefined) resiUpdate.biaya_packing = Number(params.biaya_packing) || 0;
-    if (params.biaya_asuransi !== undefined) resiUpdate.biaya_asuransi = Number(params.biaya_asuransi) || 0;
-    if (params.biaya_amplop !== undefined) resiUpdate.biaya_amplop = Number(params.biaya_amplop) || 0;
-    if (params.setoran_ke_owner !== undefined) resiUpdate.setoran_ke_owner = Number(params.setoran_ke_owner) || 0;
-    if (params.kas_operasional !== undefined) resiUpdate.kas_operasional = Number(params.kas_operasional) || 0;
-    if (params.status_resi) resiUpdate.status_resi = params.status_resi;
-
-    if (targetResi) {
-      DatabaseService.updateRowByColumn("EXP_Resi", "resi_id", targetResi, resiUpdate);
-      DatabaseService.updateRowByColumn("CRG_Resi", "resi_id", targetResi, resiUpdate);
-    }
-
-    if (txId) {
-      var preUpdate = {};
-      if (params.nama_pengirim) preUpdate.nama_pengirim = params.nama_pengirim;
-      if (params.hp_pengirim) preUpdate.hp_pengirim = params.hp_pengirim;
-      if (params.alamat_pengirim) preUpdate.alamat_pengirim = params.alamat_pengirim;
-      if (params.nama_penerima) preUpdate.nama_penerima = params.nama_penerima;
-      if (params.hp_penerima) preUpdate.hp_penerima = params.hp_penerima;
-      if (params.alamat_penerima) preUpdate.alamat_penerima = params.alamat_penerima;
-      if (params.nama_barang) preUpdate.nama_barang = params.nama_barang;
-      if (params.berat_kg !== undefined) preUpdate.berat_kg = Number(params.berat_kg) || 0;
-      if (params.catatan !== undefined) preUpdate.catatan_admin = params.catatan;
-      if (params.status_resi) preUpdate.status = params.status_resi === "BATAL" ? "BATAL" : "SELESAI";
-
-      DatabaseService.updateRowByColumn("PreInput_Backup", "transaksi_id", txId, preUpdate);
-    }
-
-    logAudit(params.user_id || "OWNER", "EDIT_TRANSAKSI", "Owner mengedit transaksi resi " + targetResi + (params.resi_id && params.resi_id !== targetResi ? " -> " + params.resi_id : ""), params.outlet_id || "ALL");
-
-    return { status: "success", message: "Transaksi berhasil diperbarui!" };
-  } catch (err) {
-    return { status: "error", message: err.message || err.toString() };
-  }
-}
 
 // ==========================================
 // ENDPOINT BARU: Target Outlet, Maps Reviews, Setoran Data
@@ -4318,26 +4268,49 @@ var TransactionService = {
       throw new Error("Data transaksi tidak lengkap untuk update");
     }
     
-    var resiId = data.resi_id.trim().toUpperCase();
+    var targetResi = (data.old_resi_id || data.resi_id || "").toString().trim().toUpperCase();
+    var resiId = (data.resi_id || targetResi).toString().trim().toUpperCase();
     var sheetName = jenisLayanan === "Cargo" ? "CRG_Resi" : "EXP_Resi";
-    var existingTx = DatabaseService.findRowByColumn(sheetName, "resi_id", resiId);
+    var existingTx = DatabaseService.findRowByColumn(sheetName, "resi_id", targetResi);
+    if (!existingTx && data.transaksi_id) {
+      existingTx = DatabaseService.findRowByColumn(sheetName, "transaksi_id", data.transaksi_id);
+    }
     
-    if (!existingTx) {
+    var existingMaster = (existingTx && existingTx.transaksi_id ? DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "id", existingTx.transaksi_id) : null)
+                      || (data.transaksi_id ? DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "id", data.transaksi_id) : null)
+                      || DatabaseService.findRowByColumn("MASTER_TRANSAKSI", "no_resi", targetResi);
+
+    if (!existingTx && existingMaster) {
+      existingTx = {
+        resi_id: targetResi,
+        transaksi_id: existingMaster.id || existingMaster.transaksi_id || data.transaksi_id,
+        timestamp: existingMaster.created_at || new Date().toISOString(),
+        admin_id_pencatat: existingMaster.admin_id || data.admin_id_pencatat || "SYSTEM",
+        outlet_id_input: existingMaster.outlet_id || data.outlet_id_input || "OUT-001",
+        tipe_produk: existingMaster.tipe_produk || data.tipe_produk || "EZ",
+        metode_bayar: existingMaster.metode_bayar,
+        status_resi: "AKTIF"
+      };
+      DatabaseService.insertRow(sheetName, existingTx);
+    }
+
+    if (!existingTx && !existingMaster) {
       throw new Error("Transaksi tidak ditemukan untuk diupdate");
     }
     
-    var dateStr = (existingTx.timestamp || "").toString().split("T")[0];
-    if (this.checkTransactionLock(dateStr, existingTx.outlet_id_input)) {
+    var dateStr = (existingTx && existingTx.timestamp ? existingTx.timestamp : (existingMaster && existingMaster.created_at ? existingMaster.created_at : "")).toString().split("T")[0];
+    var outletIdLock = (existingTx && existingTx.outlet_id_input) || (existingMaster && existingMaster.outlet_id) || data.outlet_id_input;
+    if (this.checkTransactionLock(dateStr, outletIdLock)) {
        throw new Error("Transaksi sudah masuk proses Setoran dan tidak dapat diubah.");
     }
     
     var fin = this.calculateFinancial(data, jenisLayanan);
     var rowObj = {
       resi_id: resiId,
-      transaksi_id: existingTx.transaksi_id, // Preserve original
-      timestamp: existingTx.timestamp,       // Preserve original
-      admin_id_pencatat: existingTx.admin_id_pencatat, // Or update? usually preserve who created it, or data.admin_id_pencatat? Keep existing for creator, if we need editor we'd add updated_by
-      outlet_id_input: existingTx.outlet_id_input, // Preserve original outlet
+      transaksi_id: existingTx.transaksi_id || (existingMaster && (existingMaster.id || existingMaster.transaksi_id)),
+      timestamp: existingTx.timestamp || (existingMaster && existingMaster.created_at),
+      admin_id_pencatat: existingTx.admin_id_pencatat || (existingMaster && existingMaster.admin_id),
+      outlet_id_input: existingTx.outlet_id_input || (existingMaster && existingMaster.outlet_id),
       tipe_produk: data.tipe_produk,
       metode_bayar: data.metode_bayar,
       bukti_bayar_url: data.bukti_bayar_url !== undefined ? data.bukti_bayar_url : existingTx.bukti_bayar_url,
@@ -4345,7 +4318,7 @@ var TransactionService = {
       bukti_tambahan_url: data.bukti_tambahan_url !== undefined ? data.bukti_tambahan_url : existingTx.bukti_tambahan_url,
       foto_paket_url: data.foto_paket_url !== undefined ? data.foto_paket_url : existingTx.foto_paket_url,
       foto_resi_url: data.foto_resi_url !== undefined ? data.foto_resi_url : existingTx.foto_resi_url,
-      status_resi: existingTx.status_resi
+      status_resi: existingTx.status_resi || "AKTIF"
     };
     for (var k in fin) { rowObj[k] = fin[k]; }
     
@@ -4356,11 +4329,17 @@ var TransactionService = {
       rowObj.kelengkapan_motor = data.kelengkapan_motor || "";
     }
     
-    DatabaseService.updateFullRowByColumn(sheetName, "resi_id", resiId, rowObj);
+    DatabaseService.updateFullRowByColumn(sheetName, "resi_id", targetResi, rowObj);
     
-    autoUpsertMasterTransaksiAndPengiriman({
-      transaksi_id: existingTx.transaksi_id,
-      id: existingTx.transaksi_id,
+    var existingStatus = data.status_transaksi
+                      || (existingMaster && existingMaster.status_transaksi)
+                      || existingTx.status_transaksi
+                      || "PAID";
+
+    var upsertResult = autoUpsertMasterTransaksiAndPengiriman({
+      transaksi_id: existingTx.transaksi_id || (existingMaster && (existingMaster.id || existingMaster.transaksi_id)),
+      id: existingTx.transaksi_id || (existingMaster && (existingMaster.id || existingMaster.transaksi_id)),
+      status_transaksi: existingStatus,
       outlet_id: data.outlet_id_input || existingTx.outlet_id_input,
       no_resi: resiId,
       ekspedisi: data.ekspedisi || jenisLayanan,
@@ -4393,6 +4372,10 @@ var TransactionService = {
       metode_bayar_tambahan: data.metode_bayar_tambahan !== undefined ? data.metode_bayar_tambahan : existingTx.metode_bayar_tambahan,
       bukti_tambahan_url: data.bukti_tambahan_url !== undefined ? data.bukti_tambahan_url : existingTx.bukti_tambahan_url,
     });
+    
+    if (upsertResult && upsertResult.success === false) {
+      throw new Error("Gagal update MASTER_TRANSAKSI: " + (upsertResult.message || "Validasi gagal"));
+    }
     
     DatabaseService.appendAudit(
       data.admin_id_pencatat,

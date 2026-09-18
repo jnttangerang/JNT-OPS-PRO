@@ -1363,7 +1363,7 @@ async function callAppsScript(action: string, data: any): Promise<any> {
   if (!url) throw new Error("APPS_SCRIPT_URL tidak dikonfigurasi");
   const resp = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ action, data }),
     signal: AbortSignal.timeout(25000)
   });
@@ -4833,6 +4833,8 @@ app.post("/api/updateTransaksi", async (req, res) => {
     if (setoran_ke_owner !== undefined) exp.setoran_ke_owner = Number(setoran_ke_owner) || 0;
     if (kas_operasional !== undefined) exp.kas_operasional = Number(kas_operasional) || 0;
     if (status_resi) exp.status_resi = status_resi;
+    exp.updated_at = new Date().toISOString();
+    exp.last_edited_at = Date.now();
   }
 
   if (crg) {
@@ -4864,8 +4866,9 @@ app.post("/api/updateTransaksi", async (req, res) => {
   }
 
   const finalTxId = transaksi_id || exp?.transaksi_id || crg?.transaksi_id || "";
-  if (finalTxId && db.MASTER_TRANSAKSI) {
-    const masterTx = db.MASTER_TRANSAKSI.find((m: any) => m.id === finalTxId || m.transaksi_id === finalTxId || m.no_resi === targetResi);
+  let masterTx: any = null;
+  if (db.MASTER_TRANSAKSI) {
+    masterTx = db.MASTER_TRANSAKSI.find((m: any) => (finalTxId && (m.id === finalTxId || m.transaksi_id === finalTxId)) || m.no_resi === targetResi || m.resi_id === targetResi);
     if (masterTx) {
       if (resi_id) masterTx.no_resi = resi_id;
       if (nama_pengirim) masterTx.snapshot_nama_pengirim = nama_pengirim;
@@ -4886,7 +4889,31 @@ app.post("/api/updateTransaksi", async (req, res) => {
       if (setoran_ke_owner !== undefined) masterTx.wajib_setor_owner = Number(setoran_ke_owner) || 0;
       if (kas_operasional !== undefined) masterTx.kas_outlet = Number(kas_operasional) || 0;
       if (status_resi) masterTx.status = status_resi;
+      masterTx.updated_at = new Date().toISOString();
+      masterTx.last_edited_at = Date.now();
     }
+  }
+
+  if (!exp && (!tipe || tipe === "Express") && (masterTx || targetResi)) {
+    exp = {
+      resi_id: resi_id || targetResi,
+      transaksi_id: finalTxId || masterTx?.id || masterTx?.transaksi_id,
+      timestamp: masterTx?.created_at || new Date().toISOString(),
+      metode_bayar: metode_bayar || masterTx?.metode_bayar,
+      tipe_produk: tipe_produk || masterTx?.tipe_produk,
+      grand_total: grand_total !== undefined ? Number(grand_total) : (masterTx?.total_customer || 0),
+      ongkir_dasar: ongkir_dasar !== undefined ? Number(ongkir_dasar) : (masterTx?.ongkir_customer || 0),
+      biaya_packing: biaya_packing !== undefined ? Number(biaya_packing) : (masterTx?.packing || 0),
+      biaya_asuransi: biaya_asuransi !== undefined ? Number(biaya_asuransi) : (masterTx?.asuransi || 0),
+      biaya_amplop: biaya_amplop !== undefined ? Number(biaya_amplop) : (masterTx?.amplop || 0),
+      setoran_ke_owner: setoran_ke_owner !== undefined ? Number(setoran_ke_owner) : (masterTx?.wajib_setor_owner || 0),
+      kas_operasional: kas_operasional !== undefined ? Number(kas_operasional) : (masterTx?.kas_outlet || 0),
+      admin_id_pencatat: masterTx?.admin_id || "SYSTEM",
+      outlet_id_input: masterTx?.outlet_id || "OUT-001",
+      status_resi: status_resi || "AKTIF"
+    };
+    if (!db.EXP_Resi) db.EXP_Resi = [];
+    db.EXP_Resi.push(exp);
   }
 
   // Audit Log
@@ -7660,6 +7687,11 @@ async function syncDbWithAppsScript(db: any, options: { force?: boolean } = {}) 
             (tx.transaksi_id && b.transaksi_id === tx.transaksi_id) ||
             (id && b.transaksi_id === id)
           );
+          const matchingExp = (latestDb.EXP_Resi || []).find((e: any) => 
+            (tx.resi_id && (e.resi_id === tx.resi_id || e.no_resi === tx.resi_id)) || 
+            (tx.no_resi && (e.resi_id === tx.no_resi || e.no_resi === tx.no_resi)) || 
+            (id && e.transaksi_id === id)
+          );
           const preTanggal = matchingPre?.tanggal_transaksi || (matchingPre?.timestamp ? getWIBDate(matchingPre.timestamp) : "");
           const preJam = matchingPre?.jam_transaksi || (matchingPre?.timestamp ? getWIBTime(matchingPre.timestamp) : "");
 
@@ -7712,7 +7744,7 @@ const resJam =
               ? (tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim()
               : ((localTx?.snapshot_alamat_penerima || localTx?.alamat_penerima || "").toString().trim() || (tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim()),
             nama_barang: tx.nama_barang || localTx?.nama_barang || "Paket",
-            metode_bayar: tx.metode_bayar || tx.metode_pembayaran_ongkir || localTx?.metode_bayar || localTx?.metode_pembayaran_ongkir || "CASH",
+            metode_bayar: ((localTx?.last_edited_at && syncNow - localTx.last_edited_at < GRACE_PERIOD_MS) ? localTx.metode_bayar : null) || (matchingExp?.metode_bayar && matchingExp.metode_bayar !== "Tunai" ? matchingExp.metode_bayar : null) || tx.metode_bayar || tx.metode_pembayaran_ongkir || localTx?.metode_bayar || localTx?.metode_pembayaran_ongkir || "CASH",
             metode_bayar_tambahan: (tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || localTx?.metode_bayar_tambahan || localTx?.metode_pembayaran_tambahan || "").toString().trim(),
             metode_pembayaran_tambahan: (tx.metode_pembayaran_tambahan || tx.metode_bayar_tambahan || localTx?.metode_pembayaran_tambahan || localTx?.metode_bayar_tambahan || "").toString().trim(),
             bukti_tambahan_url: (tx.bukti_tambahan_url || localTx?.bukti_tambahan_url || "").toString().trim(),

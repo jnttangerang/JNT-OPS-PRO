@@ -3,10 +3,11 @@ const req = {
   data: {
     jenis_layanan: "Express",
     data: {
-      resi_id: "TEST-123",
-      old_resi_id: "TEST-123",
+      resi_id: "Jt08796859341", 
+      old_resi_id: "Jt08796859341",
       metode_bayar: "QRIS",
-      ongkir_dasar: 10000
+      ongkir_dasar: 10000,
+      transaksi_id: "TRX-1726058055627-915"
     }
   }
 };
