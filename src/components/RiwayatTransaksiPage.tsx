@@ -51,6 +51,7 @@ interface TransaksiItem {
   jenis_barang?: string;
   metode_bayar?: string;
   metode_bayar_tambahan?: string;
+  bukti_tambahan_url?: string;
   ongkir_dasar?: number;
   biaya_asuransi?: number;
   biaya_lain?: number;
@@ -490,7 +491,9 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           grand_total: item.grand_total,
           setoran_ke_owner: item.grand_total,
           kas_operasional: 0,
-          metode_bayar: "Tunai",
+          metode_bayar: item.metode_bayar || "Tunai",
+          metode_bayar_tambahan: item.metode_bayar_tambahan || "",
+          bukti_tambahan_url: item.bukti_tambahan_url || "",
           status_resi: item.status_resi,
           catatan: ""
         });
@@ -529,10 +532,14 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
         berat_kg: editItem.berat_kg,
         tipe_produk: editItem.tipe_produk,
         metode_bayar: editItem.metode_bayar,
+        metode_bayar_tambahan: editItem.metode_bayar_tambahan || "",
+        bukti_tambahan_url: editItem.bukti_tambahan_url || "",
         ongkir_dasar: editItem.ongkir_dasar,
         biaya_packing: editItem.biaya_packing,
         biaya_asuransi: editItem.biaya_asuransi,
         biaya_amplop: editItem.biaya_amplop,
+        biaya_lain: editItem.biaya_lain ?? 0,
+        pembulatan: editItem.pembulatan ?? 0,
         grand_total: editItem.grand_total,
         setoran_ke_owner: editItem.setoran_ke_owner,
         kas_operasional: editItem.kas_operasional,
@@ -552,6 +559,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
       if (res.status === "success") {
         toast.success(res.message || "Transaksi berhasil diperbarui!");
         setEditItem(null);
+        _cachedRiwayatData = null; // Invalidate client cache immediately
         fetchData(false, true);
       } else {
         toast.error("Gagal memperbarui: " + (res.message || "Terjadi kesalahan"));
@@ -769,6 +777,11 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                                 : "bg-gray-100 text-gray-700 border border-gray-200"
                             }`}>
                               {item.metode_bayar}
+                            </span>
+                          )}
+                          {item.metode_bayar_tambahan && item.metode_bayar_tambahan !== item.metode_bayar && (
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-100 uppercase tracking-wider">
+                              + {item.metode_bayar_tambahan}
                             </span>
                           )}
                           {item.status_resi === "BATAL" ? (

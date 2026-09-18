@@ -910,7 +910,10 @@ export function autoUpsertMasterTransaksiAndPengiriman(db: any, params: {
     if (params.jam_transaksi) existingTx.jam_transaksi = params.jam_transaksi;
     if (params.timestamp) existingTx.timestamp = params.timestamp;
     if (params.bukti_bayar_url !== undefined) existingTx.bukti_bayar_url = params.bukti_bayar_url;
-    if (params.metode_bayar_tambahan !== undefined) existingTx.metode_bayar_tambahan = params.metode_bayar_tambahan;
+    if (params.metode_bayar_tambahan !== undefined) {
+      existingTx.metode_bayar_tambahan = params.metode_bayar_tambahan;
+      existingTx.metode_pembayaran_tambahan = params.metode_bayar_tambahan;
+    }
     if (params.bukti_tambahan_url !== undefined) existingTx.bukti_tambahan_url = params.bukti_tambahan_url;
     if (params.customer_maps_5star !== undefined) existingTx.customer_maps_5star = params.customer_maps_5star;
     if (params.bukti_maps_url !== undefined) existingTx.bukti_maps_url = params.bukti_maps_url;
@@ -4788,6 +4791,8 @@ app.post("/api/updateTransaksi", async (req, res) => {
     berat_kg,
     tipe_produk,
     metode_bayar,
+    metode_bayar_tambahan,
+    bukti_tambahan_url,
     grand_total,
     ongkir_dasar,
     biaya_packing,
@@ -4825,6 +4830,8 @@ app.post("/api/updateTransaksi", async (req, res) => {
     if (tipe_produk) exp.tipe_produk = tipe_produk;
     if (berat_kg !== undefined) exp.berat_kg = Number(berat_kg) || 0;
     if (metode_bayar) exp.metode_bayar = metode_bayar;
+    if (metode_bayar_tambahan !== undefined) exp.metode_bayar_tambahan = metode_bayar_tambahan;
+    if (bukti_tambahan_url !== undefined) exp.bukti_tambahan_url = bukti_tambahan_url;
     if (grand_total !== undefined) exp.grand_total = Number(grand_total) || 0;
     if (ongkir_dasar !== undefined) exp.ongkir_dasar = Number(ongkir_dasar) || 0;
     if (biaya_packing !== undefined) exp.biaya_packing = Number(biaya_packing) || 0;
@@ -4842,6 +4849,8 @@ app.post("/api/updateTransaksi", async (req, res) => {
     if (tipe_produk) crg.tipe_produk = tipe_produk;
     if (berat_kg !== undefined) crg.berat_kg = Number(berat_kg) || 0;
     if (metode_bayar) crg.metode_bayar = metode_bayar;
+    if (metode_bayar_tambahan !== undefined) crg.metode_bayar_tambahan = metode_bayar_tambahan;
+    if (bukti_tambahan_url !== undefined) crg.bukti_tambahan_url = bukti_tambahan_url;
     if (grand_total !== undefined) crg.grand_total = Number(grand_total) || 0;
     if (ongkir_dasar !== undefined) crg.ongkir_dasar = Number(ongkir_dasar) || 0;
     if (biaya_packing !== undefined) crg.biaya_packing = Number(biaya_packing) || 0;
@@ -4881,6 +4890,11 @@ app.post("/api/updateTransaksi", async (req, res) => {
       if (berat_kg !== undefined) masterTx.berat_barang = Number(berat_kg) || 0;
       if (tipe_produk) masterTx.tipe_produk = tipe_produk;
       if (metode_bayar) masterTx.metode_bayar = metode_bayar;
+      if (metode_bayar_tambahan !== undefined) {
+        masterTx.metode_bayar_tambahan = metode_bayar_tambahan;
+        masterTx.metode_pembayaran_tambahan = metode_bayar_tambahan;
+      }
+      if (bukti_tambahan_url !== undefined) masterTx.bukti_tambahan_url = bukti_tambahan_url;
       if (grand_total !== undefined) masterTx.total_customer = Number(grand_total) || 0;
       if (ongkir_dasar !== undefined) masterTx.ongkir_customer = Number(ongkir_dasar) || 0;
       if (biaya_packing !== undefined) masterTx.packing = Number(biaya_packing) || 0;
@@ -4900,6 +4914,8 @@ app.post("/api/updateTransaksi", async (req, res) => {
       transaksi_id: finalTxId || masterTx?.id || masterTx?.transaksi_id,
       timestamp: masterTx?.created_at || new Date().toISOString(),
       metode_bayar: metode_bayar || masterTx?.metode_bayar,
+      metode_bayar_tambahan: metode_bayar_tambahan !== undefined ? metode_bayar_tambahan : (masterTx?.metode_bayar_tambahan || ""),
+      bukti_tambahan_url: bukti_tambahan_url !== undefined ? bukti_tambahan_url : (masterTx?.bukti_tambahan_url || ""),
       tipe_produk: tipe_produk || masterTx?.tipe_produk,
       grand_total: grand_total !== undefined ? Number(grand_total) : (masterTx?.total_customer || 0),
       ongkir_dasar: ongkir_dasar !== undefined ? Number(ongkir_dasar) : (masterTx?.ongkir_customer || 0),
@@ -7745,9 +7761,9 @@ const resJam =
               : ((localTx?.snapshot_alamat_penerima || localTx?.alamat_penerima || "").toString().trim() || (tx.snapshot_alamat_penerima || tx.alamat_penerima || "").toString().trim()),
             nama_barang: tx.nama_barang || localTx?.nama_barang || "Paket",
             metode_bayar: ((localTx?.last_edited_at && syncNow - localTx.last_edited_at < GRACE_PERIOD_MS) ? localTx.metode_bayar : null) || (matchingExp?.metode_bayar && matchingExp.metode_bayar !== "Tunai" ? matchingExp.metode_bayar : null) || tx.metode_bayar || tx.metode_pembayaran_ongkir || localTx?.metode_bayar || localTx?.metode_pembayaran_ongkir || "CASH",
-            metode_bayar_tambahan: (tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || localTx?.metode_bayar_tambahan || localTx?.metode_pembayaran_tambahan || "").toString().trim(),
-            metode_pembayaran_tambahan: (tx.metode_pembayaran_tambahan || tx.metode_bayar_tambahan || localTx?.metode_pembayaran_tambahan || localTx?.metode_bayar_tambahan || "").toString().trim(),
-            bukti_tambahan_url: (tx.bukti_tambahan_url || localTx?.bukti_tambahan_url || "").toString().trim(),
+            metode_bayar_tambahan: ((localTx?.last_edited_at && syncNow - localTx.last_edited_at < GRACE_PERIOD_MS && localTx.metode_bayar_tambahan !== undefined) ? localTx.metode_bayar_tambahan : null) || (matchingExp?.metode_bayar_tambahan !== undefined ? matchingExp.metode_bayar_tambahan : null) || (tx.metode_bayar_tambahan || tx.metode_pembayaran_tambahan || localTx?.metode_bayar_tambahan || localTx?.metode_pembayaran_tambahan || "").toString().trim(),
+            metode_pembayaran_tambahan: ((localTx?.last_edited_at && syncNow - localTx.last_edited_at < GRACE_PERIOD_MS && localTx.metode_bayar_tambahan !== undefined) ? localTx.metode_bayar_tambahan : null) || (matchingExp?.metode_bayar_tambahan !== undefined ? matchingExp.metode_bayar_tambahan : null) || (tx.metode_pembayaran_tambahan || tx.metode_bayar_tambahan || localTx?.metode_pembayaran_tambahan || localTx?.metode_bayar_tambahan || "").toString().trim(),
+            bukti_tambahan_url: ((localTx?.last_edited_at && syncNow - localTx.last_edited_at < GRACE_PERIOD_MS && localTx.bukti_tambahan_url !== undefined) ? localTx.bukti_tambahan_url : null) || (matchingExp?.bukti_tambahan_url !== undefined ? matchingExp.bukti_tambahan_url : null) || (tx.bukti_tambahan_url || localTx?.bukti_tambahan_url || "").toString().trim(),
             ongkir_customer: resolveNum(tx.ongkir_dasar ?? tx.ongkir_customer ?? tx.biaya_kirim, localTx?.ongkir_customer ?? localTx?.ongkir_dasar ?? localTx?.biaya_kirim),
             ongkir_yoyi: resolveNum(tx.ongkir_dasar ?? tx.ongkir_yoyi, localTx?.ongkir_yoyi ?? localTx?.ongkir_dasar),
             biaya_yoyi: resolveNum(tx.biaya_yoyi ?? tx.biaya_jtc, localTx?.biaya_yoyi ?? localTx?.biaya_jtc),

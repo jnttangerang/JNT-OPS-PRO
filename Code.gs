@@ -3614,7 +3614,10 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
     if (params.sumber_data) existingTx.sumber_data = params.sumber_data;
     if (params.catatan) existingTx.catatan = params.catatan;
     if (params.bukti_bayar_url !== undefined) existingTx.bukti_bayar_url = params.bukti_bayar_url;
-    if (params.metode_bayar_tambahan !== undefined) existingTx.metode_bayar_tambahan = params.metode_bayar_tambahan;
+    if (params.metode_bayar_tambahan !== undefined) {
+      existingTx.metode_bayar_tambahan = params.metode_bayar_tambahan;
+      existingTx.metode_pembayaran_tambahan = params.metode_bayar_tambahan;
+    }
     if (params.bukti_tambahan_url !== undefined) existingTx.bukti_tambahan_url = params.bukti_tambahan_url;
     if (params.customer_maps_5star !== undefined) existingTx.customer_maps_5star = params.customer_maps_5star;
     if (params.bukti_maps_url !== undefined) existingTx.bukti_maps_url = params.bukti_maps_url;
@@ -4342,6 +4345,7 @@ var TransactionService = {
       status_transaksi: existingStatus,
       outlet_id: data.outlet_id_input || existingTx.outlet_id_input,
       no_resi: resiId,
+      resi_id: resiId,
       ekspedisi: data.ekspedisi || jenisLayanan,
       tipe_produk: data.tipe_produk,
       snapshot_nama_pengirim: data.nama_pengirim,
