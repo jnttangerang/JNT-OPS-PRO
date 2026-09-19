@@ -488,6 +488,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           biaya_packing: 0,
           biaya_amplop: 0,
           biaya_lain: 0,
+          pembulatan: item.pembulatan ?? 0,
           grand_total: item.grand_total,
           setoran_ke_owner: item.grand_total,
           kas_operasional: 0,
@@ -1351,14 +1352,14 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Ongkir Dasar</label>
                     <input
                       type="number"
-                      value={editItem.ongkir_dasar}
+                      value={editItem.ongkir_dasar ?? 0}
                       onChange={(e) => {
-                        const val = Number(e.target.value) || 0;
+                        const val = e.target.value === "" ? 0 : (Number(e.target.value) || 0);
                         const amplop = Number(editItem.biaya_amplop || 0);
                         const packing = Number(editItem.biaya_packing || 0);
                         const asuransi = Number(editItem.biaya_asuransi || 0);
@@ -1378,12 +1379,62 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                     />
                   </div>
                   <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Biaya Asuransi</label>
+                    <input
+                      type="number"
+                      value={editItem.biaya_asuransi ?? 0}
+                      onChange={(e) => {
+                        const asuransi = e.target.value === "" ? 0 : (Number(e.target.value) || 0);
+                        const ongkir = Number(editItem.ongkir_dasar || 0);
+                        const amplop = Number(editItem.biaya_amplop || 0);
+                        const packing = Number(editItem.biaya_packing || 0);
+                        const lain = Number(editItem.biaya_lain || 0);
+                        const pembulatan = Number(editItem.pembulatan || 0);
+                        const grand = ongkir + amplop + packing + asuransi + lain + pembulatan;
+                        const kas = amplop + packing;
+                        setEditItem({ 
+                          ...editItem, 
+                          biaya_asuransi: asuransi, 
+                          grand_total: grand, 
+                          kas_operasional: kas, 
+                          setoran_ke_owner: grand - kas 
+                        });
+                      }}
+                      className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Biaya Lain-lain</label>
+                    <input
+                      type="number"
+                      value={editItem.biaya_lain ?? 0}
+                      onChange={(e) => {
+                        const lain = e.target.value === "" ? 0 : (Number(e.target.value) || 0);
+                        const ongkir = Number(editItem.ongkir_dasar || 0);
+                        const amplop = Number(editItem.biaya_amplop || 0);
+                        const packing = Number(editItem.biaya_packing || 0);
+                        const asuransi = Number(editItem.biaya_asuransi || 0);
+                        const pembulatan = Number(editItem.pembulatan || 0);
+                        const grand = ongkir + amplop + packing + asuransi + lain + pembulatan;
+                        const kas = amplop + packing;
+                        setEditItem({ 
+                          ...editItem, 
+                          biaya_lain: lain, 
+                          grand_total: grand, 
+                          kas_operasional: kas, 
+                          setoran_ke_owner: grand - kas 
+                        });
+                      }}
+                      className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono"
+                    />
+                  </div>
+                  <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Biaya Amplop</label>
                     <input
                       type="number"
                       value={editItem.biaya_amplop ?? 0}
                       onChange={(e) => {
-                        const amplop = Number(e.target.value) || 0;
+                        const amplop = e.target.value === "" ? 0 : (Number(e.target.value) || 0);
                         const ongkir = Number(editItem.ongkir_dasar || 0);
                         const packing = Number(editItem.biaya_packing || 0);
                         const asuransi = Number(editItem.biaya_asuransi || 0);
@@ -1408,7 +1459,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                       type="number"
                       value={editItem.biaya_packing ?? 0}
                       onChange={(e) => {
-                        const packing = Number(e.target.value) || 0;
+                        const packing = e.target.value === "" ? 0 : (Number(e.target.value) || 0);
                         const ongkir = Number(editItem.ongkir_dasar || 0);
                         const amplop = Number(editItem.biaya_amplop || 0);
                         const asuransi = Number(editItem.biaya_asuransi || 0);
@@ -1428,37 +1479,12 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Biaya Asuransi</label>
-                    <input
-                      type="number"
-                      value={editItem.biaya_asuransi ?? 0}
-                      onChange={(e) => {
-                        const asuransi = Number(e.target.value) || 0;
-                        const ongkir = Number(editItem.ongkir_dasar || 0);
-                        const amplop = Number(editItem.biaya_amplop || 0);
-                        const packing = Number(editItem.biaya_packing || 0);
-                        const lain = Number(editItem.biaya_lain || 0);
-                        const pembulatan = Number(editItem.pembulatan || 0);
-                        const grand = ongkir + amplop + packing + asuransi + lain + pembulatan;
-                        const kas = amplop + packing;
-                        setEditItem({ 
-                          ...editItem, 
-                          biaya_asuransi: asuransi, 
-                          grand_total: grand, 
-                          kas_operasional: kas, 
-                          setoran_ke_owner: grand - kas 
-                        });
-                      }}
-                      className="w-full px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-sm font-mono"
-                    />
-                  </div>
-                  <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Pembulatan</label>
                     <input
                       type="number"
                       value={editItem.pembulatan ?? 0}
                       onChange={(e) => {
-                        const val = Number(e.target.value) || 0;
+                        const val = e.target.value === "" ? 0 : (Number(e.target.value) || 0);
                         const ongkir = Number(editItem.ongkir_dasar || 0);
                         const amplop = Number(editItem.biaya_amplop || 0);
                         const packing = Number(editItem.biaya_packing || 0);
@@ -1482,7 +1508,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
                       type="number"
                       value={editItem.grand_total}
                       onChange={(e) => {
-                        const val = Number(e.target.value) || 0;
+                        const val = e.target.value === "" ? 0 : (Number(e.target.value) || 0);
                         const kas = Number(editItem.biaya_amplop || 0) + Number(editItem.biaya_packing || 0);
                         setEditItem({ 
                           ...editItem, 

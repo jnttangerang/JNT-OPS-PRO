@@ -31,7 +31,18 @@ export function useAppsScript() {
       body = undefined;
     }
 
-    const maxRetries = Math.max(retries, 4);
+    const mutationActions = new Set([
+      "updateTransaksi",
+      "saveTransaksi",
+      "deleteTransaksi",
+      "submitDailyClosing",
+      "reopenDailyClosing",
+      "approveSetoran",
+      "rejectSetoran",
+      "createSetoran"
+    ]);
+    const isMutation = mutationActions.has(action);
+    const maxRetries = isMutation ? 0 : Math.max(retries, 4);
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const response = await fetch(url, {

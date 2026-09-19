@@ -654,7 +654,14 @@ import { Toaster } from 'react-hot-toast';
 export default function App() {
   return (
     <BrowserRouter>
-      <Toaster position="top-right" toastOptions={{ className: 'text-sm font-bold' }} />
+      <Toaster 
+        position="top-right" 
+        containerStyle={{ zIndex: 99999 }}
+        toastOptions={{ 
+          className: 'text-sm font-bold',
+          style: { zIndex: 99999 }
+        }} 
+      />
       <AppContent />
     </BrowserRouter>
   );

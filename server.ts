@@ -1359,7 +1359,7 @@ function addAuditLog(userId: string, action: string, detail: string, outletId: s
 }
 
 // Helper: Synchronous caller to Google Apps Script
-async function callAppsScript(action: string, data: any): Promise<any> {
+async function callAppsScript(action: string, data: any, timeoutMs: number = 60000): Promise<any> {
   const url = process.env.APPS_SCRIPT_URL
            || process.env.VITE_APPS_SCRIPT_URL
            || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
@@ -1368,7 +1368,7 @@ async function callAppsScript(action: string, data: any): Promise<any> {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify({ action, data }),
-    signal: AbortSignal.timeout(25000)
+    signal: AbortSignal.timeout(timeoutMs)
   });
   if (!resp.ok) throw new Error(`Apps Script HTTP ${resp.status}`);
   const json = await resp.json();
@@ -4798,6 +4798,8 @@ app.post("/api/updateTransaksi", async (req, res) => {
     biaya_packing,
     biaya_asuransi,
     biaya_amplop,
+    biaya_lain,
+    pembulatan,
     setoran_ke_owner,
     kas_operasional,
     status_resi,
@@ -4837,6 +4839,8 @@ app.post("/api/updateTransaksi", async (req, res) => {
     if (biaya_packing !== undefined) exp.biaya_packing = Number(biaya_packing) || 0;
     if (biaya_asuransi !== undefined) exp.biaya_asuransi = Number(biaya_asuransi) || 0;
     if (biaya_amplop !== undefined) exp.biaya_amplop = Number(biaya_amplop) || 0;
+    if (biaya_lain !== undefined) exp.biaya_lain = Number(biaya_lain) || 0;
+    if (pembulatan !== undefined) exp.pembulatan = Number(pembulatan) || 0;
     if (setoran_ke_owner !== undefined) exp.setoran_ke_owner = Number(setoran_ke_owner) || 0;
     if (kas_operasional !== undefined) exp.kas_operasional = Number(kas_operasional) || 0;
     if (status_resi) exp.status_resi = status_resi;
@@ -4849,13 +4853,15 @@ app.post("/api/updateTransaksi", async (req, res) => {
     if (tipe_produk) crg.tipe_produk = tipe_produk;
     if (berat_kg !== undefined) crg.berat_kg = Number(berat_kg) || 0;
     if (metode_bayar) crg.metode_bayar = metode_bayar;
-    if (metode_bayar_tambahan !== undefined) crg.metode_bayar_tambahan = metode_bayar_tambahan;
+    if (metode_bayar_tambahan !== undefined) exp.metode_bayar_tambahan = metode_bayar_tambahan;
     if (bukti_tambahan_url !== undefined) crg.bukti_tambahan_url = bukti_tambahan_url;
     if (grand_total !== undefined) crg.grand_total = Number(grand_total) || 0;
     if (ongkir_dasar !== undefined) crg.ongkir_dasar = Number(ongkir_dasar) || 0;
     if (biaya_packing !== undefined) crg.biaya_packing = Number(biaya_packing) || 0;
     if (biaya_asuransi !== undefined) crg.biaya_asuransi = Number(biaya_asuransi) || 0;
     if (biaya_amplop !== undefined) crg.biaya_amplop = Number(biaya_amplop) || 0;
+    if (biaya_lain !== undefined) crg.biaya_lain = Number(biaya_lain) || 0;
+    if (pembulatan !== undefined) crg.pembulatan = Number(pembulatan) || 0;
     if (setoran_ke_owner !== undefined) crg.setoran_ke_owner = Number(setoran_ke_owner) || 0;
     if (kas_operasional !== undefined) crg.kas_operasional = Number(kas_operasional) || 0;
     if (status_resi) crg.status_resi = status_resi;
@@ -4900,6 +4906,8 @@ app.post("/api/updateTransaksi", async (req, res) => {
       if (biaya_packing !== undefined) masterTx.packing = Number(biaya_packing) || 0;
       if (biaya_asuransi !== undefined) masterTx.asuransi = Number(biaya_asuransi) || 0;
       if (biaya_amplop !== undefined) masterTx.amplop = Number(biaya_amplop) || 0;
+      if (biaya_lain !== undefined) masterTx.biaya_lain = Number(biaya_lain) || 0;
+      if (pembulatan !== undefined) masterTx.pembulatan = Number(pembulatan) || 0;
       if (setoran_ke_owner !== undefined) masterTx.wajib_setor_owner = Number(setoran_ke_owner) || 0;
       if (kas_operasional !== undefined) masterTx.kas_outlet = Number(kas_operasional) || 0;
       if (status_resi) masterTx.status = status_resi;
@@ -4922,6 +4930,8 @@ app.post("/api/updateTransaksi", async (req, res) => {
       biaya_packing: biaya_packing !== undefined ? Number(biaya_packing) : (masterTx?.packing || 0),
       biaya_asuransi: biaya_asuransi !== undefined ? Number(biaya_asuransi) : (masterTx?.asuransi || 0),
       biaya_amplop: biaya_amplop !== undefined ? Number(biaya_amplop) : (masterTx?.amplop || 0),
+      biaya_lain: biaya_lain !== undefined ? Number(biaya_lain) : (masterTx?.biaya_lain || 0),
+      pembulatan: pembulatan !== undefined ? Number(pembulatan) : (masterTx?.pembulatan || 0),
       setoran_ke_owner: setoran_ke_owner !== undefined ? Number(setoran_ke_owner) : (masterTx?.wajib_setor_owner || 0),
       kas_operasional: kas_operasional !== undefined ? Number(kas_operasional) : (masterTx?.kas_outlet || 0),
       admin_id_pencatat: masterTx?.admin_id || "SYSTEM",
@@ -4930,6 +4940,80 @@ app.post("/api/updateTransaksi", async (req, res) => {
     };
     if (!db.EXP_Resi) db.EXP_Resi = [];
     db.EXP_Resi.push(exp);
+  }
+
+  // Synchronize KeuanganOutlet directly
+  if (db.KeuanganOutlet && Array.isArray(db.KeuanganOutlet)) {
+    const cleanTargetResi = (targetResi || resi_id || "").toString().trim().toUpperCase();
+    const cleanNewResi = (resi_id || targetResi || "").toString().trim().toUpperCase();
+    const mTambahan = (metode_bayar_tambahan !== undefined ? metode_bayar_tambahan : (exp?.metode_bayar_tambahan || masterTx?.metode_bayar_tambahan || "")).toString().trim().toUpperCase();
+    const isDigital = mTambahan === "QRIS" || mTambahan === "TRANSFER"
+                   || mTambahan === "ORDER BY APP" || mTambahan === "ORDER_BY_APP" || mTambahan === "APP";
+    const newLokasiUang = isDigital ? "OWNER" : "ADMIN";
+
+    let hasPacking = false;
+    let hasAmplop = false;
+
+    for (const ko of db.KeuanganOutlet) {
+      const koResi = (ko.resi_id || "").toString().trim().toUpperCase();
+      const koDesk = (ko.deskripsi || "").toString().toUpperCase();
+      const match = (koResi && (koResi === cleanTargetResi || koResi === cleanNewResi)) || koDesk.includes(cleanTargetResi) || koDesk.includes(cleanNewResi);
+      if (match) {
+        ko.lokasi_uang = newLokasiUang;
+        if (cleanNewResi) ko.resi_id = cleanNewResi;
+        if (bukti_tambahan_url !== undefined) ko.bukti_url = bukti_tambahan_url;
+        if (ko.kategori_id === "KAT-208" || ko.kategori_id === "KAT-103" || koDesk.includes("AMPLOP")) {
+          hasAmplop = true;
+          if (biaya_amplop !== undefined) ko.nominal = Number(biaya_amplop) || 0;
+          ko.aktif = (Number(biaya_amplop) || 0) > 0 ? "TRUE" : "FALSE";
+        }
+        if (ko.kategori_id === "KAT-207" || ko.kategori_id === "KAT-102" || koDesk.includes("PACKING")) {
+          hasPacking = true;
+          if (biaya_packing !== undefined) ko.nominal = Number(biaya_packing) || 0;
+          ko.aktif = (Number(biaya_packing) || 0) > 0 ? "TRUE" : "FALSE";
+        }
+      }
+    }
+
+    const txDate = masterTx?.tanggal_transaksi || exp?.timestamp?.split("T")[0] || new Date().toISOString().split("T")[0];
+    const outId = masterTx?.outlet_id || exp?.outlet_id_input || outlet_id || "OUT-001";
+    const admId = user_id || "SYSTEM";
+
+    if (!hasPacking && Number(biaya_packing) > 0) {
+      db.KeuanganOutlet.push({
+        id: "KNG-" + Date.now() + "-P",
+        tanggal: txDate,
+        outlet_id: outId,
+        jenis: "PEMASUKAN",
+        kategori_id: "KAT-207",
+        nominal: Number(biaya_packing) || 0,
+        deskripsi: `Biaya Packing untuk resi ${cleanNewResi}`,
+        bukti_url: bukti_tambahan_url || "",
+        dibuat_oleh: admId,
+        created_at: new Date().toISOString(),
+        aktif: "TRUE",
+        resi_id: cleanNewResi,
+        lokasi_uang: newLokasiUang
+      });
+    }
+
+    if (!hasAmplop && Number(biaya_amplop) > 0) {
+      db.KeuanganOutlet.push({
+        id: "KNG-" + (Date.now() + 1) + "-A",
+        tanggal: txDate,
+        outlet_id: outId,
+        jenis: "PEMASUKAN",
+        kategori_id: "KAT-208",
+        nominal: Number(biaya_amplop) || 0,
+        deskripsi: `Biaya Amplop untuk resi ${cleanNewResi}`,
+        bukti_url: bukti_tambahan_url || "",
+        dibuat_oleh: admId,
+        created_at: new Date().toISOString(),
+        aktif: "TRUE",
+        resi_id: cleanNewResi,
+        lokasi_uang: newLokasiUang
+      });
+    }
   }
 
   // Audit Log
@@ -7866,32 +7950,30 @@ const resJam =
           const localK = localKeuangan.find((l: any) => l.id === remoteK.id);
           let resolvedLokasiUang = remoteK.lokasi_uang || null;
 
-          // Transaction-derived for Amplop/Packing (resi-based)
-          if (!resolvedLokasiUang && (remoteK.resi_id || (remoteK.deskripsi && remoteK.deskripsi.toLowerCase().includes("resi")))) {
-            const resiIdMatch = remoteK.resi_id || remoteK.deskripsi.match(/resi\s+([a-z0-9]+)/i)?.[1];
-            if (resiIdMatch) {
-              const tx = (latestDb.MASTER_TRANSAKSI || []).find((t: any) => t.resi_id === resiIdMatch || t.no_resi === resiIdMatch);
-              if (tx) {
-                // Deteksi apakah entri ini untuk amplop/packing
-                const isAmplop = remoteK.kategori_id === "KAT-208" || remoteK.deskripsi?.toLowerCase().includes("amplop");
-                const isPacking = remoteK.kategori_id === "KAT-207" || remoteK.deskripsi?.toLowerCase().includes("packing");
+          const isAmplop = remoteK.kategori_id === "KAT-208" || remoteK.deskripsi?.toLowerCase().includes("amplop");
+          const isPacking = remoteK.kategori_id === "KAT-207" || remoteK.deskripsi?.toLowerCase().includes("packing");
+          const resiIdMatch = remoteK.resi_id || remoteK.deskripsi?.match(/resi\s+([a-z0-9]+)/i)?.[1];
 
-                let mBayar: string;
-                if (isAmplop || isPacking) {
-                  // Untuk amplop/packing: baca metode_bayar_tambahan dari EXP_Resi
-                  const resiRecord = (latestDb.EXP_Resi || []).find((r: any) => r.resi_id === resiIdMatch);
-                  const metodeTambahan = (resiRecord?.metode_bayar_tambahan || "").trim();
-                  // Fallback ke "Tunai" (conservative) jika metode_bayar_tambahan kosong
-                  mBayar = metodeTambahan ? metodeTambahan.toUpperCase() : "TUNAI";
-                } else {
-                  // Untuk entri non-amplop/packing: tetap pakai metode ongkir
-                  mBayar = (tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "").toUpperCase();
-                }
+          if (resiIdMatch && (isAmplop || isPacking)) {
+            const resiClean = String(resiIdMatch).trim().toUpperCase();
+            const resiRecord = (latestDb.EXP_Resi || []).find((r: any) => (r.resi_id || "").toString().trim().toUpperCase() === resiClean);
+            const masterTx = (latestDb.MASTER_TRANSAKSI || []).find((t: any) => (t.resi_id || "").toString().trim().toUpperCase() === resiClean || (t.no_resi || "").toString().trim().toUpperCase() === resiClean);
+            const metodeTambahan = (resiRecord?.metode_bayar_tambahan || masterTx?.metode_bayar_tambahan || "").trim().toUpperCase();
+            if (metodeTambahan) {
+              const isDigital = metodeTambahan === "QRIS" || metodeTambahan === "TRANSFER"
+                             || metodeTambahan === "ORDER BY APP" || metodeTambahan === "ORDER_BY_APP" || metodeTambahan === "APP";
+              resolvedLokasiUang = isDigital ? "OWNER" : "ADMIN";
+            }
+          }
 
-                const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER"
-                               || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP";
-                resolvedLokasiUang = isDigital ? "OWNER" : "ADMIN";
-              }
+          // Transaction-derived for other items (resi-based)
+          if (!resolvedLokasiUang && resiIdMatch) {
+            const tx = (latestDb.MASTER_TRANSAKSI || []).find((t: any) => t.resi_id === resiIdMatch || t.no_resi === resiIdMatch);
+            if (tx) {
+              const mBayar = (tx.metode_bayar || tx.metode_pembayaran_ongkir || tx.metode_bayar_ongkir || "").toUpperCase();
+              const isDigital = mBayar === "QRIS" || mBayar === "TRANSFER"
+                             || mBayar === "ORDER BY APP" || mBayar === "ORDER_BY_APP" || mBayar === "APP";
+              resolvedLokasiUang = isDigital ? "OWNER" : "ADMIN";
             }
           }
 

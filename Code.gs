@@ -3384,9 +3384,11 @@ var DatabaseService = {
     if (colIdx === -1) return false;
     
     var foundRow = -1;
+    var existingRowData = null;
     for (var i = 1; i < data.length; i++) {
       if (data[i][colIdx].toString().toUpperCase() === searchValue.toString().toUpperCase()) {
         foundRow = i + 1;
+        existingRowData = data[i];
         break;
       }
     }
@@ -3394,13 +3396,20 @@ var DatabaseService = {
     if (foundRow === -1) return false;
     
     var colUpdates = Object.keys(updateDataMap);
+    if (colUpdates.length === 0) return true;
+
+    // Single-RPC batch write for high performance
+    var schema = this.getEffectiveSchema(sheet, sheetName);
+    var mergedMap = {};
+    for (var s = 0; s < schema.length; s++) {
+      mergedMap[schema[s]] = existingRowData && existingRowData[s] !== undefined ? existingRowData[s] : "";
+    }
     for (var j = 0; j < colUpdates.length; j++) {
       var cName = colUpdates[j];
-      var cIdx = getColIndex_(sheet, cName);
-      if (cIdx !== -1) {
-        sheet.getRange(foundRow, cIdx + 1).setValue(updateDataMap[cName]);
-      }
+      mergedMap[cName] = updateDataMap[cName];
     }
+    var row = schema.map(function(col) { return mergedMap[col] !== undefined ? mergedMap[col] : ""; });
+    sheet.getRange(foundRow, 1, 1, row.length).setValues([row]);
     return true;
   },
 
@@ -3603,6 +3612,7 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
     if (params.packing !== undefined) existingTx.packing = Number(params.packing);
     if (params.amplop !== undefined) existingTx.amplop = Number(params.amplop);
     if (params.biaya_lain !== undefined) existingTx.biaya_lain = Number(params.biaya_lain);
+    if (params.pembulatan !== undefined) existingTx.pembulatan = Number(params.pembulatan);
     if (params.total_customer !== undefined) existingTx.total_customer = Number(params.total_customer);
     if (params.ongkir_yoyi !== undefined) existingTx.ongkir_yoyi = Number(params.ongkir_yoyi);
     if (params.asuransi !== undefined) existingTx.asuransi = Number(params.asuransi);
@@ -3656,6 +3666,7 @@ function autoUpsertMasterTransaksiAndPengiriman(params) {
       packing: Number(params.packing) || 0,
       amplop: Number(params.amplop) || 0,
       biaya_lain: Number(params.biaya_lain) || 0,
+      pembulatan: Number(params.pembulatan) || 0,
       total_customer: Number(params.total_customer) || 0,
       ongkir_yoyi: Number(params.ongkir_yoyi) || 0,
       asuransi: Number(params.asuransi) || 0,
@@ -3794,14 +3805,28 @@ var TransactionService = {
     var biayaDasarLayanan = biayaLain + biayaAsuransi + ongkirDasar;
     var biayaDitagihkanLayanan = data.metode_bayar === "DFOD" ? 0 : biayaDasarLayanan;
 
-    var totalUangDibayarCustomer = Number(data.total_dibayar_customer) || 0;
-    var pembulatan = totalUangDibayarCustomer > 0 ? (totalUangDibayarCustomer - biayaDitagihkanLayanan) : 0;
-    
     var biayaAmplop = Number(data.biaya_amplop) || 0;
     var biayaPacking = Number(data.biaya_packing) || 0;
     var biayaTambahan = biayaAmplop + biayaPacking;
+
+    var pembulatan = 0;
+    if (data.pembulatan !== undefined && data.pembulatan !== null && String(data.pembulatan).trim() !== "") {
+      pembulatan = Number(data.pembulatan) || 0;
+    } else {
+      var totalUangDibayarCustomer = Number(data.total_dibayar_customer) || 0;
+      if (totalUangDibayarCustomer > 0) {
+        var totalCost = biayaDitagihkanLayanan + biayaTambahan;
+        if (totalUangDibayarCustomer > totalCost) {
+          pembulatan = totalUangDibayarCustomer - totalCost;
+        } else if (totalUangDibayarCustomer > biayaDitagihkanLayanan && biayaTambahan === 0) {
+          pembulatan = totalUangDibayarCustomer - biayaDitagihkanLayanan;
+        }
+      }
+    }
     
-    var grandTotal = biayaDitagihkanLayanan + pembulatan + biayaTambahan;
+    var grandTotal = (data.grand_total !== undefined && Number(data.grand_total) > 0)
+      ? Number(data.grand_total)
+      : (biayaDitagihkanLayanan + pembulatan + biayaTambahan);
     var setoranKeOwner = biayaDitagihkanLayanan + pembulatan;
     var kasOperasional = biayaTambahan;
     return {
@@ -3810,11 +3835,11 @@ var TransactionService = {
       ongkir_dasar: ongkirDasar,
       biaya_yoyi: jenisLayanan === "Express" ? biayaDasarLayanan : 0,
       biaya_jtc: jenisLayanan === "Cargo" ? biayaDasarLayanan : 0,
-      total_dibayar_customer: totalUangDibayarCustomer,
+      total_dibayar_customer: Number(data.total_dibayar_customer) || grandTotal,
       pembulatan: pembulatan,
       biaya_amplop: biayaAmplop,
       biaya_packing: biayaPacking,
-      grandTotal: grandTotal, // old typo? it should be grand_total
+      grandTotal: grandTotal,
       grand_total: grandTotal,
       setoran_ke_owner: setoranKeOwner,
       kas_operasional: kasOperasional
@@ -4363,7 +4388,8 @@ var TransactionService = {
       packing: Number(data.biaya_packing) || 0,
       amplop: Number(data.biaya_amplop) || 0,
       biaya_lain: Number(data.biaya_lain) || 0,
-      total_customer: Number(data.total_dibayar_customer) || Number(fin.grand_total) || 0,
+      pembulatan: Number(fin.pembulatan) || 0,
+      total_customer: Number(fin.grand_total) || Number(data.total_dibayar_customer) || 0,
       ongkir_yoyi: Number(data.biaya_yoyi) || 0,
       asuransi: Number(data.biaya_asuransi) || 0,
       biaya_lain_yoyi: Number(data.biaya_jtc) || 0,
@@ -4379,6 +4405,107 @@ var TransactionService = {
     
     if (upsertResult && upsertResult.success === false) {
       throw new Error("Gagal update MASTER_TRANSAKSI: " + (upsertResult.message || "Validasi gagal"));
+    }
+
+    // Synchronize KEUANGAN_OUTLET for this resi
+    try {
+      var resolvedMetodeTambahan = (data.metode_bayar_tambahan !== undefined ? data.metode_bayar_tambahan : existingTx.metode_bayar_tambahan || "").toString().trim();
+      var mTambahanUpper = resolvedMetodeTambahan.toUpperCase();
+      var isDigitalTambahan = mTambahanUpper === "QRIS" || mTambahanUpper === "TRANSFER"
+                           || mTambahanUpper === "ORDER BY APP" || mTambahanUpper === "ORDER_BY_APP" || mTambahanUpper === "APP";
+      var targetLokasiUang = isDigitalTambahan ? "OWNER" : "ADMIN";
+      var targetBuktiUrl = data.bukti_tambahan_url !== undefined ? data.bukti_tambahan_url : (existingTx.bukti_tambahan_url || "");
+      var txDateStr = (existingTx.timestamp || (existingMaster && existingMaster.created_at) || new Date().toISOString()).toString().split("T")[0];
+      var outletIdVal = data.outlet_id_input || existingTx.outlet_id_input || (existingMaster && existingMaster.outlet_id) || "OUT-001";
+      var adminIdVal = data.admin_id_pencatat || existingTx.admin_id_pencatat || (existingMaster && existingMaster.admin_id) || "SYSTEM";
+
+      var rowsKo = DatabaseService.getSheetData("KEUANGAN_OUTLET");
+      if (rowsKo && rowsKo.length >= 1) {
+        var hKo = rowsKo[0];
+        var rIdx = hKo.indexOf("resi_id");
+        var kIdx = hKo.indexOf("kategori_id");
+        var dIdx = hKo.indexOf("deskripsi");
+        var idIdx = hKo.indexOf("id");
+
+        var cleanTarget = (targetResi || resiId).toString().trim().toUpperCase();
+        var cleanNew = resiId.toString().trim().toUpperCase();
+        var foundPackingRowId = null;
+        var foundAmplopRowId = null;
+
+        for (var p = 1; p < rowsKo.length; p++) {
+          var rRow = rowsKo[p];
+          var rowResi = rIdx !== -1 ? (rRow[rIdx] || "").toString().trim().toUpperCase() : "";
+          var rowDesk = dIdx !== -1 ? (rRow[dIdx] || "").toString().toUpperCase() : "";
+          var match = (rowResi && (rowResi === cleanTarget || rowResi === cleanNew)) || rowDesk.indexOf(cleanTarget) !== -1 || rowDesk.indexOf(cleanNew) !== -1;
+
+          if (match) {
+            var rowKat = kIdx !== -1 ? (rRow[kIdx] || "").toString().trim() : "";
+            var rowId = idIdx !== -1 ? (rRow[idIdx] || "").toString().trim() : "";
+            if (rowKat === "KAT-207" || rowKat === "KAT-102" || rowDesk.indexOf("PACKING") !== -1) {
+              foundPackingRowId = rowId;
+            }
+            if (rowKat === "KAT-208" || rowKat === "KAT-103" || rowDesk.indexOf("AMPLOP") !== -1) {
+              foundAmplopRowId = rowId;
+            }
+          }
+        }
+
+        // Update/insert Packing entry
+        if (foundPackingRowId) {
+          DatabaseService.updateRowByColumn("KEUANGAN_OUTLET", "id", foundPackingRowId, {
+            resi_id: cleanNew,
+            nominal: fin.biaya_packing,
+            lokasi_uang: targetLokasiUang,
+            bukti_url: targetBuktiUrl,
+            aktif: fin.biaya_packing > 0 ? "TRUE" : "FALSE"
+          });
+        } else if (fin.biaya_packing > 0) {
+          DatabaseService.insertRow("KEUANGAN_OUTLET", {
+            id: "KNG-" + new Date().getTime() + "-P",
+            tanggal: txDateStr,
+            outlet_id: outletIdVal,
+            jenis: "PEMASUKAN",
+            kategori_id: "KAT-207",
+            nominal: fin.biaya_packing,
+            deskripsi: "Biaya Packing untuk resi " + cleanNew,
+            bukti_url: targetBuktiUrl,
+            dibuat_oleh: adminIdVal,
+            created_at: new Date().toISOString(),
+            aktif: "TRUE",
+            resi_id: cleanNew,
+            lokasi_uang: targetLokasiUang
+          });
+        }
+
+        // Update/insert Amplop entry
+        if (foundAmplopRowId) {
+          DatabaseService.updateRowByColumn("KEUANGAN_OUTLET", "id", foundAmplopRowId, {
+            resi_id: cleanNew,
+            nominal: fin.biaya_amplop,
+            lokasi_uang: targetLokasiUang,
+            bukti_url: targetBuktiUrl,
+            aktif: fin.biaya_amplop > 0 ? "TRUE" : "FALSE"
+          });
+        } else if (fin.biaya_amplop > 0) {
+          DatabaseService.insertRow("KEUANGAN_OUTLET", {
+            id: "KNG-" + (new Date().getTime() + 1) + "-A",
+            tanggal: txDateStr,
+            outlet_id: outletIdVal,
+            jenis: "PEMASUKAN",
+            kategori_id: "KAT-208",
+            nominal: fin.biaya_amplop,
+            deskripsi: "Biaya Amplop untuk resi " + cleanNew,
+            bukti_url: targetBuktiUrl,
+            dibuat_oleh: adminIdVal,
+            created_at: new Date().toISOString(),
+            aktif: "TRUE",
+            resi_id: cleanNew,
+            lokasi_uang: targetLokasiUang
+          });
+        }
+      }
+    } catch (eKo) {
+      Logger.log("[updateTransaction] Warning: gagal sinkronisasi KEUANGAN_OUTLET: " + eKo.message);
     }
     
     DatabaseService.appendAudit(
