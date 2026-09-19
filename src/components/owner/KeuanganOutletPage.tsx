@@ -494,7 +494,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/10 transition-all cursor-pointer"
           >
             <Plus className="h-4 w-4 stroke-[2.5]" />
-            <span>+ Pemasukan</span>
+            <span>Pemasukan</span>
           </button>
 
           <button
@@ -502,7 +502,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
             className="bg-[#E4002B] hover:bg-red-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-red-500/10 transition-all cursor-pointer"
           >
             <Plus className="h-4 w-4 stroke-[2.5]" />
-            <span>+ Pengeluaran</span>
+            <span>Pengeluaran</span>
           </button>
           <button
             onClick={() => handleOpenAdd("TRANSFER_INTERNAL")}
