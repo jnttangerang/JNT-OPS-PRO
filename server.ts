@@ -4351,6 +4351,7 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
       const tipeProduk = tx.tipe_produk || matchedResi?.tipe_produk || p?.tipe_produk || ((tx.ekspedisi || "EXPRESS").toUpperCase() === "CARGO" ? "Cargo" : "EZ");
       const jenisBarang = tx.jenis_barang || matchedResi?.jenis_barang || p?.jenis_barang || (tipeProduk === "DOC" ? "DOKUMEN" : "BARANG");
       const metodeBayar = tx.metode_bayar || tx.metode_pembayaran_ongkir || matchedResi?.metode_bayar || p?.metode_bayar || "Tunai";
+      const isDfod = String(metodeBayar).toUpperCase().includes("DFOD");
 
       const txDate = extractBusinessDate(tx) || extractBusinessDate(p) || (tx.tanggal_transaksi ? getWIBDate(tx.tanggal_transaksi) : "") || getTodayWIB();
       const txTime = tx.jam_transaksi || p?.jam_transaksi || tx.timestamp?.split("T")[1]?.slice(0, 8) || "00:00:00";
@@ -4385,7 +4386,11 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
         pembulatan: finalPembulatan,
         wajib_setor_owner: Number(tx.wajib_setor_owner || sum.owner_deposit || 0),
         kas_operasional: Number(tx.kas_outlet || sum.outlet_cash || 0),
-        grand_total: sum.customer_payment || Number(tx.total_customer) || Number(tx.grand_total) || Number(tx.jumlah_dibayar_customer) || 0,
+        grand_total: isDfod
+          ? sum.customer_payment
+          : (sum.customer_payment > 0
+              ? sum.customer_payment
+              : (Number(tx.total_customer) || Number(tx.grand_total) || Number(tx.jumlah_dibayar_customer) || 0)),
         pengirim: tx.snapshot_nama_pengirim || tx.nama_pengirim || tx.pengirim || p?.nama_pengirim || "",
         penerima: tx.snapshot_nama_penerima || tx.nama_penerima || tx.penerima || p?.nama_penerima || "",
         hp_pengirim: tx.snapshot_hp_pengirim || tx.hp_pengirim || p?.hp_pengirim || "",
@@ -4447,7 +4452,9 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
           metode_bayar_tambahan: rMetodeTambahan,
           pembulatan: rPembulatan,
           bukti_tambahan_url: rBuktiTambahan,
-          grand_total: Number(masterTx?.total_customer || masterTx?.grand_total || r.grand_total) || 0,
+          grand_total: String(metodeBayar).toUpperCase().includes("DFOD")
+            ? 0
+            : (Number(masterTx?.total_customer || masterTx?.grand_total || r.grand_total) || 0),
           pengirim: masterTx?.snapshot_nama_pengirim || r.nama_pengirim || p?.nama_pengirim || "",
           penerima: masterTx?.snapshot_nama_penerima || r.nama_penerima || p?.nama_penerima || "",
           hp_pengirim: masterTx?.snapshot_hp_pengirim || r.hp_pengirim || p?.hp_pengirim || "",
@@ -4510,7 +4517,9 @@ app.all("/api/getRiwayatTransaksi", async (req, res) => {
           metode_bayar_tambahan: cMetodeTambahan,
           pembulatan: cPembulatan,
           bukti_tambahan_url: cBuktiTambahan,
-          grand_total: Number(masterTx?.total_customer || masterTx?.grand_total || c.grand_total) || 0,
+          grand_total: String(metodeBayar).toUpperCase().includes("DFOD")
+            ? 0
+            : (Number(masterTx?.total_customer || masterTx?.grand_total || c.grand_total) || 0),
           pengirim: masterTx?.snapshot_nama_pengirim || c.nama_pengirim || p?.nama_pengirim || "",
           penerima: masterTx?.snapshot_nama_penerima || c.nama_penerima || p?.nama_penerima || "",
           hp_pengirim: masterTx?.snapshot_hp_pengirim || c.hp_pengirim || p?.hp_pengirim || "",
@@ -4712,9 +4721,11 @@ app.post("/api/getDetailTransaksi", (req, res) => {
   const masterOwnerOutlet = hasMasterOwnerOrOutlet
     ? (Number(masterTx?.wajib_setor_owner || 0) + Number(masterTx?.kas_outlet || 0))
     : 0;
-  const grandTotal = rawResiGrand > 0
-    ? rawResiGrand
-    : (masterOwnerOutlet > 0 ? masterOwnerOutlet : summary.customer_payment);
+  const grandTotal = isDfod
+    ? summary.customer_payment
+    : (rawResiGrand > 0
+        ? rawResiGrand
+        : (masterOwnerOutlet > 0 ? masterOwnerOutlet : summary.customer_payment));
 
   const rawSetoranOwner = Number(resiObj?.setoran_ke_owner ?? masterTx?.wajib_setor_owner ?? 0);
   const setoranKeOwner = isDfod ? 0 : (rawSetoranOwner > 0 ? rawSetoranOwner : summary.owner_deposit);
