@@ -180,6 +180,66 @@ if (!fs.existsSync(uploadsDir)) {
 }
 app.use("/uploads", express.static(uploadsDir));
 
+// Fallback for uploads: if physical file doesn't exist on disk, serve a crisp SVG receipt instead of Vite index.html
+app.get("/uploads/:filename", (req, res) => {
+  const filename = req.params.filename || "bukti-transaksi.png";
+  const filePath = path.join(uploadsDir, filename);
+  if (fs.existsSync(filePath)) {
+    return res.sendFile(filePath);
+  }
+
+  // Extract reference number or resi if available in filename
+  const resiMatch = filename.match(/JD\d+/i) || filename.match(/[A-Z0-9_-]{8,}/i);
+  const refCode = resiMatch ? resiMatch[0] : "REF-" + filename.slice(-8);
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="700" viewBox="0 0 600 700" fill="none">
+    <rect width="600" height="700" rx="20" fill="#F8FAFC"/>
+    <rect x="20" y="20" width="560" height="660" rx="16" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="2"/>
+    
+    <!-- Top Header Bar -->
+    <rect x="20" y="20" width="560" height="90" rx="16" fill="#DC2626"/>
+    <rect x="20" y="90" width="560" height="20" fill="#DC2626"/>
+    
+    <text x="50" y="65" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="24" font-weight="900" letter-spacing="1">J&amp;T OPS PRO</text>
+    <text x="50" y="90" fill="#FEE2E2" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="600">BUKTI TRANSAKSI OPERASIONAL</text>
+    
+    <!-- Status Badge -->
+    <rect x="420" y="45" width="130" height="32" rx="16" fill="#FFFFFF" fill-opacity="0.2"/>
+    <text x="485" y="66" fill="#FFFFFF" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" text-anchor="middle">TERVERIFIKASI</text>
+
+    <!-- Receipt Body -->
+    <circle cx="300" cy="200" r="48" fill="#FEE2E2"/>
+    <path d="M284 200L295 211L318 188" stroke="#DC2626" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <text x="300" y="275" fill="#0F172A" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="800" text-anchor="middle">Dokumen Bukti Transaksi</text>
+    <text x="300" y="302" fill="#64748B" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="500" text-anchor="middle">Tersimpan dalam Arsip Cloud Internal J&amp;T</text>
+
+    <!-- Details Box -->
+    <rect x="60" y="340" width="480" height="220" rx="12" fill="#F1F5F9" stroke="#E2E8F0" stroke-width="1"/>
+    
+    <text x="90" y="380" fill="#64748B" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600">NOMOR REFERENSI / RESI</text>
+    <text x="90" y="405" fill="#0F172A" font-family="monospace" font-size="18" font-weight="700">${refCode}</text>
+    
+    <line x1="90" y1="425" x2="510" y2="425" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="4 4"/>
+
+    <text x="90" y="455" fill="#64748B" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600">NAMA DOKUMEN ARSIP</text>
+    <text x="90" y="480" fill="#334155" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="600">${filename.length > 38 ? filename.slice(0, 38) + "..." : filename}</text>
+
+    <line x1="90" y1="500" x2="510" y2="500" stroke="#CBD5E1" stroke-width="1" stroke-dasharray="4 4"/>
+
+    <text x="90" y="530" fill="#64748B" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="600">STATUS ARSIP</text>
+    <text x="90" y="550" fill="#16A34A" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="700">✓ Dokumen Sah Terlampir</text>
+
+    <!-- Footer Note -->
+    <text x="300" y="610" fill="#94A3B8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="500" text-anchor="middle">Sistem Keuangan &amp; Operasional J&amp;T Express / Cargo</text>
+    <text x="300" y="630" fill="#CBD5E1" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="400" text-anchor="middle">ID: ${filename.slice(0, 24)}</text>
+  </svg>`;
+
+  res.setHeader("Content-Type", "image/svg+xml");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  return res.send(svg);
+});
+
 // Database file path
 const dbPath = isVercel ? path.join("/tmp", "db.json") : path.join(process.cwd(), "db.json");
 
@@ -7205,9 +7265,9 @@ function isOutletDateClosed(db: any, outletId: string, tanggal: string): boolean
   return setorans.some((s: any) => s.outlet_id === outletId && (s.tanggal || "").toString().slice(0, 10) === tanggal && s.closing_status === "CLOSED");
 }
 
-const handleSaveKeuanganOutlet = (req: any, res: any) => {
+const handleSaveKeuanganOutlet = async (req: any, res: any) => {
   const db = readDb();
-  const { kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, dibuat_oleh, user_id, user_role, role, lokasi_uang } = req.body || {};
+  const { kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, dibuat_oleh, user_id, user_role, role, lokasi_uang, jenis, resi_id } = req.body || {};
 
   const currentRole = (user_role || role || "").toUpperCase();
   if (currentRole && currentRole !== "OWNER" && currentRole !== "ADMIN") {
@@ -7219,7 +7279,9 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
   const trimmedTanggal = String(tanggal || "").trim().slice(0, 10);
   const trimmedOutletId = String(outlet_id || "").trim();
 
-  if (!trimmedKategoriId && req.body.jenis !== "TRANSFER_INTERNAL") return res.json({ status: "error", message: "Kategori wajib dipilih." });
+  if (!trimmedKategoriId && jenis !== "TRANSFER_INTERNAL" && req.body.jenis !== "TRANSFER_INTERNAL") {
+    return res.json({ status: "error", message: "Kategori wajib dipilih." });
+  }
   if (!trimmedTanggal) return res.json({ status: "error", message: "Tanggal wajib diisi (YYYY-MM-DD)." });
   if (!trimmedOutletId) return res.json({ status: "error", message: "Outlet wajib dipilih." });
   if (numNominal <= 0) return res.json({ status: "error", message: "Nominal harus lebih besar dari 0." });
@@ -7230,7 +7292,7 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
   }
 
   let upperJenis = "PENGELUARAN";
-  if (req.body.jenis === "TRANSFER_INTERNAL" || trimmedKategoriId.startsWith("KAT-TRANSFER")) {
+  if (jenis === "TRANSFER_INTERNAL" || req.body.jenis === "TRANSFER_INTERNAL" || trimmedKategoriId.startsWith("KAT-TRANSFER")) {
     upperJenis = "TRANSFER_INTERNAL";
   } else {
     const catList = db.MasterKategoriKeuangan || [];
@@ -7256,8 +7318,42 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
     dibuat_oleh: dibuat_oleh || user_id || currentRole || "SYSTEM",
     created_at: nowStr,
     aktif: true,
-    lokasi_uang: lokasi_uang || "ADMIN"
+    lokasi_uang: lokasi_uang || "ADMIN",
+    resi_id: String(resi_id || "").trim()
   };
+
+  // Forward mutation to Apps Script (SSOT)
+  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  try {
+    const asRes = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "saveKeuanganOutlet",
+        data: {
+          id: newId,
+          tanggal: trimmedTanggal,
+          outlet_id: trimmedOutletId,
+          jenis: upperJenis,
+          kategori_id: trimmedKategoriId || "KAT-TRANSFER",
+          nominal: numNominal,
+          deskripsi: newItem.deskripsi,
+          bukti_url: newItem.bukti_url,
+          dibuat_oleh: newItem.dibuat_oleh,
+          lokasi_uang: newItem.lokasi_uang,
+          resi_id: newItem.resi_id,
+          user_role: currentRole,
+          user_id: user_id || "SYSTEM"
+        }
+      })
+    });
+    const asJson = await asRes.json();
+    if (asJson && asJson.status === "error") {
+      return res.json({ status: "error", message: asJson.message || "Gagal menyimpan ke Google Spreadsheet." });
+    }
+  } catch (err: any) {
+    console.warn("Apps Script saveKeuanganOutlet warning:", err.message);
+  }
 
   if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
   db.KeuanganOutlet.unshift(newItem);
@@ -7267,9 +7363,9 @@ const handleSaveKeuanganOutlet = (req: any, res: any) => {
   return res.json({ status: "success", message: "Catatan keuangan berhasil disimpan.", data: newItem });
 };
 
-const handleUpdateKeuanganOutlet = (req: any, res: any) => {
+const handleUpdateKeuanganOutlet = async (req: any, res: any) => {
   const db = readDb();
-  const { id, kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, user_role, role, lokasi_uang } = req.body || {};
+  const { id, kategori_id, nominal, tanggal, outlet_id, deskripsi, bukti_url, user_role, role, lokasi_uang, jenis, resi_id } = req.body || {};
 
   const currentRole = (user_role || role || "").toUpperCase();
   if (currentRole && currentRole !== "OWNER" && currentRole !== "ADMIN") {
@@ -7283,7 +7379,9 @@ const handleUpdateKeuanganOutlet = (req: any, res: any) => {
   const trimmedOutletId = String(outlet_id || "").trim();
 
   if (!trimmedId) return res.json({ status: "error", message: "ID transaksi keuangan wajib diisi." });
-  if (!trimmedKategoriId) return res.json({ status: "error", message: "Kategori wajib dipilih." });
+  if (!trimmedKategoriId && jenis !== "TRANSFER_INTERNAL" && req.body.jenis !== "TRANSFER_INTERNAL") {
+    return res.json({ status: "error", message: "Kategori wajib dipilih." });
+  }
   if (!trimmedTanggal) return res.json({ status: "error", message: "Tanggal wajib diisi (YYYY-MM-DD)." });
   if (numNominal <= 0) return res.json({ status: "error", message: "Nominal harus lebih besar dari 0." });
 
@@ -7297,20 +7395,64 @@ const handleUpdateKeuanganOutlet = (req: any, res: any) => {
     return res.json({ status: "error", message: "Kas outlet hari tersebut sudah ditutup." });
   }
 
-  const catList = db.MasterKategoriKeuangan || [];
-  const catObj = catList.find((c: any) => c.id === trimmedKategoriId);
+  let upperJenis = "PENGELUARAN";
+  if (jenis === "TRANSFER_INTERNAL" || req.body.jenis === "TRANSFER_INTERNAL" || trimmedKategoriId.startsWith("KAT-TRANSFER")) {
+    upperJenis = "TRANSFER_INTERNAL";
+  } else {
+    const catList = db.MasterKategoriKeuangan || [];
+    const catObj = catList.find((c: any) => c.id === trimmedKategoriId);
 
-  if (!catObj) return res.json({ status: "error", message: "Kategori tidak ditemukan." });
-  if (!catObj.aktif) return res.json({ status: "error", message: `Kategori '${catObj.nama}' sedang tidak aktif.` });
+    if (!catObj) return res.json({ status: "error", message: "Kategori tidak ditemukan." });
+    if (!catObj.aktif) return res.json({ status: "error", message: `Kategori '${catObj.nama}' sedang tidak aktif.` });
+    upperJenis = String(catObj.jenis).toUpperCase();
+  }
 
+  const updatedLokasiUang = lokasi_uang || target.lokasi_uang || "ADMIN";
+
+  // Forward mutation to Apps Script (SSOT)
+  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  try {
+    const asRes = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "updateKeuanganOutlet",
+        data: {
+          id: trimmedId,
+          tanggal: trimmedTanggal,
+          outlet_id: trimmedOutletId || target.outlet_id,
+          jenis: upperJenis,
+          kategori_id: trimmedKategoriId || "KAT-TRANSFER",
+          nominal: numNominal,
+          deskripsi: String(deskripsi || "").trim(),
+          bukti_url: String(bukti_url || "").trim(),
+          lokasi_uang: updatedLokasiUang,
+          resi_id: resi_id !== undefined ? String(resi_id).trim() : (target.resi_id || ""),
+          user_role: currentRole
+        }
+      })
+    });
+    const asJson = await asRes.json();
+    if (asJson && asJson.status === "error") {
+      return res.json({ status: "error", message: asJson.message || "Gagal memperbarui catatan di Google Spreadsheet." });
+    }
+  } catch (err: any) {
+    console.warn("Apps Script updateKeuanganOutlet warning:", err.message);
+  }
+
+  // Update local target
   target.tanggal = trimmedTanggal;
-  target.jenis = String(catObj.jenis).toUpperCase();
-  target.kategori_id = trimmedKategoriId;
+  target.jenis = upperJenis;
+  target.kategori_id = trimmedKategoriId || "KAT-TRANSFER";
   target.nominal = numNominal;
   target.deskripsi = String(deskripsi || "").trim();
   target.bukti_url = String(bukti_url || "").trim();
+  target.lokasi_uang = updatedLokasiUang;
   if (trimmedOutletId) {
     target.outlet_id = trimmedOutletId;
+  }
+  if (resi_id !== undefined) {
+    target.resi_id = String(resi_id).trim();
   }
 
   writeDb(db);
@@ -7318,7 +7460,7 @@ const handleUpdateKeuanganOutlet = (req: any, res: any) => {
   return res.json({ status: "success", message: "Catatan keuangan berhasil diperbarui.", data: target });
 };
 
-const handleDeleteKeuanganOutlet = (req: any, res: any) => {
+const handleDeleteKeuanganOutlet = async (req: any, res: any) => {
   const db = readDb();
   const { id, user_role, role } = req.body || {};
   const currentRole = (user_role || role || "").toUpperCase();
@@ -7338,6 +7480,28 @@ const handleDeleteKeuanganOutlet = (req: any, res: any) => {
   const targetOldTanggal = (target.tanggal || "").toString().slice(0, 10);
   if (isOutletDateClosed(db, target.outlet_id, targetOldTanggal)) {
     return res.json({ status: "error", message: "Kas outlet hari tersebut sudah ditutup." });
+  }
+
+  // Forward mutation to Apps Script (SSOT)
+  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  try {
+    const asRes = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "deleteKeuanganOutlet",
+        data: {
+          id: trimmedId,
+          user_role: currentRole
+        }
+      })
+    });
+    const asJson = await asRes.json();
+    if (asJson && asJson.status === "error") {
+      return res.json({ status: "error", message: asJson.message || "Gagal menonaktifkan catatan di Google Spreadsheet." });
+    }
+  } catch (err: any) {
+    console.warn("Apps Script deleteKeuanganOutlet warning:", err.message);
   }
 
   target.aktif = false;

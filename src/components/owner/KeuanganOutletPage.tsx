@@ -63,6 +63,13 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
 
   // Modal View Bukti State
   const [previewBuktiUrl, setPreviewBuktiUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
+  const [uploadingBukti, setUploadingBukti] = useState(false);
+
+  const handleOpenPreviewBukti = (url: string | null) => {
+    setImageError(false);
+    setPreviewBuktiUrl(url);
+  };
 
   const [backfilling, setBackfilling] = useState(false);
 
@@ -330,10 +337,28 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const result = event.target?.result as string;
-      setFormBuktiUrl(result);
-      toast.success("Bukti transaksi berhasil diunggah.");
+      try {
+        setUploadingBukti(true);
+        const upRes = await callBackend("uploadFile", {
+          fileBase64: result,
+          fileName: file.name,
+          category: "KAS_OUTLET"
+        });
+        if (upRes && upRes.status === "success" && upRes.data) {
+          setFormBuktiUrl(upRes.data);
+          toast.success("Bukti transaksi berhasil diunggah.");
+        } else {
+          setFormBuktiUrl(result);
+          toast.success("Bukti transaksi berhasil dipilih.");
+        }
+      } catch {
+        setFormBuktiUrl(result);
+        toast.success("Bukti transaksi berhasil dipilih.");
+      } finally {
+        setUploadingBukti(false);
+      }
     };
     reader.readAsDataURL(file);
   };
@@ -341,7 +366,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
   // Submit Handler
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formKategoriId) {
+    if (!formKategoriId && formJenis !== "TRANSFER_INTERNAL") {
       toast.error("Silakan pilih kategori keuangan.");
       return;
     }
@@ -365,6 +390,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
           id: editingItem.id,
           tanggal: formTanggal,
           outlet_id: formOutletId,
+          jenis: formJenis,
           kategori_id: formKategoriId,
           nominal: Number(formNominal),
           deskripsi: formDeskripsi.trim(),
@@ -384,6 +410,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
         const res = await callBackend("saveKeuanganOutlet", {
           tanggal: formTanggal,
           outlet_id: formOutletId,
+          jenis: formJenis,
           kategori_id: formKategoriId,
           nominal: Number(formNominal),
           deskripsi: formDeskripsi.trim(),
@@ -813,7 +840,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
                       <td className="py-3.5 px-4 text-center">
                         {item.bukti_url ? (
                           <button
-                            onClick={() => setPreviewBuktiUrl(item.bukti_url || null)}
+                            onClick={() => handleOpenPreviewBukti(item.bukti_url || null)}
                             className="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg transition-colors cursor-pointer inline-flex items-center gap-1"
                             title="Lihat Bukti Transaksi"
                           >
@@ -1130,21 +1157,45 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
           <div className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-lg w-full relative">
             <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-              <h4 className="text-xs font-extrabold text-gray-800">Bukti Transaksi</h4>
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-purple-600" />
+                <h4 className="text-xs font-extrabold text-gray-800">Bukti Transaksi</h4>
+              </div>
               <button
                 onClick={() => setPreviewBuktiUrl(null)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-200 cursor-pointer"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-200 cursor-pointer transition-colors"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="p-4 flex justify-center bg-gray-900/5">
-              <img
-                src={getDisplayImageUrl(previewBuktiUrl)}
-                alt="Bukti Transaksi"
-                className="max-h-[70vh] w-auto object-contain rounded-xl shadow-sm"
-                referrerPolicy="no-referrer"
-              />
+            <div className="p-4 flex flex-col items-center justify-center bg-gray-900/5 min-h-[250px]">
+              {imageError ? (
+                <div className="flex flex-col items-center justify-center p-6 text-center">
+                  <AlertCircle className="w-10 h-10 text-amber-500 mb-2" />
+                  <p className="text-xs font-semibold text-gray-700 mb-1">Gambar bukti tidak dapat dimuat</p>
+                  <p className="text-[11px] font-mono text-gray-400 max-w-xs truncate">{previewBuktiUrl}</p>
+                </div>
+              ) : (
+                <img
+                  src={getDisplayImageUrl(previewBuktiUrl)}
+                  alt="Bukti Transaksi"
+                  className="max-h-[70vh] w-auto object-contain rounded-xl shadow-sm"
+                  onError={() => setImageError(true)}
+                  referrerPolicy="no-referrer"
+                />
+              )}
+            </div>
+            <div className="px-4 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+              <span className="text-[11px] font-mono text-gray-500 truncate max-w-xs">
+                {previewBuktiUrl.split("/").pop() || "bukti-transaksi"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewBuktiUrl(null)}
+                className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>

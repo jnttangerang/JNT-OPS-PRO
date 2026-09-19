@@ -5695,7 +5695,7 @@ function apiSaveKeuanganOutlet(params) {
     var outletId = String(params.outlet_id || "").trim();
     var dibuatOleh = params.dibuat_oleh || params.user_id || currentRole || "SYSTEM";
 
-    if (!kategoriId) return { status: "error", message: "Kategori wajib dipilih." };
+    if (!kategoriId && params.jenis !== "TRANSFER_INTERNAL") return { status: "error", message: "Kategori wajib dipilih." };
     if (!tanggal) return { status: "error", message: "Tanggal wajib diisi (YYYY-MM-DD)." };
     if (!outletId) return { status: "error", message: "Outlet wajib dipilih." };
     if (nominal <= 0) return { status: "error", message: "Nominal harus lebih besar dari 0." };
@@ -5704,21 +5704,24 @@ function apiSaveKeuanganOutlet(params) {
       return { status: "error", message: "Kas outlet hari tersebut sudah ditutup." };
     }
 
-    // Lookup category
-    var catRes = apiGetKategoriKeuangan();
-    var catList = catRes.data || [];
-    var catObj = catList.find(function(c) { return c.id === kategoriId; });
+    var jenis = "PENGELUARAN";
+    if (params.jenis === "TRANSFER_INTERNAL" || kategoriId.indexOf("TRANSFER") !== -1) {
+      jenis = "TRANSFER_INTERNAL";
+    } else {
+      var catRes = apiGetKategoriKeuangan();
+      var catList = catRes.data || [];
+      var catObj = catList.find(function(c) { return c.id === kategoriId; });
 
-    if (!catObj) {
-      return { status: "error", message: "Kategori tidak ditemukan." };
+      if (!catObj) {
+        return { status: "error", message: "Kategori tidak ditemukan." };
+      }
+      if (!catObj.aktif) {
+        return { status: "error", message: "Kategori '" + catObj.nama + "' sedang tidak aktif." };
+      }
+      jenis = catObj.jenis.toUpperCase();
     }
-    if (!catObj.aktif) {
-      return { status: "error", message: "Kategori '" + catObj.nama + "' sedang tidak aktif." };
-    }
 
-    var jenis = catObj.jenis.toUpperCase();
-
-    var newId = "KNG-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100);
+    var newId = params.id || ("KNG-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100));
     var nowStr = new Date().toISOString();
 
     var rowObj = {
@@ -5726,13 +5729,15 @@ function apiSaveKeuanganOutlet(params) {
       tanggal: tanggal,
       outlet_id: outletId,
       jenis: jenis,
-      kategori_id: kategoriId,
+      kategori_id: kategoriId || "KAT-TRANSFER",
       nominal: nominal,
       deskripsi: String(params.deskripsi || "").trim(),
       bukti_url: String(params.bukti_url || "").trim(),
       dibuat_oleh: dibuatOleh,
       created_at: nowStr,
-      aktif: "TRUE"
+      aktif: "TRUE",
+      lokasi_uang: params.lokasi_uang || (jenis === "PEMASUKAN" ? "ADMIN" : "ADMIN"),
+      resi_id: String(params.resi_id || "").trim()
     };
 
     DatabaseService.insertRow("KEUANGAN_OUTLET", rowObj);
@@ -5757,7 +5762,7 @@ function apiUpdateKeuanganOutlet(params) {
     var outletId = String(params.outlet_id || "").trim();
 
     if (!id) return { status: "error", message: "ID transaksi keuangan tidak ditemukan." };
-    if (!kategoriId) return { status: "error", message: "Kategori wajib dipilih." };
+    if (!kategoriId && params.jenis !== "TRANSFER_INTERNAL") return { status: "error", message: "Kategori wajib dipilih." };
     if (!tanggal) return { status: "error", message: "Tanggal wajib diisi (YYYY-MM-DD)." };
     if (nominal <= 0) return { status: "error", message: "Nominal harus lebih besar dari 0." };
 
@@ -5777,27 +5782,39 @@ function apiUpdateKeuanganOutlet(params) {
       }
     }
 
-    var catRes = apiGetKategoriKeuangan();
-    var catList = catRes.data || [];
-    var catObj = catList.find(function(c) { return c.id === kategoriId; });
+    var jenis = "PENGELUARAN";
+    if (params.jenis === "TRANSFER_INTERNAL" || kategoriId.indexOf("TRANSFER") !== -1) {
+      jenis = "TRANSFER_INTERNAL";
+    } else {
+      var catRes = apiGetKategoriKeuangan();
+      var catList = catRes.data || [];
+      var catObj = catList.find(function(c) { return c.id === kategoriId; });
 
-    if (!catObj) {
-      return { status: "error", message: "Kategori tidak ditemukan." };
-    }
-    if (!catObj.aktif) {
-      return { status: "error", message: "Kategori '" + catObj.nama + "' sedang tidak aktif." };
+      if (!catObj) {
+        return { status: "error", message: "Kategori tidak ditemukan." };
+      }
+      if (!catObj.aktif) {
+        return { status: "error", message: "Kategori '" + catObj.nama + "' sedang tidak aktif." };
+      }
+      jenis = catObj.jenis.toUpperCase();
     }
 
     var updateData = {
       tanggal: tanggal,
-      jenis: catObj.jenis.toUpperCase(),
-      kategori_id: kategoriId,
+      jenis: jenis,
+      kategori_id: kategoriId || "KAT-TRANSFER",
       nominal: nominal,
       deskripsi: String(params.deskripsi || "").trim(),
       bukti_url: String(params.bukti_url || "").trim()
     };
+    if (params.lokasi_uang) {
+      updateData.lokasi_uang = params.lokasi_uang;
+    }
     if (outletId) {
       updateData.outlet_id = outletId;
+    }
+    if (params.resi_id !== undefined) {
+      updateData.resi_id = String(params.resi_id).trim();
     }
 
     DatabaseService.updateRowByColumn("KEUANGAN_OUTLET", "id", id, updateData);
