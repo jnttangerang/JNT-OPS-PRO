@@ -7375,29 +7375,6 @@ const handleSaveKeuanganOutlet = async (req: any, res: any) => {
     if (asJson?.data?.created_at) {
       authoritativeCreatedAt = String(asJson.data.created_at);
     }
-
-    // Explicitly update lokasi_uang, jenis, and resi_id on Google Sheet row to guarantee persistence
-    try {
-      await fetch(targetUrl, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          action: "updateKeuanganOutlet",
-          data: {
-            id: authoritativeId,
-            lokasi_uang: finalLokasiUang,
-            resi_id: String(resi_id || "").trim(),
-            jenis: upperJenis,
-            tanggal: trimmedTanggal,
-            nominal: numNominal,
-            kategori_id: asKategoriId,
-            user_role: currentRole
-          }
-        })
-      });
-    } catch (upErr: any) {
-      console.warn("Apps Script updateKeuanganOutlet sync warning:", upErr.message);
-    }
   } catch (err: any) {
     console.error("Apps Script saveKeuanganOutlet error:", err);
     return res.json({ status: "error", message: `Gagal menyimpan ke Google Spreadsheet: ${err.message}` });

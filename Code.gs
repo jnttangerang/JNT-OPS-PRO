@@ -5835,10 +5835,14 @@ function apiUpdateKeuanganOutlet(params) {
       tanggal: tanggal,
       jenis: jenis,
       kategori_id: kategoriId || "KAT-TRANSFER",
-      nominal: nominal,
-      deskripsi: String(params.deskripsi || "").trim(),
-      bukti_url: String(params.bukti_url || "").trim()
+      nominal: nominal
     };
+    if (params.deskripsi !== undefined) {
+      updateData.deskripsi = String(params.deskripsi || "").trim();
+    }
+    if (params.bukti_url !== undefined) {
+      updateData.bukti_url = String(params.bukti_url || "").trim();
+    }
     if (params.lokasi_uang) {
       updateData.lokasi_uang = params.lokasi_uang;
     }
