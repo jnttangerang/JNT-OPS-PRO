@@ -39,7 +39,10 @@ export function useAppsScript() {
       "reopenDailyClosing",
       "approveSetoran",
       "rejectSetoran",
-      "createSetoran"
+      "createSetoran",
+      "saveKeuanganOutlet",
+      "updateKeuanganOutlet",
+      "deleteKeuanganOutlet"
     ]);
     const isMutation = mutationActions.has(action);
     const maxRetries = isMutation ? 0 : Math.max(retries, 4);
@@ -63,13 +66,19 @@ export function useAppsScript() {
           }
           json = JSON.parse(text);
         } catch {
-          // If response is HTML/empty during server reload or proxy glitch, retry with progressive backoff
-          if (attempt < maxRetries) {
-            const delay = Math.min(400 * Math.pow(1.5, attempt), 2000);
+          // If response is HTML/empty during server boot, reload or proxy glitch, retry with graceful backoff
+          const isStartingServer = text.includes("Starting Server") || text.includes("<title>Starting Server") || (!contentType.includes("application/json") && text.trim().startsWith("<"));
+          const maxEffectiveRetries = isStartingServer ? Math.max(maxRetries, 8) : maxRetries;
+          if (attempt < maxEffectiveRetries) {
+            const delay = isStartingServer ? 1000 : Math.min(400 * Math.pow(1.5, attempt), 2000);
             await new Promise((r) => setTimeout(r, delay));
             continue;
           }
           setLoading(false);
+          if (isStartingServer) {
+            console.warn(`[useAppsScript] Server sedang memulai (HTTP ${response.status}) untuk ${url}`);
+            throw new Error(`Server sedang memulai, silakan tunggu beberapa saat.`);
+          }
           console.error(`[useAppsScript] Non-JSON response for ${url} (HTTP ${response.status}):`, text.slice(0, 200));
           throw new Error(`Respons dari server lokal bukan JSON yang valid (HTTP ${response.status}).`);
         }
@@ -81,8 +90,10 @@ export function useAppsScript() {
 
         return json as T;
       } catch (err: any) {
-        if (attempt < maxRetries && !err.message?.includes("Akses ditolak") && !err.message?.includes("HTTP 4")) {
-          const delay = Math.min(400 * Math.pow(1.5, attempt), 2000);
+        const isServerStarting = err?.message?.includes("Server sedang memulai") || err?.message === "RELOAD_OR_HTML_RESPONSE";
+        const maxEffectiveRetries = isServerStarting ? Math.max(maxRetries, 8) : maxRetries;
+        if (attempt < maxEffectiveRetries && !err.message?.includes("Akses ditolak") && !err.message?.includes("HTTP 4")) {
+          const delay = isServerStarting ? 1000 : Math.min(400 * Math.pow(1.5, attempt), 2000);
           await new Promise((r) => setTimeout(r, delay));
           continue;
         }

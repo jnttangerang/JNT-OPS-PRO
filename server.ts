@@ -7202,9 +7202,26 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
     const adminName = userMap[item.dibuat_oleh] || item.dibuat_oleh || "-";
     let kategoriNama = catObj.nama;
     if (!kategoriNama) {
-      if (item.kategori_id === "KAT-TRANSFER-ADMIN-TO-OWNER") kategoriNama = "Transfer Kas Admin ke Owner";
-      else if (item.kategori_id === "KAT-TRANSFER-OWNER-TO-ADMIN" || item.kategori_id === "KAT-TRANSFER") kategoriNama = "Transfer Dana Owner ke Admin";
+      if (item.kategori_id === "KAT-TRANSFER-ADMIN-TO-OWNER" || item.kategori_id === "KAT-54594819") kategoriNama = "Transfer Kas Admin ke Owner";
+      else if (item.kategori_id === "KAT-TRANSFER-OWNER-TO-ADMIN" || item.kategori_id === "KAT-54871232" || item.kategori_id === "KAT-TRANSFER") kategoriNama = "Transfer Dana Owner ke Admin";
       else kategoriNama = item.kategori_id || "-";
+    }
+
+    let resolvedItemJenis = String(item.jenis || catObj.jenis || "PENGELUARAN").toUpperCase();
+    if (
+      item.kategori_id === "KAT-54594819" ||
+      item.kategori_id === "KAT-54871232" ||
+      (typeof item.kategori_id === "string" && item.kategori_id.startsWith("KAT-TRANSFER")) ||
+      (typeof item.deskripsi === "string" && (item.deskripsi.toLowerCase().includes("transfer kas") || item.deskripsi.toLowerCase().includes("transfer dana")))
+    ) {
+      resolvedItemJenis = "TRANSFER_INTERNAL";
+    }
+
+    let resolvedItemLokasi = item.lokasi_uang;
+    if (!resolvedItemLokasi) {
+      if (item.kategori_id === "KAT-54594819" || item.kategori_id === "KAT-TRANSFER-ADMIN-TO-OWNER") resolvedItemLokasi = "ADMIN";
+      else if (item.kategori_id === "KAT-54871232" || item.kategori_id === "KAT-TRANSFER-OWNER-TO-ADMIN") resolvedItemLokasi = "OWNER";
+      else resolvedItemLokasi = "ADMIN";
     }
 
     let resolvedBukti = String(item.bukti_url || "").trim();
@@ -7234,7 +7251,7 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
       tanggal: toIsoDateString(item.tanggal, item.created_at),
       outlet_id: String(item.outlet_id || ""),
       nama_outlet: outletMap[item.outlet_id] || item.outlet_id || "",
-      jenis: String(item.jenis || catObj.jenis || "PENGELUARAN").toUpperCase(),
+      jenis: resolvedItemJenis,
       kategori_id: String(item.kategori_id || ""),
       kategori_nama: kategoriNama,
       nominal: Number(item.nominal) || 0,
@@ -7243,7 +7260,7 @@ const handleGetKeuanganOutlet = async (req: any, res: any) => {
       dibuat_oleh: String(adminName),
       created_at: String(item.created_at || ""),
       aktif: item.aktif !== false && item.aktif !== "FALSE",
-      lokasi_uang: item.lokasi_uang || (item.jenis === "PEMASUKAN" ? "ADMIN" : "ADMIN"),
+      lokasi_uang: resolvedItemLokasi,
       resi_id: String(item.resi_id || "")
     };
   });
@@ -7292,8 +7309,16 @@ const handleSaveKeuanganOutlet = async (req: any, res: any) => {
   }
 
   let upperJenis = "PENGELUARAN";
+  let asKategoriId = trimmedKategoriId;
   if (jenis === "TRANSFER_INTERNAL" || req.body.jenis === "TRANSFER_INTERNAL" || trimmedKategoriId.startsWith("KAT-TRANSFER")) {
     upperJenis = "TRANSFER_INTERNAL";
+    if (trimmedKategoriId === "KAT-TRANSFER-ADMIN-TO-OWNER") {
+      asKategoriId = "KAT-54594819";
+    } else if (trimmedKategoriId === "KAT-TRANSFER-OWNER-TO-ADMIN") {
+      asKategoriId = "KAT-54871232";
+    } else if (!asKategoriId || asKategoriId === "KAT-TRANSFER") {
+      asKategoriId = lokasi_uang === "OWNER" ? "KAT-54871232" : "KAT-54594819";
+    }
   } else {
     const catList = db.MasterKategoriKeuangan || [];
     const catObj = catList.find((c: any) => c.id === trimmedKategoriId);
@@ -7301,29 +7326,22 @@ const handleSaveKeuanganOutlet = async (req: any, res: any) => {
     if (!catObj) return res.json({ status: "error", message: "Kategori tidak ditemukan." });
     if (!catObj.aktif) return res.json({ status: "error", message: `Kategori '${catObj.nama}' sedang tidak aktif.` });
     upperJenis = String(catObj.jenis).toUpperCase();
+    asKategoriId = catObj.id;
+  }
+
+  let finalLokasiUang = String(lokasi_uang || "").toUpperCase();
+  if (finalLokasiUang !== "OWNER" && finalLokasiUang !== "ADMIN") {
+    finalLokasiUang = upperJenis === "TRANSFER_INTERNAL" ? "ADMIN" : "ADMIN";
   }
 
   const newId = `KNG-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
   const nowStr = new Date().toISOString();
 
-  const newItem = {
-    id: newId,
-    tanggal: trimmedTanggal,
-    outlet_id: trimmedOutletId,
-    jenis: upperJenis,
-    kategori_id: trimmedKategoriId || "KAT-TRANSFER",
-    nominal: numNominal,
-    deskripsi: String(deskripsi || "").trim(),
-    bukti_url: String(bukti_url || "").trim(),
-    dibuat_oleh: dibuat_oleh || user_id || currentRole || "SYSTEM",
-    created_at: nowStr,
-    aktif: true,
-    lokasi_uang: lokasi_uang || "ADMIN",
-    resi_id: String(resi_id || "").trim()
-  };
-
   // Forward mutation to Apps Script (SSOT)
   const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  let authoritativeId = newId;
+  let authoritativeCreatedAt = nowStr;
+
   try {
     const asRes = await fetch(targetUrl, {
       method: "POST",
@@ -7335,13 +7353,13 @@ const handleSaveKeuanganOutlet = async (req: any, res: any) => {
           tanggal: trimmedTanggal,
           outlet_id: trimmedOutletId,
           jenis: upperJenis,
-          kategori_id: trimmedKategoriId || "KAT-TRANSFER",
+          kategori_id: asKategoriId,
           nominal: numNominal,
-          deskripsi: newItem.deskripsi,
-          bukti_url: newItem.bukti_url,
-          dibuat_oleh: newItem.dibuat_oleh,
-          lokasi_uang: newItem.lokasi_uang,
-          resi_id: newItem.resi_id,
+          deskripsi: String(deskripsi || "").trim(),
+          bukti_url: String(bukti_url || "").trim(),
+          dibuat_oleh: dibuat_oleh || user_id || currentRole || "SYSTEM",
+          lokasi_uang: finalLokasiUang,
+          resi_id: String(resi_id || "").trim(),
           user_role: currentRole,
           user_id: user_id || "SYSTEM"
         }
@@ -7351,11 +7369,59 @@ const handleSaveKeuanganOutlet = async (req: any, res: any) => {
     if (asJson && asJson.status === "error") {
       return res.json({ status: "error", message: asJson.message || "Gagal menyimpan ke Google Spreadsheet." });
     }
+    if (asJson?.data?.id) {
+      authoritativeId = String(asJson.data.id);
+    }
+    if (asJson?.data?.created_at) {
+      authoritativeCreatedAt = String(asJson.data.created_at);
+    }
+
+    // Explicitly update lokasi_uang, jenis, and resi_id on Google Sheet row to guarantee persistence
+    try {
+      await fetch(targetUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          action: "updateKeuanganOutlet",
+          data: {
+            id: authoritativeId,
+            lokasi_uang: finalLokasiUang,
+            resi_id: String(resi_id || "").trim(),
+            jenis: upperJenis,
+            tanggal: trimmedTanggal,
+            nominal: numNominal,
+            kategori_id: asKategoriId,
+            user_role: currentRole
+          }
+        })
+      });
+    } catch (upErr: any) {
+      console.warn("Apps Script updateKeuanganOutlet sync warning:", upErr.message);
+    }
   } catch (err: any) {
-    console.warn("Apps Script saveKeuanganOutlet warning:", err.message);
+    console.error("Apps Script saveKeuanganOutlet error:", err);
+    return res.json({ status: "error", message: `Gagal menyimpan ke Google Spreadsheet: ${err.message}` });
   }
 
+  const newItem = {
+    id: authoritativeId,
+    tanggal: trimmedTanggal,
+    outlet_id: trimmedOutletId,
+    jenis: upperJenis,
+    kategori_id: trimmedKategoriId || asKategoriId,
+    nominal: numNominal,
+    deskripsi: String(deskripsi || "").trim(),
+    bukti_url: String(bukti_url || "").trim(),
+    dibuat_oleh: dibuat_oleh || user_id || currentRole || "SYSTEM",
+    created_at: authoritativeCreatedAt,
+    aktif: true,
+    lokasi_uang: finalLokasiUang,
+    resi_id: String(resi_id || "").trim()
+  };
+
   if (!db.KeuanganOutlet) db.KeuanganOutlet = [];
+  // Ensure no duplicate provisional or authoritative records exist locally
+  db.KeuanganOutlet = db.KeuanganOutlet.filter((k: any) => k.id !== authoritativeId && k.id !== newId);
   db.KeuanganOutlet.unshift(newItem);
   writeDb(db);
   invalidateSyncCache();
@@ -7396,8 +7462,16 @@ const handleUpdateKeuanganOutlet = async (req: any, res: any) => {
   }
 
   let upperJenis = "PENGELUARAN";
+  let asKategoriId = trimmedKategoriId;
   if (jenis === "TRANSFER_INTERNAL" || req.body.jenis === "TRANSFER_INTERNAL" || trimmedKategoriId.startsWith("KAT-TRANSFER")) {
     upperJenis = "TRANSFER_INTERNAL";
+    if (trimmedKategoriId === "KAT-TRANSFER-ADMIN-TO-OWNER") {
+      asKategoriId = "KAT-54594819";
+    } else if (trimmedKategoriId === "KAT-TRANSFER-OWNER-TO-ADMIN") {
+      asKategoriId = "KAT-54871232";
+    } else if (!asKategoriId || asKategoriId === "KAT-TRANSFER") {
+      asKategoriId = (lokasi_uang || target.lokasi_uang) === "OWNER" ? "KAT-54871232" : "KAT-54594819";
+    }
   } else {
     const catList = db.MasterKategoriKeuangan || [];
     const catObj = catList.find((c: any) => c.id === trimmedKategoriId);
@@ -7405,9 +7479,12 @@ const handleUpdateKeuanganOutlet = async (req: any, res: any) => {
     if (!catObj) return res.json({ status: "error", message: "Kategori tidak ditemukan." });
     if (!catObj.aktif) return res.json({ status: "error", message: `Kategori '${catObj.nama}' sedang tidak aktif.` });
     upperJenis = String(catObj.jenis).toUpperCase();
+    asKategoriId = catObj.id;
   }
 
-  const updatedLokasiUang = lokasi_uang || target.lokasi_uang || "ADMIN";
+  const updatedLokasiUang = (lokasi_uang === "OWNER" || lokasi_uang === "ADMIN")
+    ? lokasi_uang
+    : (target.lokasi_uang || "ADMIN");
 
   // Forward mutation to Apps Script (SSOT)
   const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
@@ -7422,7 +7499,7 @@ const handleUpdateKeuanganOutlet = async (req: any, res: any) => {
           tanggal: trimmedTanggal,
           outlet_id: trimmedOutletId || target.outlet_id,
           jenis: upperJenis,
-          kategori_id: trimmedKategoriId || "KAT-TRANSFER",
+          kategori_id: asKategoriId,
           nominal: numNominal,
           deskripsi: String(deskripsi || "").trim(),
           bukti_url: String(bukti_url || "").trim(),
@@ -7437,13 +7514,14 @@ const handleUpdateKeuanganOutlet = async (req: any, res: any) => {
       return res.json({ status: "error", message: asJson.message || "Gagal memperbarui catatan di Google Spreadsheet." });
     }
   } catch (err: any) {
-    console.warn("Apps Script updateKeuanganOutlet warning:", err.message);
+    console.error("Apps Script updateKeuanganOutlet error:", err);
+    return res.json({ status: "error", message: `Gagal memperbarui ke Google Spreadsheet: ${err.message}` });
   }
 
   // Update local target
   target.tanggal = trimmedTanggal;
   target.jenis = upperJenis;
-  target.kategori_id = trimmedKategoriId || "KAT-TRANSFER";
+  target.kategori_id = trimmedKategoriId || asKategoriId;
   target.nominal = numNominal;
   target.deskripsi = String(deskripsi || "").trim();
   target.bukti_url = String(bukti_url || "").trim();
@@ -8154,7 +8232,25 @@ const resJam =
 
           // Fallback for manual ledger (stored)
           if (!resolvedLokasiUang) {
-            resolvedLokasiUang = localK?.lokasi_uang || "ADMIN";
+            if (remoteK.kategori_id === "KAT-54594819" || remoteK.kategori_id === "KAT-TRANSFER-ADMIN-TO-OWNER") {
+              resolvedLokasiUang = "ADMIN";
+            } else if (remoteK.kategori_id === "KAT-54871232" || remoteK.kategori_id === "KAT-TRANSFER-OWNER-TO-ADMIN") {
+              resolvedLokasiUang = "OWNER";
+            } else {
+              resolvedLokasiUang = localK?.lokasi_uang || "ADMIN";
+            }
+          }
+
+          let resolvedJenis = remoteK.jenis;
+          if (
+            remoteK.kategori_id === "KAT-54594819" ||
+            remoteK.kategori_id === "KAT-54871232" ||
+            remoteK.kategori_id?.includes("TRANSFER") ||
+            localK?.jenis === "TRANSFER_INTERNAL" ||
+            remoteK.deskripsi?.toLowerCase().includes("transfer kas") ||
+            remoteK.deskripsi?.toLowerCase().includes("transfer dana")
+          ) {
+            resolvedJenis = "TRANSFER_INTERNAL";
           }
 
           let resolvedBukti = (remoteK.bukti_url || localK?.bukti_url || "").toString().trim();
@@ -8169,11 +8265,37 @@ const resJam =
             }
           }
 
-          return { ...remoteK, lokasi_uang: resolvedLokasiUang, bukti_url: resolvedBukti };
+          return { ...remoteK, jenis: resolvedJenis, lokasi_uang: resolvedLokasiUang, bukti_url: resolvedBukti };
         });
 
-        const localOnlyKeuangan = localKeuangan.filter((k: any) => k.id && !remoteKeuanganIds.has(k.id));
-        latestDb.KeuanganOutlet = [...mergedKeuangan, ...localOnlyKeuangan];
+        // Dedup: Any local record that matches a remote record by ID or by same (tanggal + outlet_id + nominal + deskripsi) is NOT localOnly.
+        // Also, only retain local-only items created within the last 3 minutes (grace period for in-flight creations).
+        const syncNow = Date.now();
+        const localOnlyKeuangan = localKeuangan.filter((k: any) => {
+          if (!k.id || remoteKeuanganIds.has(k.id)) return false;
+          const isDuplicateOfRemote = (keuanganRes.data || []).some((r: any) =>
+            r.tanggal === k.tanggal &&
+            r.outlet_id === k.outlet_id &&
+            Number(r.nominal) === Number(k.nominal) &&
+            String(r.deskripsi || "").trim() === String(k.deskripsi || "").trim()
+          );
+          if (isDuplicateOfRemote) return false;
+
+          let createdMs = new Date(k.created_at || 0).getTime();
+          if (isNaN(createdMs)) createdMs = 0;
+          return createdMs > 0 && (syncNow - createdMs < 180000);
+        });
+
+        const seenKeuanganIds = new Set<string>();
+        const finalKeuanganList: any[] = [];
+        for (const item of [...mergedKeuangan, ...localOnlyKeuangan]) {
+          if (item && item.id && !seenKeuanganIds.has(item.id)) {
+            seenKeuanganIds.add(item.id);
+            finalKeuanganList.push(item);
+          }
+        }
+
+        latestDb.KeuanganOutlet = finalKeuanganList;
         hasChanged = true;
       }
 

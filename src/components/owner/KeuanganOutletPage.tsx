@@ -318,11 +318,23 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
     setFormJenis(item.jenis);
     setFormTanggal(item.tanggal);
     setFormOutletId(item.outlet_id);
-    setFormKategoriId(item.kategori_id);
+
+    let initialCat = item.kategori_id;
+    if (item.kategori_id === "KAT-54594819") initialCat = "KAT-TRANSFER-ADMIN-TO-OWNER";
+    else if (item.kategori_id === "KAT-54871232") initialCat = "KAT-TRANSFER-OWNER-TO-ADMIN";
+    setFormKategoriId(initialCat);
+
     setFormNominal(item.nominal);
     setFormDeskripsi(item.deskripsi || "");
     setFormBuktiUrl(item.bukti_url || "");
-    setFormLokasiUang(item.lokasi_uang || "ADMIN");
+
+    let resolvedLokasi = item.lokasi_uang;
+    if (!resolvedLokasi) {
+      if (initialCat === "KAT-TRANSFER-ADMIN-TO-OWNER" || item.kategori_id === "KAT-54594819") resolvedLokasi = "ADMIN";
+      else if (initialCat === "KAT-TRANSFER-OWNER-TO-ADMIN" || item.kategori_id === "KAT-54871232") resolvedLokasi = "OWNER";
+      else resolvedLokasi = "ADMIN";
+    }
+    setFormLokasiUang(resolvedLokasi as "ADMIN" | "OWNER");
     setModalOpen(true);
   };
 

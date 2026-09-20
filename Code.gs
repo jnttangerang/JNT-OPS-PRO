@@ -5630,21 +5630,42 @@ function apiGetKeuanganOutlet(params) {
       }
 
       var catInfo = catMap[obj.kategori_id] || {};
+      var resolvedJenis = (obj.jenis || catInfo.jenis || "PENGELUARAN").toString().toUpperCase();
+      var resolvedKategoriNama = catInfo.nama || obj.kategori_id || "-";
+      if (obj.kategori_id === "KAT-54594819" || obj.kategori_id === "KAT-TRANSFER-ADMIN-TO-OWNER") {
+        resolvedJenis = "TRANSFER_INTERNAL";
+        resolvedKategoriNama = "Transfer Kas Admin ke Owner";
+      } else if (obj.kategori_id === "KAT-54871232" || obj.kategori_id === "KAT-TRANSFER-OWNER-TO-ADMIN" || obj.kategori_id === "KAT-TRANSFER") {
+        resolvedJenis = "TRANSFER_INTERNAL";
+        resolvedKategoriNama = "Transfer Dana Owner ke Admin";
+      }
+
+      var resolvedLokasi = (obj.lokasi_uang || "").toString();
+      if (!resolvedLokasi) {
+        if (obj.kategori_id === "KAT-54594819" || obj.kategori_id === "KAT-TRANSFER-ADMIN-TO-OWNER") {
+          resolvedLokasi = "ADMIN";
+        } else if (obj.kategori_id === "KAT-54871232" || obj.kategori_id === "KAT-TRANSFER-OWNER-TO-ADMIN") {
+          resolvedLokasi = "OWNER";
+        } else {
+          resolvedLokasi = "ADMIN";
+        }
+      }
+
       list.push({
         id: obj.id.toString(),
         tanggal: itemTanggal,
         outlet_id: (obj.outlet_id || "").toString(),
         nama_outlet: outletMap[obj.outlet_id] || obj.outlet_id || "",
-        jenis: (obj.jenis || catInfo.jenis || "PENGELUARAN").toString().toUpperCase(),
+        jenis: resolvedJenis,
         kategori_id: (obj.kategori_id || "").toString(),
-        kategori_nama: catInfo.nama || obj.kategori_id || "-",
+        kategori_nama: resolvedKategoriNama,
         nominal: Number(obj.nominal) || 0,
         deskripsi: (obj.deskripsi || "").toString(),
         bukti_url: resolvedBukti,
         dibuat_oleh: (obj.dibuat_oleh || "").toString(),
         created_at: (obj.created_at || "").toString(),
         aktif: isAktif,
-        lokasi_uang: (obj.lokasi_uang || "").toString(),
+        lokasi_uang: resolvedLokasi,
         resi_id: (obj.resi_id || "").toString()
       });
     }
@@ -5705,7 +5726,7 @@ function apiSaveKeuanganOutlet(params) {
     }
 
     var jenis = "PENGELUARAN";
-    if (params.jenis === "TRANSFER_INTERNAL" || kategoriId.indexOf("TRANSFER") !== -1) {
+    if (params.jenis === "TRANSFER_INTERNAL" || kategoriId.indexOf("TRANSFER") !== -1 || kategoriId === "KAT-54594819" || kategoriId === "KAT-54871232") {
       jenis = "TRANSFER_INTERNAL";
     } else {
       var catRes = apiGetKategoriKeuangan();
@@ -5724,6 +5745,17 @@ function apiSaveKeuanganOutlet(params) {
     var newId = params.id || ("KNG-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100));
     var nowStr = new Date().toISOString();
 
+    var lokasiUang = params.lokasi_uang;
+    if (!lokasiUang) {
+      if (kategoriId === "KAT-54594819" || kategoriId === "KAT-TRANSFER-ADMIN-TO-OWNER") {
+        lokasiUang = "ADMIN";
+      } else if (kategoriId === "KAT-54871232" || kategoriId === "KAT-TRANSFER-OWNER-TO-ADMIN") {
+        lokasiUang = "OWNER";
+      } else {
+        lokasiUang = "ADMIN";
+      }
+    }
+
     var rowObj = {
       id: newId,
       tanggal: tanggal,
@@ -5736,7 +5768,7 @@ function apiSaveKeuanganOutlet(params) {
       dibuat_oleh: dibuatOleh,
       created_at: nowStr,
       aktif: "TRUE",
-      lokasi_uang: params.lokasi_uang || (jenis === "PEMASUKAN" ? "ADMIN" : "ADMIN"),
+      lokasi_uang: lokasiUang,
       resi_id: String(params.resi_id || "").trim()
     };
 
@@ -5783,7 +5815,7 @@ function apiUpdateKeuanganOutlet(params) {
     }
 
     var jenis = "PENGELUARAN";
-    if (params.jenis === "TRANSFER_INTERNAL" || kategoriId.indexOf("TRANSFER") !== -1) {
+    if (params.jenis === "TRANSFER_INTERNAL" || kategoriId.indexOf("TRANSFER") !== -1 || kategoriId === "KAT-54594819" || kategoriId === "KAT-54871232") {
       jenis = "TRANSFER_INTERNAL";
     } else {
       var catRes = apiGetKategoriKeuangan();
