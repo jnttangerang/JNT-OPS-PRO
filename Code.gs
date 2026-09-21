@@ -5478,7 +5478,8 @@ function apiBackfillKeuanganOutletFromTransactions() {
             dibuat_oleh: adminId,
             created_at: new Date().toISOString(),
             aktif: "TRUE",
-            resi_id: resiId
+            resi_id: resiId,
+            lokasi_uang: "ADMIN"
           });
           existingEntries[resiId + "_KAT-207"] = true;
           existingEntries[descP] = true;
@@ -5501,7 +5502,8 @@ function apiBackfillKeuanganOutletFromTransactions() {
             dibuat_oleh: adminId,
             created_at: new Date().toISOString(),
             aktif: "TRUE",
-            resi_id: resiId
+            resi_id: resiId,
+            lokasi_uang: "ADMIN"
           });
           existingEntries[resiId + "_KAT-208"] = true;
           existingEntries[descA] = true;
