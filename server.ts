@@ -7365,7 +7365,14 @@ const handleSaveKeuanganOutlet = async (req: any, res: any) => {
         }
       })
     });
-    const asJson = await asRes.json();
+    const asText = await asRes.text();
+    let asJson: any = null;
+    try {
+      asJson = JSON.parse(asText);
+    } catch (e: any) {
+      console.error("[handleSaveKeuanganOutlet] non-JSON from Apps Script! Status:", asRes.status, "TargetUrl:", targetUrl, "Body:", asText);
+      return res.json({ status: "error", message: `Gagal menyimpan ke Google Spreadsheet: Apps Script status ${asRes.status} non-JSON: ${asText.slice(0, 100)}` });
+    }
     if (asJson && asJson.status === "error") {
       return res.json({ status: "error", message: asJson.message || "Gagal menyimpan ke Google Spreadsheet." });
     }
