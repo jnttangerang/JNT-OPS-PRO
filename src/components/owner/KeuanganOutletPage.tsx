@@ -763,12 +763,13 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
         ) : (
           <div>
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[750px]">
+              <table className="w-full text-left border-collapse min-w-[850px]">
                 <thead>
                   <tr className="bg-gray-50/80 border-b border-gray-150 text-[11px] font-extrabold text-gray-500 uppercase tracking-wider">
                     <th className="py-3.5 px-4 w-28">Tanggal</th>
                     <th className="py-3.5 px-4">Outlet</th>
                     <th className="py-3.5 px-4 w-28">Jenis</th>
+                    <th className="py-3.5 px-4 w-32">Lokasi Uang</th>
                     <th className="py-3.5 px-4">Kategori</th>
                     <th className="py-3.5 px-4 text-right w-36">Nominal</th>
                     <th className="py-3.5 px-4">Deskripsi</th>
@@ -792,34 +793,36 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
 
                       {/* Jenis */}
                       <td className="py-3.5 px-4">
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-block w-fit px-2.5 py-0.5 rounded text-[10px] font-bold font-mono uppercase tracking-wider ${
-                            item.jenis === "PEMASUKAN"
-                              ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                              : item.jenis === "TRANSFER_INTERNAL"
-                              ? "bg-blue-50 text-blue-700 border border-blue-100"
-                              : "bg-red-50 text-red-700 border border-red-100"
-                          }`}>
-                            {item.jenis === "PEMASUKAN" ? "+ Pemasukan" : item.jenis === "TRANSFER_INTERNAL" ? "⟲ Transfer" : "- Pengeluaran"}
-                          </span>
-                          <span className={`inline-block w-fit px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                            item.jenis === "TRANSFER_INTERNAL"
-                              ? item.lokasi_uang === "ADMIN"
-                                ? "bg-amber-50 text-amber-800 border border-amber-200"
-                                : "bg-purple-50 text-purple-700 border border-purple-100"
-                              : item.lokasi_uang === "OWNER"
-                              ? "bg-purple-50 text-purple-700 border border-purple-100" 
-                              : "bg-gray-100 text-gray-700 border border-gray-200"
-                          }`}>
-                            {item.jenis === "TRANSFER_INTERNAL"
-                              ? item.lokasi_uang === "ADMIN"
-                                ? "Admin ➔ Owner"
-                                : "Owner ➔ Admin"
-                              : item.lokasi_uang === "OWNER"
-                              ? "Di Owner"
-                              : "Di Admin"}
-                          </span>
-                        </div>
+                        <span className={`inline-block w-fit px-2.5 py-0.5 rounded text-[10px] font-bold font-mono uppercase tracking-wider ${
+                          item.jenis === "PEMASUKAN"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
+                            : item.jenis === "TRANSFER_INTERNAL"
+                            ? "bg-blue-50 text-blue-700 border border-blue-100"
+                            : "bg-red-50 text-red-700 border border-red-100"
+                        }`}>
+                          {item.jenis === "PEMASUKAN" ? "+ Pemasukan" : item.jenis === "TRANSFER_INTERNAL" ? "⟲ Transfer" : "- Pengeluaran"}
+                        </span>
+                      </td>
+
+                      {/* Lokasi Uang */}
+                      <td className="py-3.5 px-4">
+                        <span className={`inline-block w-fit px-2.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                          item.jenis === "TRANSFER_INTERNAL"
+                            ? item.lokasi_uang === "ADMIN"
+                              ? "bg-amber-50 text-amber-800 border border-amber-200"
+                              : "bg-purple-50 text-purple-700 border border-purple-100"
+                            : item.lokasi_uang === "OWNER"
+                            ? "bg-purple-50 text-purple-700 border border-purple-100" 
+                            : "bg-gray-100 text-gray-700 border border-gray-200"
+                        }`}>
+                          {item.jenis === "TRANSFER_INTERNAL"
+                            ? item.lokasi_uang === "ADMIN"
+                              ? "Admin ➔ Owner"
+                              : "Owner ➔ Admin"
+                            : item.lokasi_uang === "OWNER"
+                            ? "Di Owner"
+                            : "Di Admin"}
+                        </span>
                       </td>
 
                       {/* Kategori */}
