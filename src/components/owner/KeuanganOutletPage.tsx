@@ -397,8 +397,6 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
 
     setSubmitting(true);
     try {
-      console.log("[DEBUG KeuanganOutletPage handleSubmit] Starting save/update. formLokasiUang value:", formLokasiUang);
-      
       if (editingItem) {
         const payload = {
           id: editingItem.id,
@@ -413,7 +411,6 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
           user_role: session.role,
           user_id: session.user_id
         };
-        console.log("[DEBUG KeuanganOutletPage handleSubmit] Update Payload:", JSON.stringify(payload, null, 2));
 
         const res = await callBackend("updateKeuanganOutlet", payload);
         if (res.status === "success") {
@@ -437,7 +434,6 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
           user_role: session.role,
           user_id: session.user_id
         };
-        console.log("[DEBUG KeuanganOutletPage handleSubmit] Create Payload:", JSON.stringify(payload, null, 2));
 
         const res = await callBackend("saveKeuanganOutlet", payload);
         if (res.status === "success") {

@@ -1961,7 +1961,7 @@ app.post("/api/deleteBulkCustomers", async (req, res) => {
   const { ids, sheetName } = req.body;
   if (!ids || !sheetName) return res.status(400).json({ status: "error", message: "Missing required parameters" });
   
-  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
   
   try {
     const asRes = await fetch(targetUrl, {
@@ -2004,7 +2004,7 @@ app.post("/api/updateCustomer", async (req, res) => {
   const { id, sheetName, updatedData } = req.body;
   if (!id || !sheetName || !updatedData) return res.status(400).json({ status: "error", message: "Missing required parameters" });
 
-  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
   
   try {
     const asRes = await fetch(targetUrl, {
@@ -7338,7 +7338,7 @@ const handleSaveKeuanganOutlet = async (req: any, res: any) => {
   const nowStr = new Date().toISOString();
 
   // Forward mutation to Apps Script (SSOT)
-  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
   let authoritativeId = newId;
   let authoritativeCreatedAt = nowStr;
 
@@ -7471,7 +7471,7 @@ const handleUpdateKeuanganOutlet = async (req: any, res: any) => {
     : (target.lokasi_uang || "ADMIN");
 
   // Forward mutation to Apps Script (SSOT)
-  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
   try {
     const asRes = await fetch(targetUrl, {
       method: "POST",
@@ -7545,7 +7545,7 @@ const handleDeleteKeuanganOutlet = async (req: any, res: any) => {
   }
 
   // Forward mutation to Apps Script (SSOT)
-  const targetUrl = process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
   try {
     const asRes = await fetch(targetUrl, {
       method: "POST",
@@ -7687,6 +7687,7 @@ app.post("/api/apps-script", async (req, res) => {
     const { action, data, appsScriptUrl } = req.body || {};
     const targetUrl =
       appsScriptUrl ||
+      process.env.APPS_SCRIPT_URL ||
       process.env.VITE_APPS_SCRIPT_URL ||
       "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
 
