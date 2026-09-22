@@ -1421,8 +1421,7 @@ function addAuditLog(userId: string, action: string, detail: string, outletId: s
 // Helper: Synchronous caller to Google Apps Script
 async function callAppsScript(action: string, data: any, timeoutMs: number = 60000): Promise<any> {
   const url = process.env.APPS_SCRIPT_URL
-           || process.env.VITE_APPS_SCRIPT_URL
-           || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+           || process.env.VITE_APPS_SCRIPT_URL;
   if (!url) throw new Error("APPS_SCRIPT_URL tidak dikonfigurasi");
   const resp = await fetch(url, {
     method: "POST",
@@ -1961,7 +1960,10 @@ app.post("/api/deleteBulkCustomers", async (req, res) => {
   const { ids, sheetName } = req.body;
   if (!ids || !sheetName) return res.status(400).json({ status: "error", message: "Missing required parameters" });
   
-  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL;
+  if (!targetUrl) {
+    return res.json({ status: "error", message: "APPS_SCRIPT_URL/VITE_APPS_SCRIPT_URL belum dikonfigurasi di environment variables." });
+  }
   
   try {
     const asRes = await fetch(targetUrl, {
@@ -2004,7 +2006,10 @@ app.post("/api/updateCustomer", async (req, res) => {
   const { id, sheetName, updatedData } = req.body;
   if (!id || !sheetName || !updatedData) return res.status(400).json({ status: "error", message: "Missing required parameters" });
 
-  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL;
+  if (!targetUrl) {
+    return res.json({ status: "error", message: "APPS_SCRIPT_URL/VITE_APPS_SCRIPT_URL belum dikonfigurasi di environment variables." });
+  }
   
   try {
     const asRes = await fetch(targetUrl, {
@@ -7338,7 +7343,10 @@ const handleSaveKeuanganOutlet = async (req: any, res: any) => {
   const nowStr = new Date().toISOString();
 
   // Forward mutation to Apps Script (SSOT)
-  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL;
+  if (!targetUrl) {
+    return res.json({ status: "error", message: "APPS_SCRIPT_URL/VITE_APPS_SCRIPT_URL belum dikonfigurasi di environment variables." });
+  }
   let authoritativeId = newId;
   let authoritativeCreatedAt = nowStr;
 
@@ -7471,7 +7479,10 @@ const handleUpdateKeuanganOutlet = async (req: any, res: any) => {
     : (target.lokasi_uang || "ADMIN");
 
   // Forward mutation to Apps Script (SSOT)
-  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL;
+  if (!targetUrl) {
+    return res.json({ status: "error", message: "APPS_SCRIPT_URL/VITE_APPS_SCRIPT_URL belum dikonfigurasi di environment variables." });
+  }
   try {
     const asRes = await fetch(targetUrl, {
       method: "POST",
@@ -7545,7 +7556,10 @@ const handleDeleteKeuanganOutlet = async (req: any, res: any) => {
   }
 
   // Forward mutation to Apps Script (SSOT)
-  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+  const targetUrl = process.env.APPS_SCRIPT_URL || process.env.VITE_APPS_SCRIPT_URL;
+  if (!targetUrl) {
+    return res.json({ status: "error", message: "APPS_SCRIPT_URL/VITE_APPS_SCRIPT_URL belum dikonfigurasi di environment variables." });
+  }
   try {
     const asRes = await fetch(targetUrl, {
       method: "POST",
@@ -7688,8 +7702,11 @@ app.post("/api/apps-script", async (req, res) => {
     const targetUrl =
       appsScriptUrl ||
       process.env.APPS_SCRIPT_URL ||
-      process.env.VITE_APPS_SCRIPT_URL ||
-      "https://script.google.com/macros/s/AKfycbwrxgBj-2fafmkJ00Mxhps1ykGS2x5r4X5f9nJ_KUeanN8gdCuxf9O4KucqrYWO-yeQXg/exec";
+      process.env.VITE_APPS_SCRIPT_URL;
+
+    if (!targetUrl) {
+      return res.json({ status: "error", message: "APPS_SCRIPT_URL/VITE_APPS_SCRIPT_URL belum dikonfigurasi di environment variables." });
+    }
 
     const response = await fetch(targetUrl, {
       method: "POST",
