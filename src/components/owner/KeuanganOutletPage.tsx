@@ -397,8 +397,10 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
 
     setSubmitting(true);
     try {
+      console.log("[DEBUG KeuanganOutletPage handleSubmit] Starting save/update. formLokasiUang value:", formLokasiUang);
+      
       if (editingItem) {
-        const res = await callBackend("updateKeuanganOutlet", {
+        const payload = {
           id: editingItem.id,
           tanggal: formTanggal,
           outlet_id: formOutletId,
@@ -410,7 +412,10 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
           lokasi_uang: formLokasiUang,
           user_role: session.role,
           user_id: session.user_id
-        });
+        };
+        console.log("[DEBUG KeuanganOutletPage handleSubmit] Update Payload:", JSON.stringify(payload, null, 2));
+
+        const res = await callBackend("updateKeuanganOutlet", payload);
         if (res.status === "success") {
           toast.success(res.message || "Transaksi berhasil diperbarui.");
           setModalOpen(false);
@@ -419,7 +424,7 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
           toast.error(res.message || "Gagal memperbarui transaksi.");
         }
       } else {
-        const res = await callBackend("saveKeuanganOutlet", {
+        const payload = {
           tanggal: formTanggal,
           outlet_id: formOutletId,
           jenis: formJenis,
@@ -431,7 +436,10 @@ export default function KeuanganOutletPage({ session, outlets, activeOutletId, o
           dibuat_oleh: session.nama_lengkap || session.username || session.role || "SYSTEM",
           user_role: session.role,
           user_id: session.user_id
-        });
+        };
+        console.log("[DEBUG KeuanganOutletPage handleSubmit] Create Payload:", JSON.stringify(payload, null, 2));
+
+        const res = await callBackend("saveKeuanganOutlet", payload);
         if (res.status === "success") {
           toast.success(res.message || "Transaksi berhasil dicatat.");
           setModalOpen(false);

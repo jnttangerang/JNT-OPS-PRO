@@ -3365,7 +3365,9 @@ var DatabaseService = {
   insertRow: function(sheetName, rowDataMap) {
     var sheet = getSheetByName(sheetName);
     var schema = this.getEffectiveSchema(sheet, sheetName);
+    Logger.log("DEBUG schema efektif utk " + sheetName + ": " + JSON.stringify(schema));
     var row = schema.map(function(col) { return rowDataMap[col] !== undefined ? rowDataMap[col] : ""; });
+    Logger.log("DEBUG row array sebelum setValues: " + JSON.stringify(row));
     sheet.insertRowAfter(1);
     sheet.getRange(2, 1, 1, row.length).setValues([row]);
   },
@@ -5774,6 +5776,7 @@ function apiSaveKeuanganOutlet(params) {
       resi_id: String(params.resi_id || "").trim()
     };
 
+    Logger.log("DEBUG rowObj sebelum insertRow: " + JSON.stringify(rowObj));
     DatabaseService.insertRow("KEUANGAN_OUTLET", rowObj);
     return { status: "success", message: "Catatan keuangan berhasil disimpan.", data: rowObj };
   } catch (err) {
