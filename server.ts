@@ -3487,10 +3487,192 @@ app.post("/api/parseYoYiScreenshot", async (req, res) => {
     res.json({ status: "success", data: finalData });
   } catch (error: any) {
     console.error("parseYoYiScreenshot Gemini Error:", error);
+  }
+});
+
+// Rincian Serah Terima YoYi Screenshot OCR (Multiple Images to Rows) using Gemini AI
+app.post("/api/parseRincianSerahTerimaScreenshot", async (req, res) => {
+  let images = req.body.images;
+  
+  // Defensive support for single image parameters
+  if (!images && (req.body.imageBase64 || req.body.fileBase64)) {
+    images = [{
+      base64: req.body.imageBase64 || req.body.fileBase64,
+      mimeType: "image/jpeg"
+    }];
+  }
+
+  if (!images || !Array.isArray(images) || images.length === 0) {
+    return res.status(400).json({ status: "error", message: "Array gambar 'images' tidak boleh kosong!" });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({
+      status: "error",
+      message: "Kunci API Gemini (GEMINI_API_KEY) belum dikonfigurasi di Pengaturan Server."
+    });
+  }
+
+  const systemInstruction = 
+    "Kamu adalah 'AI OCR Pakar Ekstraksi Rincian Serah Terima YoYi J&T'. Tugasmu adalah membaca gambar/screenshot tabel 'Rincian Serah Terima' YoYi secara sangat teliti dan akurat.\n" +
+    "Tabel 'Rincian Serah Terima' ini berisi daftar resi yang diserahkan.\n\n" +
+    "Ekstrak seluruh baris tabel yang terlihat menjadi array of objects dalam format JSON yang valid.\n\n" +
+    "Untuk setiap baris resi di tabel, ekstrak field berikut:\n" +
+    "1. 'resi_id': Nomor resi pengiriman (biasanya diawali 'JD', contoh: 'JD0591361094'). Jika tidak yakin atau blur, isi dengan null/kosong. JANGAN mengarang nilai!\n" +
+    "2. 'sumber_order': Sumber order (contoh: 'APP', 'VIP', 'YoYi-WEB', 'JY', 'JX', 'JZ', dll). Ambil persis apa yang tertulis.\n" +
+    "3. 'waktu_pemesanan': Waktu pemesanan (format: 'YYYY-MM-DD HH:mm:ss' atau sesuai yang tertera di kolom Waktu Pemesanan, misal: '2026-09-24 11:20:00'). Jika tidak ada atau tidak terbaca, set null.\n" +
+    "4. 'metode_perhitungan': Metode perhitungan biaya (contoh: 'Biaya oleh pengirim', 'sender-paid', 'DFOD', 'monthly', dll).\n" +
+    "5. 'status_waybill': Status pelacakan/waybill (contoh: 'Delivered', 'Transit', 'Picked Up', dll).\n" +
+    "6. 'waktu_serah_terima': Waktu serah terima / handover. Cari metadata serah terima di bagian atas/header halaman (contoh: 'Waktu Serah Terima: 2026-09-24 15:30:00' atau serupa). Gunakan nilai handover ini untuk seluruh resi pada lembar tersebut. Jika tidak ada metadata serah terima yang tersedia di screenshot, set null.\n" +
+    "7. 'operator_yoyi': Nama operator/penerima YoYi yang melakukan serah terima (jika tertera di metadata, jika tidak ada set null).\n" +
+    "8. 'total_yoyi': Ambil nilai angka murni dari kolom 'Perhitungan Biaya pengiriman(IDR)' atau total biaya pengiriman untuk resi tersebut. JANGAN menghitung ulang nilai ini! Ambil persis apa adanya. Jika blur atau tidak yakin, set ke null atau 0.\n\n" +
+    "PENTING:\n" +
+    "- Jangan mengarang informasi. Jika tidak yakin pada resi_id, total_yoyi, atau waktu_pemesanan, kembalikan null atau kosong.\n" +
+    "- Kembalikan HANYA format JSON murni dengan schema:\n" +
+    "{\n" +
+    "  \"rows\": [\n" +
+    "    {\n" +
+    "      \"resi_id\": string | null,\n" +
+    "      \"sumber_order\": string | null,\n" +
+    "      \"waktu_pemesanan\": string | null,\n" +
+    "      \"metode_perhitungan\": string | null,\n" +
+    "      \"status_waybill\": string | null,\n" +
+    "      \"waktu_serah_terima\": string | null,\n" +
+    "      \"operator_yoyi\": string | null,\n" +
+    "      \"total_yoyi\": number | null\n" +
+    "    }\n" +
+    "  ]\n" +
+    "}";
+
+  const allParsedRows: any[] = [];
+  const globalWarnings: string[] = [];
+
+  try {
+    const ai = getGeminiClient();
+
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i];
+      if (!img.base64 || typeof img.base64 !== "string") {
+        globalWarnings.push(`Gambar indeks ke-${i} tidak valid atau base64 kosong.`);
+        continue;
+      }
+
+      let mimeType = img.mimeType || "image/jpeg";
+      let base64Data = "";
+
+      const matches = img.base64.match(/^data:([A-Za-z0-9\/\-+.]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        mimeType = matches[1].toLowerCase();
+        base64Data = matches[2];
+      } else {
+        base64Data = img.base64;
+      }
+
+      const imagePart = {
+        inlineData: {
+          mimeType: mimeType || "image/jpeg",
+          data: base64Data
+        }
+      };
+      const textPart = {
+        text: "Ekstrak semua data baris dari tabel 'Rincian Serah Terima' YoYi pada gambar ini sesuai dengan instruksi sistem ke dalam format JSON."
+      };
+
+      try {
+        const response = await generateGeminiContentWithFallback(ai, {
+          contents: { parts: [imagePart, textPart] },
+          config: {
+            systemInstruction,
+            temperature: 0.1,
+            responseMimeType: "application/json",
+          }
+        });
+
+        const resultText = response.text || "{}";
+        let parsedJson: any = {};
+        try {
+          parsedJson = JSON.parse(resultText);
+        } catch (parseErr) {
+          console.error(`Gagal parsing JSON hasil OCR gambar indeks ${i}:`, resultText);
+          globalWarnings.push(`Gagal mengekstrak data dari gambar indeks ke-${i} karena format respon tidak sesuai.`);
+          continue;
+        }
+
+        if (parsedJson && Array.isArray(parsedJson.rows)) {
+          allParsedRows.push(...parsedJson.rows);
+        } else {
+          globalWarnings.push(`Gambar indeks ke-${i} tidak mengandung daftar resi yang valid.`);
+        }
+      } catch (err: any) {
+        console.error(`Error processing image index ${i}:`, err);
+        globalWarnings.push(`Gagal memproses gambar indeks ke-${i}: ${err.message || String(err)}`);
+      }
+    }
+
+    // Clean and validate rows
+    const cleanedRows: any[] = [];
+    for (const rawRow of allParsedRows) {
+      const resiId = rawRow.resi_id ? String(rawRow.resi_id).trim().toUpperCase() : null;
+      const totalYoyi = (rawRow.total_yoyi !== null && rawRow.total_yoyi !== undefined) ? Number(rawRow.total_yoyi) : null;
+      const waktuPemesanan = rawRow.waktu_pemesanan ? String(rawRow.waktu_pemesanan).trim() : null;
+
+      if (!resiId) {
+        globalWarnings.push("Terdapat baris dengan nomor resi kosong atau tidak terbaca.");
+      }
+      if (totalYoyi === null || isNaN(totalYoyi)) {
+        globalWarnings.push(`Resi ${resiId || "tanpa resi"}: total_yoyi tidak valid atau tidak terbaca.`);
+      }
+      if (!waktuPemesanan) {
+        globalWarnings.push(`Resi ${resiId || "tanpa resi"}: waktu_pemesanan tidak terbaca.`);
+      }
+
+      const sourceOrderUpper = String(rawRow.sumber_order || "").trim().toUpperCase();
+      const isEcommerce = ["JY", "JX", "JZ"].some(prefix => sourceOrderUpper.includes(prefix));
+      const audit_scope = isEcommerce ? "ECOMMERCE_SKIP" : "AUDIT";
+
+      cleanedRows.push({
+        resi_id: resiId,
+        sumber_order: rawRow.sumber_order ? String(rawRow.sumber_order).trim() : null,
+        waktu_pemesanan: waktuPemesanan,
+        metode_perhitungan: rawRow.metode_perhitungan ? String(rawRow.metode_perhitungan).trim() : null,
+        status_waybill: rawRow.status_waybill ? String(rawRow.status_waybill).trim() : null,
+        waktu_serah_terima: rawRow.waktu_serah_terima ? String(rawRow.waktu_serah_terima).trim() : null,
+        operator_yoyi: rawRow.operator_yoyi ? String(rawRow.operator_yoyi).trim() : null,
+        total_yoyi: totalYoyi,
+        audit_scope: audit_scope
+      });
+    }
+
+    // Deduplicate by resi_id
+    const seenResi = new Set<string>();
+    const finalRows: any[] = [];
+
+    for (const row of cleanedRows) {
+      if (!row.resi_id) {
+        // Keep rows without resi_id (marked as warning, but let client correct it)
+        finalRows.push(row);
+        continue;
+      }
+      if (seenResi.has(row.resi_id)) {
+        continue; // Deduplicate
+      }
+      seenResi.add(row.resi_id);
+      finalRows.push(row);
+    }
+
+    res.json({
+      status: "success",
+      rows: finalRows,
+      count: finalRows.length,
+      warnings: globalWarnings
+    });
+  } catch (error: any) {
+    console.error("parseRincianSerahTerimaScreenshot Error:", error);
     const userMsg = formatGeminiErrorMessage(error);
     return res.status(500).json({
       status: "error",
-      message: `Gambar tidak terbaca, silakan coba dengan gambar yang lebih jelas (${userMsg})`
+      message: `Gagal memproses OCR Rincian Serah Terima: ${userMsg}`
     });
   }
 });
