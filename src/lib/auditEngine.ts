@@ -11,7 +11,7 @@ import {
   calculateFinancialSummary,
   isTransactionValidForFinance
 } from "./financialEngine";
-import { extractBusinessDate } from "../utils/dateUtils";
+import { extractBusinessDate, getWIBDate } from "../utils/dateUtils";
 
 import {
   normalizeLifecycleStatus,
@@ -407,3 +407,168 @@ function summarizeAuditBatch(db: any, transactions: any[], scopeMeta: Record<str
     items
   };
 }
+
+// ==========================================
+// PART 14: AUDIT YOYI COMPLETENESS COMPARATOR
+// ==========================================
+
+export interface YoyiCompletenessResult {
+  resi_id: string;
+  audit_status: "FOUND" | "CRITICAL" | "ECOMMERCE_SKIP" | "SCOPE_MISMATCH";
+  reason: string | null;
+  sumber_order: string | null;
+  total_yoyi: number | null;
+  transaksi_id: string | null;
+  tanggal_transaksi: string | null;
+  admin_id: string | null;
+  outlet_id: string | null;
+}
+
+export interface YoyiAuditSummary {
+  status: "success";
+  outlet_id: string;
+  tanggal: string;
+  total_yoyi_resi: number;
+  total_ecommerce_skip: number;
+  total_found: number;
+  total_missing: number;
+  total_scope_mismatch: number;
+  results: YoyiCompletenessResult[];
+}
+
+export function compareYoYiCompleteness(
+  db: any,
+  yoyiRows: any[],
+  outletId: string,
+  auditDate: string
+): YoyiAuditSummary {
+  const targetDate = getWIBDate(auditDate);
+  const targetOutlet = String(outletId || "").trim();
+
+  const results: YoyiCompletenessResult[] = [];
+  let total_ecommerce_skip = 0;
+  let total_found = 0;
+  let total_missing = 0;
+  let total_scope_mismatch = 0;
+
+  // Deduplicate yoyiRows based on resi_id
+  const seenResi = new Set<string>();
+  const uniqueYoyiRows: any[] = [];
+  for (const row of yoyiRows || []) {
+    if (!row || !row.resi_id) continue;
+    const resiKey = String(row.resi_id).trim().toUpperCase();
+    if (seenResi.has(resiKey)) continue;
+    seenResi.add(resiKey);
+    uniqueYoyiRows.push(row);
+  }
+
+  for (const row of uniqueYoyiRows) {
+    const resiId = String(row.resi_id).trim().toUpperCase();
+    const sumberOrder = row.sumber_order ? String(row.sumber_order).trim() : "";
+    const totalYoyi = row.total_yoyi !== null && row.total_yoyi !== undefined ? Number(row.total_yoyi) : null;
+
+    // 1. Check Ecommerce Skip
+    const isEcommerce = ["JY", "JX", "JZ"].some(prefix => sumberOrder.toUpperCase().startsWith(prefix));
+    if (isEcommerce) {
+      total_ecommerce_skip++;
+      results.push({
+        resi_id: resiId,
+        audit_status: "ECOMMERCE_SKIP",
+        reason: null,
+        sumber_order: sumberOrder,
+        total_yoyi: totalYoyi,
+        transaksi_id: null,
+        tanggal_transaksi: null,
+        admin_id: null,
+        outlet_id: null
+      });
+      continue;
+    }
+
+    // 2. Lookup in internal system
+    const expRecord = (db.EXP_Resi || []).find((e: any) => String(e.resi_id || "").trim().toUpperCase() === resiId);
+    const crgRecord = (db.CRG_Resi || []).find((c: any) => String(c.resi_id || "").trim().toUpperCase() === resiId);
+    const resiRecord = expRecord || crgRecord;
+
+    let masterTx = null;
+    if (resiRecord && resiRecord.transaksi_id) {
+      masterTx = (db.MASTER_TRANSAKSI || []).find(
+        (m: any) => m.id === resiRecord.transaksi_id || m.transaksi_id === resiRecord.transaksi_id
+      );
+    }
+
+    // Fallback direct lookup in MASTER_TRANSAKSI
+    if (!masterTx) {
+      masterTx = (db.MASTER_TRANSAKSI || []).find(
+        (m: any) => String(m.no_resi || m.resi_id || "").trim().toUpperCase() === resiId
+      );
+    }
+
+    if (!masterTx) {
+      // 3. Not found
+      total_missing++;
+      results.push({
+        resi_id: resiId,
+        audit_status: "CRITICAL",
+        reason: "Resi belum diinput ke sistem",
+        sumber_order: sumberOrder,
+        total_yoyi: totalYoyi,
+        transaksi_id: null,
+        tanggal_transaksi: null,
+        admin_id: null,
+        outlet_id: null
+      });
+      continue;
+    }
+
+    // 4. Found - Validate identity
+    const txDate = extractBusinessDate(masterTx);
+    const txOutlet = String(masterTx.outlet_id || masterTx.outlet || "").trim();
+    const txAdmin = String(masterTx.admin_id || masterTx.admin || "").trim();
+    const txId = masterTx.id || masterTx.transaksi_id || null;
+
+    const dateMatches = getWIBDate(txDate) === targetDate;
+    const outletMatches = txOutlet === targetOutlet;
+
+    if (dateMatches && outletMatches) {
+      total_found++;
+      results.push({
+        resi_id: resiId,
+        audit_status: "FOUND",
+        reason: null,
+        sumber_order: sumberOrder,
+        total_yoyi: totalYoyi,
+        transaksi_id: txId,
+        tanggal_transaksi: txDate,
+        admin_id: txAdmin,
+        outlet_id: txOutlet
+      });
+    } else {
+      total_scope_mismatch++;
+      results.push({
+        resi_id: resiId,
+        audit_status: "SCOPE_MISMATCH",
+        reason: "RESI DITEMUKAN TETAPI IDENTITAS TRANSAKSI TIDAK SESUAI SCOPE",
+        sumber_order: sumberOrder,
+        total_yoyi: totalYoyi,
+        transaksi_id: txId,
+        tanggal_transaksi: txDate,
+        admin_id: txAdmin,
+        outlet_id: txOutlet
+      });
+    }
+  }
+
+  return {
+    status: "success",
+    outlet_id: outletId,
+    tanggal: auditDate,
+    total_yoyi_resi: uniqueYoyiRows.length,
+    total_ecommerce_skip,
+    total_found,
+    total_missing,
+    total_scope_mismatch,
+    results
+  };
+}
+
