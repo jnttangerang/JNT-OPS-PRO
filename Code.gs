@@ -198,6 +198,10 @@ function handleRouting(action, params) {
       return apiDebugSpreadsheet();
     case "importCustomerFromSheet":
       return apiImportCustomerFromSheet(params);
+    case "saveAuditYoyiBatch":
+      return apiSaveAuditYoyiBatch(params);
+    case "getAuditYoyiBatch":
+      return apiGetAuditYoyiBatch(params);
     default:
       return { status: "error", message: "Aksi tidak dikenali: " + action };
   }
@@ -2751,7 +2755,7 @@ function simulateSha256(input) {
 // Jangan hapus/reorder kolom existing di sini — itu mengubah posisi index yang
 // sudah dipakai kode lain (mis. getRange(row, N)).
 // ==========================================
-var DB_SCHEMA_VERSION = 12; // v12: tambah resi_id pada KEUANGAN_OUTLET & kategori Amplop/Packing (Pemasukan)
+var DB_SCHEMA_VERSION = 13; // v13: tambah AuditYoyiBatch snapshot table
 
 var DB_SCHEMA = {
   // Kolom lama TIDAK BOLEH dihapus/direorder — hanya tambah di ujung kanan.
@@ -2829,7 +2833,11 @@ var DB_SCHEMA = {
     "foto_barang", "foto_resi", "status_pengiriman", "status_pickup", "status_delivery",
     "status_sync", "sumber_data", "catatan"
   ],
-  SystemSettings: ["key", "value"]
+  SystemSettings: ["key", "value"],
+  AuditYoyiBatch: [
+    "id", "outlet_id", "admin_id_terkait", "tanggal_serah_terima", "resi_id", "sumber_order", "waktu_pemesanan",
+    "metode_perhitungan", "status_waybill", "waktu_serah_terima", "operator_yoyi", "total_yoyi", "imported_by", "imported_at"
+  ]
 };
 
 
@@ -6819,5 +6827,87 @@ function apiUpdateYoYiTransaction(params) {
     return { status: "error", message: "Transaksi tidak ditemukan" };
   } catch(e) {
     return { status: "error", message: e.message };
+  }
+}
+
+/**
+ * Save AuditYoyiBatch snapshot rows.
+ * Receives: { rows: Array }
+ */
+function apiSaveAuditYoyiBatch(params) {
+  try {
+    params = params || {};
+    var rows = params.rows || [];
+    if (!Array.isArray(rows)) {
+      return { status: "error", message: "Parameter rows harus bertipe Array." };
+    }
+
+    var inserted = [];
+    var nowStr = new Date().toISOString();
+
+    for (var i = 0; i < rows.length; i++) {
+      var src = rows[i];
+      if (!src) continue;
+
+      // Generate a unique ID if not provided, avoiding same-batch collision
+      var id = src.id || "AYB-" + Date.now().toString().slice(-6) + Math.floor(Math.random() * 1000) + "-" + i;
+
+      var rowObj = {
+        id: id,
+        outlet_id: String(src.outlet_id || "").trim(),
+        admin_id_terkait: String(src.admin_id_terkait || "").trim(),
+        tanggal_serah_terima: String(src.tanggal_serah_terima || "").trim(),
+        resi_id: String(src.resi_id || "").trim(),
+        sumber_order: String(src.sumber_order || "").trim(),
+        waktu_pemesanan: String(src.waktu_pemesanan || "").trim(),
+        metode_perhitungan: String(src.metode_perhitungan || "").trim(),
+        status_waybill: String(src.status_waybill || "").trim(),
+        waktu_serah_terima: String(src.waktu_serah_terima || "").trim(),
+        operator_yoyi: String(src.operator_yoyi || "").trim(),
+        total_yoyi: Number(src.total_yoyi) || 0,
+        imported_by: String(src.imported_by || "").trim(),
+        imported_at: src.imported_at || nowStr
+      };
+
+      DatabaseService.insertRow("AuditYoyiBatch", rowObj);
+      inserted.push(rowObj);
+    }
+
+    return { status: "success", message: "Snapshot AuditYoyiBatch berhasil disimpan.", count: inserted.length, data: inserted };
+  } catch (err) {
+    return { status: "error", message: err.message || err.toString() };
+  }
+}
+
+/**
+ * Get AuditYoyiBatch rows.
+ * Filter support: outlet_id, tanggal_serah_terima, resi_id
+ */
+function apiGetAuditYoyiBatch(params) {
+  try {
+    params = params || {};
+    var rows = DatabaseService.getSheetData("AuditYoyiBatch");
+    if (!rows || rows.length < 2) {
+      return { status: "success", data: [] };
+    }
+
+    var headers = rows[0];
+    var list = [];
+
+    for (var i = 1; i < rows.length; i++) {
+      var obj = rowToObject_(headers, rows[i]);
+      if (!obj.id) continue;
+
+      // Apply optional filters
+      if (params.outlet_id && params.outlet_id !== "ALL" && obj.outlet_id !== params.outlet_id) continue;
+      if (params.tanggal_serah_terima && obj.tanggal_serah_terima !== params.tanggal_serah_terima) continue;
+      if (params.resi_id && obj.resi_id !== params.resi_id) continue;
+
+      list.push(obj);
+    }
+
+    return { status: "success", data: list };
+  } catch (err) {
+    return { status: "error", message: err.message || err.toString() };
   }
 }

@@ -1566,6 +1566,8 @@ const UTILITY_ACTIONS = new Set([
   "saveKeuanganOutlet",
   "updateKeuanganOutlet",
   "deleteKeuanganOutlet",
+  "saveAuditYoyiBatch",
+  "getAuditYoyiBatch",
   "backfillKeuanganOutlet",
   "apiBackfillKeuanganOutletFromTransactions",
   "reconcileTransaction",
@@ -7695,6 +7697,52 @@ app.post("/api/updateKeuanganOutlet", handleUpdateKeuanganOutlet);
 app.post("/api/deleteKeuanganOutlet", handleDeleteKeuanganOutlet);
 app.get("/api/backfillKeuanganOutlet", handleBackfillKeuanganOutlet);
 app.post("/api/backfillKeuanganOutlet", handleBackfillKeuanganOutlet);
+
+const handleSaveAuditYoyiBatch = async (req: any, res: any) => {
+  const { user_role, role, rows } = req.body || {};
+  const currentRole = (user_role || role || "").toUpperCase();
+  if (currentRole && currentRole !== "OWNER") {
+    return res.json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner." });
+  }
+
+  if (!rows || !Array.isArray(rows)) {
+    return res.status(400).json({ status: "error", message: "Parameter rows wajib diisi dengan tipe Array." });
+  }
+
+  try {
+    const response = await callAppsScript("saveAuditYoyiBatch", { rows });
+    return res.json(response);
+  } catch (err: any) {
+    console.error("Apps Script saveAuditYoyiBatch error:", err);
+    return res.json({ status: "error", message: `Gagal menyimpan ke Google Spreadsheet: ${err.message}` });
+  }
+};
+
+const handleGetAuditYoyiBatch = async (req: any, res: any) => {
+  const { user_role, role } = req.query || req.body || {};
+  const currentRole = (user_role || role || "").toUpperCase();
+  if (currentRole && currentRole !== "OWNER") {
+    return res.json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner." });
+  }
+
+  const { outlet_id, tanggal_serah_terima, resi_id } = req.query || {};
+
+  try {
+    const response = await callAppsScript("getAuditYoyiBatch", {
+      outlet_id,
+      tanggal_serah_terima,
+      resi_id
+    });
+    return res.json(response);
+  } catch (err: any) {
+    console.error("Apps Script getAuditYoyiBatch error:", err);
+    return res.json({ status: "error", message: `Gagal mengambil dari Google Spreadsheet: ${err.message}` });
+  }
+};
+
+app.post("/api/saveAuditYoyiBatch", handleSaveAuditYoyiBatch);
+app.get("/api/getAuditYoyiBatch", handleGetAuditYoyiBatch);
+app.post("/api/getAuditYoyiBatch", handleGetAuditYoyiBatch);
 
 app.post("/api/apps-script", async (req, res) => {
   try {
