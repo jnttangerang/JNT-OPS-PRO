@@ -185,6 +185,8 @@ function YoYiDetailView({ tanggal, onBack, session, outlets, onSetoran, activeOu
   const { callBackend } = useAppsScript();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [criticalResis, setCriticalResis] = useState<string[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const fetchTransactions = async () => {
     try {
@@ -207,9 +209,38 @@ function YoYiDetailView({ tanggal, onBack, session, outlets, onSetoran, activeOu
     }
   };
 
+  const fetchAuditYoyi = async () => {
+    if (!activeOutletId || !tanggal) return;
+    try {
+      setAuditLoading(true);
+      const qs = new URLSearchParams();
+      qs.append("outlet_id", activeOutletId);
+      qs.append("tanggal", tanggal);
+      qs.append("user_role", session.role || "ADMIN");
+
+      const resData = await fetch('/api/auditYoyiCompleteness?' + qs.toString());
+      const res = await resData.json();
+
+      if (res && res.status === "success" && Array.isArray(res.results)) {
+        const missing = res.results
+          .filter((r: any) => r.audit_status === "CRITICAL")
+          .map((r: any) => r.resi_id);
+        setCriticalResis(missing);
+      } else {
+        setCriticalResis([]);
+      }
+    } catch (e) {
+      console.error("Gagal mengambil kelengkapan YoYi:", e);
+      setCriticalResis([]);
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchTransactions();
-  }, [tanggal]);
+    fetchAuditYoyi();
+  }, [tanggal, activeOutletId]);
 
   const allComplete = transactions.length > 0 && transactions.every(t => t.isLengkap);
   const finSummaries = transactions.map(t => calculateFinancialSummary(t));
@@ -295,6 +326,26 @@ function YoYiDetailView({ tanggal, onBack, session, outlets, onSetoran, activeOu
           )}
         </div>
       </div>
+
+      {/* Admin Critical Banner for missing YoYi resis */}
+      {criticalResis.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex gap-3 text-red-900 shadow-xs">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <h4 className="text-sm font-bold text-red-900">{criticalResis.length} resi belum diinput ke sistem!</h4>
+            <p className="text-xs text-red-700 font-medium">
+              Silakan input transaksi berikut secara manual via workflow normal:
+            </p>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {criticalResis.map((resi) => (
+                <span key={resi} className="px-2 py-0.5 bg-red-100 hover:bg-red-200 text-red-800 font-mono text-[11px] font-extrabold rounded-md shadow-2xs border border-red-200 select-all transition-colors" title="Klik ganda untuk menyalin">
+                  {resi}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
         <table className="min-w-max w-full text-sm divide-y divide-gray-200">

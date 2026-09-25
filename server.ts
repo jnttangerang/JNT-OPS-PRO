@@ -5945,6 +5945,45 @@ app.post("/api/approveSetoran", async (req, res) => {
   const s = (db.Master_Setoran || []).find((s: any) => s.setoran_id === setoran_id);
   if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
 
+  // YoYi Audit Setoran Gate (Step 7)
+  try {
+    const response = await callAppsScript("getAuditYoyiBatch", { outlet_id: s.outlet_id });
+    if (response && response.status === "success") {
+      const allRows = response.data || [];
+      const targetDateWIB = getWIBDate(s.tanggal);
+      const yoyiRowsForDate = allRows.filter((r: any) => {
+        if (!r.tanggal_serah_terima) return false;
+        return getWIBDate(r.tanggal_serah_terima) === targetDateWIB;
+      });
+
+      if (yoyiRowsForDate.length > 0) {
+        // Audit exists for this date, let's find rows for this admin_pembuat
+        const adminKey = String(s.admin_pembuat || s.admin_id || "").trim().toUpperCase();
+        const yoyiRowsForAdmin = yoyiRowsForDate.filter((r: any) => {
+          return String(r.admin_id_terkait || "").trim().toUpperCase() === adminKey;
+        });
+
+        if (yoyiRowsForAdmin.length > 0) {
+          const syncDb = await syncDbWithAppsScript(db);
+          const result = compareYoYiCompleteness(syncDb, yoyiRowsForAdmin, s.outlet_id, s.tanggal);
+          const criticalResis = (result.results || []).filter((r: any) => r.audit_status === "CRITICAL");
+          if (criticalResis.length > 0) {
+            const missingList = criticalResis.map((r: any) => r.resi_id).join(", ");
+            return res.json({
+              status: "error",
+              message: `Persetujuan ditolak: Terdapat ${criticalResis.length} resi YoYi yang belum diinput ke sistem (${missingList}). Admin wajib melengkapi input semua resi ini sebelum setoran dapat disetujui.`,
+              code: "YOYI_AUDIT_CRITICAL",
+              critical_resis: criticalResis
+            });
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error("Error running YoYi audit check in approveSetoran:", err);
+    // Do not block if there is a transient backend/Google Sheets network error
+  }
+
   try {
     const appsScriptResponse = await callAppsScript("approveSetoran", { setoran_id, realization_id, admin_id, catatan });
     if (appsScriptResponse.status !== "success") {
@@ -7929,10 +7968,10 @@ app.get("/api/getAuditYoyiBatch", handleGetAuditYoyiBatch);
 app.post("/api/getAuditYoyiBatch", handleGetAuditYoyiBatch);
 
 app.get("/api/auditYoyiCompleteness", async (req: any, res: any) => {
-  const { user_role, role, outlet_id, tanggal } = req.query || {};
+  const { user_role, role, outlet_id, tanggal, admin_id } = req.query || {};
   const currentRole = (user_role || role || "").toUpperCase();
-  if (currentRole !== "OWNER") {
-    return res.status(403).json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner." });
+  if (currentRole !== "OWNER" && currentRole !== "ADMIN") {
+    return res.status(403).json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." });
   }
 
   if (!outlet_id || !tanggal) {
@@ -7951,7 +7990,7 @@ app.get("/api/auditYoyiCompleteness", async (req: any, res: any) => {
     const allRows = response.data || [];
     const targetDateWIB = getWIBDate(tanggal);
 
-    const yoyiRows = allRows.filter((r: any) => {
+    let yoyiRows = allRows.filter((r: any) => {
       if (!r.tanggal_serah_terima) return false;
       const rowDateWIB = getWIBDate(r.tanggal_serah_terima);
       return rowDateWIB === targetDateWIB;
@@ -7962,6 +8001,18 @@ app.get("/api/auditYoyiCompleteness", async (req: any, res: any) => {
         status: "empty",
         message: "Audit YoYi belum dilakukan untuk tanggal ini."
       });
+    }
+
+    if (admin_id) {
+      yoyiRows = yoyiRows.filter((r: any) => {
+        return String(r.admin_id_terkait || "").trim().toUpperCase() === String(admin_id).trim().toUpperCase();
+      });
+      if (yoyiRows.length === 0) {
+        return res.json({
+          status: "empty",
+          message: "Audit YoYi belum dilakukan untuk tanggal ini."
+        });
+      }
     }
 
     let db = readDb();

@@ -15,7 +15,10 @@ import {
   X,
   MessageSquare,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Activity,
+  AlertTriangle,
+  AlertCircle
 } from "lucide-react";
 
 interface SetoranOwnerPageProps {
@@ -35,6 +38,10 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
   const [detail, setDetail] = useState<any>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectModal, setShowRejectModal] = useState(false);
+
+  // YoYi Audit Status Gate
+  const [yoyiAuditResult, setYoyiAuditResult] = useState<any>(null);
+  const [loadingYoyiAudit, setLoadingYoyiAudit] = useState<boolean>(false);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -66,11 +73,33 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
     }
   };
 
+  const fetchYoyiAudit = async (outletId: string, tanggal: string, adminId: string) => {
+    setLoadingYoyiAudit(true);
+    setYoyiAuditResult(null);
+    try {
+      const res = await callBackend("auditYoyiCompleteness", {
+        user_role: "OWNER",
+        outlet_id: outletId,
+        tanggal: tanggal,
+        admin_id: adminId
+      });
+      setYoyiAuditResult(res);
+    } catch (e: any) {
+      console.error("Gagal memuat audit YoYi:", e);
+    } finally {
+      setLoadingYoyiAudit(false);
+    }
+  };
+
   const fetchDetail = async (setoranId: string) => {
     try {
       const res = await callBackend("getSetoranDetail", { setoran_id: setoranId });
       if (res.status === "success") {
         setDetail(res.data);
+        const header = res.data.header;
+        if (header) {
+          fetchYoyiAudit(header.outlet_id, header.tanggal, header.admin_pembuat);
+        }
       } else {
         toast.error(res.message || "Gagal memuat detail");
       }
@@ -181,6 +210,8 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
     const variance = actual - expected;
     const outstanding = Math.max(0, expected - actual);
 
+    const isBlockApproval = yoyiAuditResult && yoyiAuditResult.results && yoyiAuditResult.results.some((r: any) => r.audit_status === "CRITICAL");
+
     return (
       <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
         <button 
@@ -225,8 +256,13 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                     <XCircle className="w-3.5 h-3.5" /> Tolak
                   </button>
                   <button 
-                    onClick={handleApprove}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-lg transition-colors border border-emerald-200"
+                    onClick={() => handleApprove()}
+                    disabled={isBlockApproval}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs rounded-lg transition-colors border ${
+                      isBlockApproval
+                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60"
+                        : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                    }`}
                   >
                     <CheckCircle className="w-3.5 h-3.5" /> Setujui
                   </button>
@@ -274,6 +310,130 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             </div>
           )}
 
+          {/* YoYi Audit Status Gate (Step 7) */}
+          <div className="mb-6 p-5 rounded-2xl border border-dashed border-gray-200 bg-slate-50/50">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+                  <Activity className="w-4 h-4" />
+                </span>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Control Gate: Audit YoYi</h3>
+                  <p className="text-[10px] text-slate-500 font-mono">Status Audit Serah Terima J&T vs YoYi</p>
+                </div>
+              </div>
+              {loadingYoyiAudit && (
+                <span className="text-xs text-indigo-600 animate-pulse font-semibold">Mengecek data...</span>
+              )}
+            </div>
+
+            {loadingYoyiAudit ? (
+              <div className="h-10 bg-slate-100 rounded-lg animate-pulse" />
+            ) : yoyiAuditResult ? (
+              yoyiAuditResult.status === "empty" ? (
+                <div className="p-4 bg-amber-50 text-amber-800 text-xs rounded-xl border border-amber-200 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
+                  <div>
+                    <p className="font-bold mb-1">Audit YoYi belum dilakukan untuk tanggal ini.</p>
+                    <p className="text-amber-700/90 leading-relaxed font-medium">
+                      Belum ada data unggahan screenshot serah terima YoYi yang disubmit oleh Owner untuk tanggal{" "}
+                      <span className="font-mono font-bold">{header.tanggal}</span> dan admin{" "}
+                      <span className="font-bold">{header.admin_pembuat}</span>.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                (() => {
+                  const criticalResis = (yoyiAuditResult.results || []).filter((r: any) => r.audit_status === "CRITICAL");
+                  const warningResis = (yoyiAuditResult.results || []).filter((r: any) => r.audit_status === "WARNING" || r.audit_status === "SCOPE_MISMATCH");
+                  const totalResi = (yoyiAuditResult.results || []).length;
+
+                  if (criticalResis.length > 0) {
+                    return (
+                      <div className="p-4 bg-red-50 text-red-900 text-xs rounded-xl border border-red-200 flex items-start gap-2.5 shadow-sm">
+                        <AlertCircle className="w-5 h-5 shrink-0 text-red-600 mt-0.5" />
+                        <div className="space-y-2">
+                          <div>
+                            <p className="font-black text-sm text-red-800 mb-0.5">APPROVAL DIBLOKIR — Resi Belum Diinput!</p>
+                            <p className="text-red-700 font-medium leading-relaxed">
+                              Terdapat <span className="font-black font-mono text-red-800 text-sm">{criticalResis.length}</span> resi dari total {totalResi} resi di YoYi yang belum diinput ke sistem JNT OPS PRO. Admin wajib melengkapi input semua resi ini sebelum setoran dapat disetujui.
+                            </p>
+                          </div>
+                          <div className="p-2.5 bg-white/70 rounded-lg border border-red-100">
+                            <p className="font-bold mb-1 text-red-900 font-mono text-[10px]">DAFTAR RESI YANG HILANG:</p>
+                            <div className="flex flex-wrap gap-1.5 mt-1 max-h-24 overflow-y-auto">
+                              {criticalResis.map((cr: any) => (
+                                <span key={cr.resi_id} className="px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold font-mono text-[10px]">
+                                  {cr.resi_id}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (warningResis.length > 0) {
+                    return (
+                      <div className="p-4 bg-amber-50 text-amber-900 text-xs rounded-xl border border-amber-200 flex items-start gap-2.5">
+                        <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
+                        <div className="space-y-2 w-full">
+                          <div>
+                            <p className="font-bold text-amber-800 mb-0.5">PERINGATAN AUDIT YOYI — Ada Selisih/Mismatch</p>
+                            <p className="text-amber-700/90 leading-relaxed font-medium">
+                              Semua resi sudah diinput ke sistem, namun terdapat <span className="font-bold font-mono text-amber-800">{warningResis.length}</span> resi yang memiliki selisih nominal pembayaran atau ketidaksesuaian metode perhitungan. Anda tetap dapat melanjutkan persetujuan setoran ini jika dianggap aman.
+                            </p>
+                          </div>
+                          <div className="overflow-x-auto rounded-lg border border-amber-100 bg-white/50 max-h-48 overflow-y-auto">
+                            <table className="w-full text-[10px] text-left text-amber-900 divide-y divide-amber-100">
+                              <thead className="bg-amber-100/50 font-bold">
+                                <tr>
+                                  <th className="p-2">Resi</th>
+                                  <th className="p-2">YoYi</th>
+                                  <th className="p-2">Internal</th>
+                                  <th className="p-2">Selisih</th>
+                                  <th className="p-2">Catatan / Mismatch</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-amber-100 font-mono">
+                                {warningResis.map((wr: any) => (
+                                  <tr key={wr.resi_id} className="hover:bg-amber-100/10">
+                                    <td className="p-2 font-bold">{wr.resi_id}</td>
+                                    <td className="p-2">Rp {Number(wr.total_yoyi || 0).toLocaleString("id-ID")}</td>
+                                    <td className="p-2">Rp {Number(wr.expected_internal || 0).toLocaleString("id-ID")}</td>
+                                    <td className="p-2 font-bold text-red-700">
+                                      {wr.difference !== null && wr.difference !== undefined ? (wr.difference > 0 ? `+${wr.difference}` : wr.difference) : "-"}
+                                    </td>
+                                    <td className="p-2 text-[9px] text-amber-800">{wr.reason || "Kondisi tidak sesuai"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl border border-emerald-200 flex items-start gap-2.5">
+                      <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
+                      <div>
+                        <p className="font-bold mb-1">Audit YoYi Selesai & Sesuai (CLEAR)</p>
+                        <p className="text-emerald-700/90 leading-relaxed font-medium">
+                          Seluruh {totalResi} resi serah terima YoYi telah diinput dengan benar dan nominal setoran sepenuhnya cocok (MATCH) dengan sistem internal. Setoran sangat aman untuk disetujui.
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()
+              )
+            ) : (
+              <div className="text-xs text-gray-500 font-semibold italic">Gagal atau belum dilakukan pengecekan status audit.</div>
+            )}
+          </div>
+
           {detail.realizations && detail.realizations.length > 0 && (
             <div className="mb-6">
               <h3 className="text-sm font-bold text-gray-800 mb-3 border-b border-gray-100 pb-2">Realisasi Setoran</h3>
@@ -306,7 +466,18 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                         <td className="p-3 text-center">
                           {r.status === "MENUNGGU_APPROVAL" && (
                             <div className="flex items-center justify-center gap-1.5">
-                              <button onClick={() => handleApprove(r.realization_id)} className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 rounded border border-emerald-200" title="Setujui Realisasi"><CheckCircle className="w-3.5 h-3.5" /></button>
+                              <button 
+                                onClick={() => handleApprove(r.realization_id)}
+                                disabled={isBlockApproval}
+                                className={`p-1.5 rounded border transition-colors ${
+                                  isBlockApproval
+                                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60"
+                                    : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border-emerald-200"
+                                }`}
+                                title={isBlockApproval ? "Approval diblokir oleh Audit YoYi" : "Setujui Realisasi"}
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                              </button>
                               <button onClick={() => handleOpenRejectModal(r.realization_id)} className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded border border-red-200" title="Tolak Realisasi"><XCircle className="w-3.5 h-3.5" /></button>
                             </div>
                           )}
