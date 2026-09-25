@@ -92,7 +92,8 @@ import {
   auditDaily,
   auditOutlet,
   auditAdmin,
-  auditImport
+  auditImport,
+  compareYoYiCompleteness
 } from "./src/lib/auditEngine";
 
 import {
@@ -1568,6 +1569,7 @@ const UTILITY_ACTIONS = new Set([
   "deleteKeuanganOutlet",
   "saveAuditYoyiBatch",
   "getAuditYoyiBatch",
+  "auditYoyiCompleteness",
   "backfillKeuanganOutlet",
   "apiBackfillKeuanganOutletFromTransactions",
   "reconcileTransaction",
@@ -7925,6 +7927,53 @@ const handleGetAuditYoyiBatch = async (req: any, res: any) => {
 app.post("/api/saveAuditYoyiBatch", handleSaveAuditYoyiBatch);
 app.get("/api/getAuditYoyiBatch", handleGetAuditYoyiBatch);
 app.post("/api/getAuditYoyiBatch", handleGetAuditYoyiBatch);
+
+app.get("/api/auditYoyiCompleteness", async (req: any, res: any) => {
+  const { user_role, role, outlet_id, tanggal } = req.query || {};
+  const currentRole = (user_role || role || "").toUpperCase();
+  if (currentRole !== "OWNER") {
+    return res.status(403).json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner." });
+  }
+
+  if (!outlet_id || !tanggal) {
+    return res.status(400).json({ status: "error", message: "Parameter outlet_id dan tanggal wajib diisi." });
+  }
+
+  try {
+    const response = await callAppsScript("getAuditYoyiBatch", {
+      outlet_id
+    });
+
+    if (response.status !== "success") {
+      return res.json({ status: "error", message: response.message || "Gagal mengambil data dari Google Spreadsheet." });
+    }
+
+    const allRows = response.data || [];
+    const targetDateWIB = getWIBDate(tanggal);
+
+    const yoyiRows = allRows.filter((r: any) => {
+      if (!r.tanggal_serah_terima) return false;
+      const rowDateWIB = getWIBDate(r.tanggal_serah_terima);
+      return rowDateWIB === targetDateWIB;
+    });
+
+    if (yoyiRows.length === 0) {
+      return res.json({
+        status: "empty",
+        message: "Audit YoYi belum dilakukan untuk tanggal ini."
+      });
+    }
+
+    let db = readDb();
+    db = await syncDbWithAppsScript(db);
+
+    const result = compareYoYiCompleteness(db, yoyiRows, outlet_id, tanggal);
+    return res.json(result);
+  } catch (err: any) {
+    console.error("Error in getAuditYoyiCompleteness:", err);
+    return res.status(500).json({ status: "error", message: `Gagal menjalankan audit: ${err.message}` });
+  }
+});
 
 app.post("/api/apps-script", async (req, res) => {
   try {

@@ -38,7 +38,7 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<"audit_setoran" | "audit_yoyi">("audit_setoran");
+  const [activeTab, setActiveTab] = useState<"audit_setoran" | "audit_yoyi" | "audit_yoyi_results">("audit_setoran");
 
   // Tab 1: Audit Setoran States
   const [filterOutlet, setFilterOutlet] = useState<string>("ALL");
@@ -62,6 +62,49 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
   const [warnings, setWarnings] = useState<string[]>([]);
   const [ocrLoading, setOcrLoading] = useState<boolean>(false);
   const [savingYoyiBatch, setSavingYoyiBatch] = useState<boolean>(false);
+
+  // Tab 3: YoYi Comparison States
+  const [compareOutlet, setCompareOutlet] = useState<string>(() => outlets[0]?.outlet_id || "");
+  const [compareDate, setCompareDate] = useState<string>(() => getTodayWIB());
+  const [compareResult, setCompareResult] = useState<any>(null);
+  const [compareLoading, setCompareLoading] = useState<boolean>(false);
+  const [compareError, setCompareError] = useState<string | null>(null);
+
+  const handleRunComparison = async () => {
+    if (!compareOutlet || !compareDate) {
+      toast.error("Outlet dan Tanggal wajib dipilih.");
+      return;
+    }
+    setCompareLoading(true);
+    setCompareError(null);
+    setCompareResult(null);
+
+    try {
+      const res = await callBackend("auditYoyiCompleteness", {
+        outlet_id: compareOutlet,
+        tanggal: compareDate,
+        user_role: "OWNER"
+      });
+
+      if (res.status === "empty") {
+        setCompareError("Audit YoYi belum dilakukan untuk tanggal ini.");
+      } else if (res.status === "error") {
+        setCompareError(res.message || "Gagal memproses perbandingan.");
+        toast.error(res.message || "Gagal memproses perbandingan.");
+      } else if (res.status === "success") {
+        setCompareResult(res);
+        toast.success("Berhasil memproses perbandingan!");
+      } else {
+        throw new Error(res.message || "Respon tidak dikenal.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setCompareError(err.message || "Terjadi kesalahan.");
+      toast.error(err.message || "Gagal memproses perbandingan.");
+    } finally {
+      setCompareLoading(false);
+    }
+  };
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -448,6 +491,16 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
           }`}
         >
           Rincian Serah Terima YoYi (OCR)
+        </button>
+        <button
+          onClick={() => setActiveTab("audit_yoyi_results")}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer ${
+            activeTab === "audit_yoyi_results"
+              ? "bg-white text-blue-600 shadow-sm"
+              : "text-gray-500 hover:text-blue-600"
+          }`}
+        >
+          Hasil Perbandingan YoYi
         </button>
       </div>
 
@@ -1080,6 +1133,240 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
                     </>
                   )}
                 </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "audit_yoyi_results" && (
+        <div className="space-y-6">
+          {/* Comparison Settings Card */}
+          <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+            <h3 className="text-sm font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-500" /> Pilih Scope Perbandingan Audit YoYi
+            </h3>
+            <div className="flex flex-col sm:flex-row gap-4 items-end">
+              <div className="space-y-1 flex-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Target Outlet</label>
+                <div className="relative">
+                  <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <select
+                    value={compareOutlet}
+                    onChange={(e) => setCompareOutlet(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                  >
+                    {outlets.map((o) => (
+                      <option key={o.outlet_id} value={o.outlet_id}>{o.nama_outlet}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1 flex-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Tanggal Serah Terima</label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="date"
+                    value={compareDate}
+                    onChange={(e) => setCompareDate(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm font-mono text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <button
+                onClick={handleRunComparison}
+                disabled={compareLoading}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm flex items-center gap-2 disabled:opacity-50 transition-colors cursor-pointer h-10 shrink-0"
+              >
+                {compareLoading ? (
+                  <>
+                    <RefreshCcw className="w-4 h-4 animate-spin" />
+                    <span>Memproses...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Bandingkan & Audit</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Empty State / Error Notification */}
+          {compareError && (
+            <div className="bg-amber-50 rounded-2xl p-6 border border-amber-100 text-center max-w-lg mx-auto space-y-3">
+              <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
+              <h3 className="text-sm font-bold text-amber-900">{compareError}</h3>
+              <p className="text-xs text-amber-700 font-medium">
+                Silakan lakukan upload screenshot dan simpan rincian YoYi terlebih dahulu pada tab "Rincian Serah Terima YoYi (OCR)" untuk tanggal ini.
+              </p>
+            </div>
+          )}
+
+          {/* Loading Skeleton */}
+          {compareLoading && (
+            <div className="space-y-4 animate-pulse">
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                {[1, 2, 3, 4, 5, 6, 7].map(i => (
+                  <div key={i} className="h-20 bg-gray-100 rounded-xl"></div>
+                ))}
+              </div>
+              <div className="h-64 bg-gray-100 rounded-2xl"></div>
+            </div>
+          )}
+
+          {/* Result Dashboard */}
+          {compareResult && (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+                <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-center">
+                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Total Resi YoYi</p>
+                  <p className="font-mono text-xl font-black text-gray-800">{compareResult.total_yoyi_resi}</p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 shadow-sm flex flex-col justify-center">
+                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">E-commerce Skipped</p>
+                  <p className="font-mono text-xl font-black text-gray-600">{compareResult.total_ecommerce_skip}</p>
+                </div>
+                <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-100 shadow-sm flex flex-col justify-center">
+                  <p className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider mb-1">FOUND & MATCH</p>
+                  <p className="font-mono text-xl font-black text-emerald-700">
+                    {compareResult.results?.filter((r: any) => r.audit_status === "FOUND" && r.payment_status === "MATCH").length || 0}
+                  </p>
+                </div>
+                <div className="bg-red-50 p-4 rounded-xl border border-red-100 shadow-sm flex flex-col justify-center">
+                  <p className="text-[10px] text-red-600 font-bold uppercase tracking-wider mb-1">MISSING (CRITICAL)</p>
+                  <p className="font-mono text-xl font-black text-red-700">{compareResult.total_missing}</p>
+                </div>
+                <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 shadow-sm flex flex-col justify-center">
+                  <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider mb-1">Scope Mismatch</p>
+                  <p className="font-mono text-xl font-black text-purple-700">{compareResult.total_scope_mismatch}</p>
+                </div>
+                <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 shadow-sm flex flex-col justify-center">
+                  <p className="text-[10px] text-orange-600 font-bold uppercase tracking-wider mb-1">Payment Mismatch</p>
+                  <p className="font-mono text-xl font-black text-orange-700">
+                    {compareResult.results?.filter((r: any) => r.payment_status === "MISMATCH").length || 0}
+                  </p>
+                </div>
+                <div className="bg-yellow-50 p-4 rounded-xl border border-yellow-100 shadow-sm flex flex-col justify-center">
+                  <p className="text-[10px] text-yellow-700 font-bold uppercase tracking-wider mb-1">Method Mismatch</p>
+                  <p className="font-mono text-xl font-black text-yellow-800">
+                    {compareResult.results?.filter((r: any) => r.method_status === "MISMATCH").length || 0}
+                  </p>
+                </div>
+              </div>
+
+              {/* Detailed Resi Results Table */}
+              <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-4">
+                <div className="flex justify-between items-center pb-2 border-b border-gray-50">
+                  <div>
+                    <h3 className="text-sm font-bold text-gray-800">Detail Hasil Perbandingan Resi YoYi vs Sistem</h3>
+                    <p className="text-[10px] text-gray-400 font-medium">Lingkup Audit: Outlet {outlets.find(o => o.outlet_id === compareOutlet)?.nama_outlet || compareOutlet} • Tanggal {compareDate}</p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-gray-100">
+                  <table className="w-full text-xs text-left text-gray-700 divide-y divide-gray-100">
+                    <thead className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">
+                      <tr>
+                        <th className="p-3">Nomor Resi</th>
+                        <th className="p-3">Sumber Order</th>
+                        <th className="p-3">Status Audit</th>
+                        <th className="p-3">Keterangan / Alasan</th>
+                        <th className="p-3 text-right">Total YoYi</th>
+                        <th className="p-3 text-right">Expected Internal</th>
+                        <th className="p-3 text-right">Selisih</th>
+                        <th className="p-3">Metode YoYi</th>
+                        <th className="p-3">Metode Internal</th>
+                        <th className="p-3">Admin Terkait</th>
+                        <th className="p-3">Outlet Terkait</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50 font-sans">
+                      {compareResult.results?.map((res: any, idx: number) => {
+                        let statusBadge = null;
+                        if (res.audit_status === "FOUND") {
+                          if (res.payment_status === "MATCH" && res.method_status === "MATCH") {
+                            statusBadge = <span className="bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded text-[10px] font-bold">MATCH</span>;
+                          } else {
+                            statusBadge = <span className="bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded text-[10px] font-bold">FOUND</span>;
+                          }
+                        } else if (res.audit_status === "WARNING") {
+                          statusBadge = <span className="bg-amber-50 text-amber-700 border border-amber-100 px-2 py-0.5 rounded text-[10px] font-bold">WARNING</span>;
+                        } else if (res.audit_status === "CRITICAL") {
+                          statusBadge = <span className="bg-red-50 text-red-700 border border-red-100 px-2 py-0.5 rounded text-[10px] font-bold">CRITICAL</span>;
+                        } else if (res.audit_status === "ECOMMERCE_SKIP") {
+                          statusBadge = <span className="bg-gray-100 text-gray-600 border border-gray-200 px-2 py-0.5 rounded text-[10px] font-bold">SKIP</span>;
+                        } else if (res.audit_status === "SCOPE_MISMATCH") {
+                          statusBadge = <span className="bg-purple-50 text-purple-700 border border-purple-100 px-2 py-0.5 rounded text-[10px] font-bold">MISMATCH</span>;
+                        }
+
+                        return (
+                          <tr key={idx} className="hover:bg-gray-50/50 transition-colors">
+                            <td className="p-3 font-mono font-bold text-gray-800">{res.resi_id}</td>
+                            <td className="p-3 font-semibold text-gray-600">{res.sumber_order || "-"}</td>
+                            <td className="p-3">{statusBadge}</td>
+                            <td className="p-3 font-medium text-gray-600">
+                              {res.audit_status === "CRITICAL" ? (
+                                <span className="text-red-600 font-bold">Resi belum diinput ke sistem</span>
+                              ) : res.audit_status === "ECOMMERCE_SKIP" ? (
+                                <span className="text-gray-400">DILEWATI — Ecommerce</span>
+                              ) : (
+                                res.reason || <span className="text-emerald-600 font-semibold">Valid</span>
+                              )}
+                              {res.promo_candidate && (
+                                <div className="text-[9px] mt-0.5 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                                  <span className="text-purple-600">Potential Promo</span>
+                                  <span className={res.promo_validation_status === "APPROVED" ? "text-emerald-600" : "text-amber-600"}>
+                                    ({res.promo_validation_status || "UNAPPROVED"})
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-3 text-right font-mono font-bold">
+                              {res.total_yoyi !== null ? `Rp ${res.total_yoyi.toLocaleString("id-ID")}` : "-"}
+                            </td>
+                            <td className="p-3 text-right font-mono font-medium text-gray-600">
+                              {res.expected_internal !== null ? `Rp ${res.expected_internal.toLocaleString("id-ID")}` : "-"}
+                              {res.discount_from_yoyi > 0 && res.promo_validation_status === "APPROVED" && (
+                                <p className="text-[8px] text-purple-600 font-bold mt-0.5">Diskon Terpotong</p>
+                              )}
+                            </td>
+                            <td className={`p-3 text-right font-mono font-black ${res.difference > 0 ? "text-orange-600" : res.difference < 0 ? "text-red-600" : "text-gray-400"}`}>
+                              {res.difference !== null && res.difference !== 0 ? (
+                                `${res.difference > 0 ? "+" : ""}Rp ${res.difference.toLocaleString("id-ID")}`
+                              ) : (
+                                res.difference === 0 ? "Rp 0" : "-"
+                              )}
+                            </td>
+                            <td className="p-3">
+                              {res.metode_yoyi ? (
+                                <span className="px-2 py-0.5 bg-gray-100 rounded text-gray-600 font-semibold">{res.metode_yoyi}</span>
+                              ) : "-"}
+                            </td>
+                            <td className="p-3">
+                              {res.metode_internal ? (
+                                <span className={`px-2 py-0.5 rounded font-semibold ${res.method_status === "MISMATCH" ? "bg-red-50 text-red-600 border border-red-100" : "bg-gray-100 text-gray-600"}`}>
+                                  {res.metode_internal}
+                                </span>
+                              ) : "-"}
+                            </td>
+                            <td className="p-3 text-gray-500 font-medium">
+                              {res.admin_id ? getAdminFullName(res.admin_id) : "-"}
+                            </td>
+                            <td className="p-3 text-gray-500 font-medium">
+                              {res.outlet_id ? (outlets.find(o => o.outlet_id === res.outlet_id)?.nama_outlet || res.outlet_id) : "-"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
