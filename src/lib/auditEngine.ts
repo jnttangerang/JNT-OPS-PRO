@@ -414,14 +414,23 @@ function summarizeAuditBatch(db: any, transactions: any[], scopeMeta: Record<str
 
 export interface YoyiCompletenessResult {
   resi_id: string;
-  audit_status: "FOUND" | "CRITICAL" | "ECOMMERCE_SKIP" | "SCOPE_MISMATCH";
+  audit_status: "FOUND" | "WARNING" | "CRITICAL" | "ECOMMERCE_SKIP" | "SCOPE_MISMATCH";
   reason: string | null;
   sumber_order: string | null;
   total_yoyi: number | null;
+  expected_internal?: number | null;
+  difference?: number | null;
+  payment_status?: "MATCH" | "MISMATCH" | null;
+  metode_yoyi?: string | null;
+  metode_internal?: string | null;
+  method_status?: "MATCH" | "MISMATCH" | "WARNING" | null;
   transaksi_id: string | null;
   tanggal_transaksi: string | null;
   admin_id: string | null;
   outlet_id: string | null;
+  promo_candidate?: boolean;
+  promo_validation_status?: string | null;
+  discount_from_yoyi?: number;
 }
 
 export interface YoyiAuditSummary {
@@ -532,16 +541,88 @@ export function compareYoYiCompleteness(
 
     if (dateMatches && outletMatches) {
       total_found++;
+
+      // Perform Detailed Payment Correctness
+      const summary = calculateFinancialSummary(masterTx);
+      
+      const paymentMethod = masterTx.metode_bayar || masterTx.metode_pembayaran_ongkir || masterTx.metode_bayar_ongkir || "";
+      const isDfod = String(paymentMethod).trim().toUpperCase().includes("DFOD");
+      const expected_base = isDfod ? summary.dfod_outstanding : summary.owner_deposit;
+
+      // Promo Candidate & Validation APPROVED checking
+      const normSource = String(masterTx.source_order || "").trim().toUpperCase();
+      const normProduct = String(masterTx.tipe_produk || "EZ").trim().toUpperCase();
+      const isPotentialVipPromo = normSource === "VIP" && normProduct === "EZ";
+
+      const validationRecord = (db.PromoReviewValidations || []).find(
+        (v: any) => String(v.resi_id || "").trim().toUpperCase() === resiId
+      );
+      const promo_validation_status = validationRecord ? validationRecord.status : null;
+      const discount = Number(masterTx.discount_from_yoyi || masterTx.biaya_diskon || (validationRecord ? validationRecord.discount_from_yoyi : 0) || 0);
+
+      let final_expected = expected_base;
+      if (isPotentialVipPromo && promo_validation_status === "APPROVED") {
+        final_expected = expected_base - discount;
+      }
+
+      const difference = totalYoyi !== null ? totalYoyi - final_expected : null;
+      const payment_status = totalYoyi !== null ? (difference === 0 ? "MATCH" : "MISMATCH") : null;
+
+      // Method comparison
+      const metodeYoyi = row.metode_perhitungan ? String(row.metode_perhitungan).trim() : "";
+      const metodeInternal = String(paymentMethod).trim();
+
+      const yoyiIsDfod = metodeYoyi.toUpperCase().includes("DFOD");
+      const internalIsDfod = isDfod;
+      const yoyiIsMonthly = metodeYoyi.toLowerCase().includes("monthly") || metodeYoyi.toLowerCase().includes("bulanan");
+
+      let method_status: "MATCH" | "MISMATCH" | "WARNING" = "MATCH";
+      let method_reason: string | null = null;
+
+      if (yoyiIsMonthly) {
+        method_status = "WARNING";
+        method_reason = "Metode perhitungan YoYi 'monthly' belum deterministic pada sistem internal";
+      } else if (yoyiIsDfod !== internalIsDfod) {
+        method_status = "MISMATCH";
+      } else {
+        method_status = "MATCH";
+      }
+
+      // Resolve final audit status severity
+      let audit_status: "FOUND" | "WARNING" = "FOUND";
+      let reason: string | null = null;
+
+      if (payment_status === "MISMATCH") {
+        audit_status = "WARNING";
+        reason = "Nominal pembayaran YoYi tidak sesuai dengan sistem internal";
+      }
+      if (method_status === "MISMATCH") {
+        audit_status = "WARNING";
+        reason = reason ? `${reason} & Metode pembayaran tidak sesuai` : "Metode pembayaran tidak sesuai";
+      } else if (method_status === "WARNING" && method_reason) {
+        audit_status = "WARNING";
+        reason = reason ? `${reason} & ${method_reason}` : method_reason;
+      }
+
       results.push({
         resi_id: resiId,
-        audit_status: "FOUND",
-        reason: null,
+        audit_status,
+        reason,
         sumber_order: sumberOrder,
         total_yoyi: totalYoyi,
+        expected_internal: final_expected,
+        difference,
+        payment_status,
+        metode_yoyi: metodeYoyi || null,
+        metode_internal: metodeInternal || null,
+        method_status,
         transaksi_id: txId,
         tanggal_transaksi: txDate,
         admin_id: txAdmin,
-        outlet_id: txOutlet
+        outlet_id: txOutlet,
+        promo_candidate: isPotentialVipPromo,
+        promo_validation_status,
+        discount_from_yoyi: discount
       });
     } else {
       total_scope_mismatch++;
