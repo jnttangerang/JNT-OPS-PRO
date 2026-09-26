@@ -5999,26 +5999,73 @@ app.post("/api/approveSetoran", async (req, res) => {
       const comparisonResult = compareYoYiCompleteness(syncDb, allRows, s.outlet_id, s.tanggal);
       const results = comparisonResult.results || [];
 
-      // Scope results according to canonical rules:
-      // 1. Missing resis (CRITICAL): no MASTER_TRANSAKSI record; scope using source date & outlet from AuditYoyiBatch.
-      //    Never filter missing resi by admin_id_terkait (Bug B).
-      // 2. Found resis: joined authoritatively to MASTER_TRANSAKSI by comparator.
-      const criticalResis = results.filter((r: any) => {
-        if (r.audit_status !== "CRITICAL") return false;
+      // Helper to extract deterministic business date from source row (waktu_pemesanan)
+      const getDeterministicSourceDate = (srcRow: any): string | null => {
+        if (!srcRow) return null;
+        const wp = srcRow.waktu_pemesanan ? String(srcRow.waktu_pemesanan).trim() : "";
+        if (wp) {
+          const datePart = wp.split(" ")[0].split("T")[0];
+          if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+            return getWIBDate(datePart);
+          }
+        }
+        return null;
+      };
+
+      const criticalResis: any[] = [];
+      const unscopedResis: any[] = [];
+
+      for (const r of results) {
+        if (r.audit_status !== "CRITICAL") continue;
 
         const srcRow = allRows.find((row: any) => 
           String(row.resi_id || "").trim().toUpperCase() === String(r.resi_id || "").trim().toUpperCase()
         );
-        if (!srcRow) return false;
+        if (!srcRow) {
+          unscopedResis.push(r.resi_id);
+          continue;
+        }
 
-        const srcDate = srcRow.tanggal_serah_terima || 
-          (srcRow.waktu_serah_terima ? String(srcRow.waktu_serah_terima).split(" ")[0] : null) || 
-          (srcRow.waktu_pemesanan ? String(srcRow.waktu_pemesanan).split(" ")[0] : null);
-        if (!srcDate) return false;
+        const sourceBusinessDate = getDeterministicSourceDate(srcRow);
+        if (!sourceBusinessDate) {
+          // If no deterministic business date, check if it was uploaded as part of this date's audit
+          const srcHandoverDate = srcRow.tanggal_serah_terima ? getWIBDate(srcRow.tanggal_serah_terima) : null;
+          if (srcHandoverDate === dateKey) {
+            // Condition 3 / Test D: missing resi does not have a deterministic business date
+            // (DO NOT use tanggal_serah_terima as surrogate business date)
+            unscopedResis.push(r.resi_id);
+          }
+          continue;
+        }
 
-        return getWIBDate(srcDate) === dateKey;
-      });
+        // Test A & Test E: If deterministic date is for another date, it does NOT belong to this setoran
+        if (sourceBusinessDate !== dateKey) {
+          continue;
+        }
 
+        // Admin check:
+        // If source row has admin_id_terkait explicitly specified for another admin, it does NOT belong to this setoran (Test E)
+        const srcAdmin = srcRow.admin_id_terkait ? String(srcRow.admin_id_terkait).trim().toUpperCase() : null;
+        if (srcAdmin && adminKey && srcAdmin !== adminKey) {
+          continue;
+        }
+
+        // Deterministic scope matches OUTLET + TANGGAL (+ ADMIN if specified) (Test C)
+        criticalResis.push(r);
+      }
+
+      // Check UNSCOPED first (Test D: approval cannot silently proceed)
+      if (unscopedResis.length > 0) {
+        const unscopedList = unscopedResis.join(", ");
+        return res.json({
+          status: "error",
+          message: `Persetujuan ditahan: Terdapat ${unscopedResis.length} resi YoYi (${unscopedList}) yang tidak memiliki tanggal transaksi deterministik (waktu_pemesanan tidak valid/kosong). Scope audit tidak dapat dipastikan dengan aman.`,
+          code: "YOYI_AUDIT_UNSCOPED",
+          unscoped_resis: unscopedResis
+        });
+      }
+
+      // Check CRITICAL (Test C: deterministic missing scope blocks approval)
       if (criticalResis.length > 0) {
         const missingList = criticalResis.map((r: any) => r.resi_id).join(", ");
         return res.json({
@@ -8057,16 +8104,31 @@ app.get("/api/auditYoyiCompleteness", async (req: any, res: any) => {
     const targetDateWIB = getWIBDate(tanggal);
     const adminKey = admin_id ? String(admin_id).trim().toUpperCase() : null;
 
+    const getDeterministicSourceDate = (srcRow: any): string | null => {
+      if (!srcRow) return null;
+      const wp = srcRow.waktu_pemesanan ? String(srcRow.waktu_pemesanan).trim() : "";
+      if (wp) {
+        const datePart = wp.split(" ")[0].split("T")[0];
+        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+          return getWIBDate(datePart);
+        }
+      }
+      return null;
+    };
+
     const scopedResults = (comparison.results || []).filter((r: any) => {
       if (r.audit_status === "CRITICAL") {
         const srcRow = allRows.find((row: any) => 
           String(row.resi_id || "").trim().toUpperCase() === String(r.resi_id || "").trim().toUpperCase()
         );
         if (!srcRow) return false;
-        const srcDate = srcRow.tanggal_serah_terima || 
-          (srcRow.waktu_serah_terima ? String(srcRow.waktu_serah_terima).split(" ")[0] : null) || 
-          (srcRow.waktu_pemesanan ? String(srcRow.waktu_pemesanan).split(" ")[0] : null);
-        return srcDate ? getWIBDate(srcDate) === targetDateWIB : false;
+        const sourceBusinessDate = getDeterministicSourceDate(srcRow);
+        if (!sourceBusinessDate || sourceBusinessDate !== targetDateWIB) return false;
+        
+        const srcAdmin = srcRow.admin_id_terkait ? String(srcRow.admin_id_terkait).trim().toUpperCase() : null;
+        if (srcAdmin && adminKey && srcAdmin !== adminKey) return false;
+
+        return true;
       }
 
       if (r.audit_status === "ECOMMERCE_SKIP") {
@@ -8074,10 +8136,8 @@ app.get("/api/auditYoyiCompleteness", async (req: any, res: any) => {
           String(row.resi_id || "").trim().toUpperCase() === String(r.resi_id || "").trim().toUpperCase()
         );
         if (!srcRow) return false;
-        const srcDate = srcRow.tanggal_serah_terima || 
-          (srcRow.waktu_serah_terima ? String(srcRow.waktu_serah_terima).split(" ")[0] : null) || 
-          (srcRow.waktu_pemesanan ? String(srcRow.waktu_pemesanan).split(" ")[0] : null);
-        return srcDate ? getWIBDate(srcDate) === targetDateWIB : false;
+        const sourceBusinessDate = getDeterministicSourceDate(srcRow);
+        return sourceBusinessDate === targetDateWIB;
       }
 
       // FOUND or WARNING:
