@@ -5978,43 +5978,65 @@ app.post("/api/approveSetoran", async (req, res) => {
   const s = (db.Master_Setoran || []).find((s: any) => s.setoran_id === setoran_id);
   if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
 
-  // YoYi Audit Setoran Gate (Step 7)
+  const adminKey = String(s.admin_pembuat || s.admin_id || "").trim().toUpperCase();
+  const dateKey = getWIBDate(s.tanggal);
+
+  // YoYi Audit Setoran Gate (Step 7-C Corrective Patch)
   try {
     const response = await callAppsScript("getAuditYoyiBatch", { outlet_id: s.outlet_id });
-    if (response && response.status === "success") {
-      const allRows = response.data || [];
-      const targetDateWIB = getWIBDate(s.tanggal);
-      const yoyiRowsForDate = allRows.filter((r: any) => {
-        if (!r.tanggal_serah_terima) return false;
-        return getWIBDate(r.tanggal_serah_terima) === targetDateWIB;
+    if (!response || response.status !== "success") {
+      return res.json({
+        status: "error",
+        message: `Gagal memverifikasi Audit YoYi: ${response?.message || "Layanan spreadsheet audit tidak merespons"}`,
+        code: "YOYI_AUDIT_ERROR"
+      });
+    }
+
+    const allRows = response.data || [];
+    if (allRows.length > 0) {
+      const syncDb = await syncDbWithAppsScript(db);
+      // Run comparator on all rows for outlet WITHOUT pre-filtering by tanggal_serah_terima or admin_id_terkait (fixes Bug A & Bug B)
+      const comparisonResult = compareYoYiCompleteness(syncDb, allRows, s.outlet_id, s.tanggal);
+      const results = comparisonResult.results || [];
+
+      // Scope results according to canonical rules:
+      // 1. Missing resis (CRITICAL): no MASTER_TRANSAKSI record; scope using source date & outlet from AuditYoyiBatch.
+      //    Never filter missing resi by admin_id_terkait (Bug B).
+      // 2. Found resis: joined authoritatively to MASTER_TRANSAKSI by comparator.
+      const criticalResis = results.filter((r: any) => {
+        if (r.audit_status !== "CRITICAL") return false;
+
+        const srcRow = allRows.find((row: any) => 
+          String(row.resi_id || "").trim().toUpperCase() === String(r.resi_id || "").trim().toUpperCase()
+        );
+        if (!srcRow) return false;
+
+        const srcDate = srcRow.tanggal_serah_terima || 
+          (srcRow.waktu_serah_terima ? String(srcRow.waktu_serah_terima).split(" ")[0] : null) || 
+          (srcRow.waktu_pemesanan ? String(srcRow.waktu_pemesanan).split(" ")[0] : null);
+        if (!srcDate) return false;
+
+        return getWIBDate(srcDate) === dateKey;
       });
 
-      if (yoyiRowsForDate.length > 0) {
-        // Audit exists for this date, let's find rows for this admin_pembuat
-        const adminKey = String(s.admin_pembuat || s.admin_id || "").trim().toUpperCase();
-        const yoyiRowsForAdmin = yoyiRowsForDate.filter((r: any) => {
-          return String(r.admin_id_terkait || "").trim().toUpperCase() === adminKey;
+      if (criticalResis.length > 0) {
+        const missingList = criticalResis.map((r: any) => r.resi_id).join(", ");
+        return res.json({
+          status: "error",
+          message: `Persetujuan ditolak: Terdapat ${criticalResis.length} resi YoYi yang belum diinput ke sistem (${missingList}). Admin wajib melengkapi input semua resi ini sebelum setoran dapat disetujui.`,
+          code: "YOYI_AUDIT_CRITICAL",
+          critical_resis: criticalResis
         });
-
-        if (yoyiRowsForAdmin.length > 0) {
-          const syncDb = await syncDbWithAppsScript(db);
-          const result = compareYoYiCompleteness(syncDb, yoyiRowsForAdmin, s.outlet_id, s.tanggal);
-          const criticalResis = (result.results || []).filter((r: any) => r.audit_status === "CRITICAL");
-          if (criticalResis.length > 0) {
-            const missingList = criticalResis.map((r: any) => r.resi_id).join(", ");
-            return res.json({
-              status: "error",
-              message: `Persetujuan ditolak: Terdapat ${criticalResis.length} resi YoYi yang belum diinput ke sistem (${missingList}). Admin wajib melengkapi input semua resi ini sebelum setoran dapat disetujui.`,
-              code: "YOYI_AUDIT_CRITICAL",
-              critical_resis: criticalResis
-            });
-          }
-        }
       }
     }
   } catch (err: any) {
     console.error("Error running YoYi audit check in approveSetoran:", err);
-    // Do not block if there is a transient backend/Google Sheets network error
+    // Fix Bug D: fail-closed on retrieval or comparison error
+    return res.json({
+      status: "error",
+      message: `Gagal memverifikasi Audit YoYi: ${err.message || "Terjadi kesalahan internal saat memeriksa audit"}`,
+      code: "YOYI_AUDIT_ERROR"
+    });
   }
 
   try {
@@ -8021,38 +8043,70 @@ app.get("/api/auditYoyiCompleteness", async (req: any, res: any) => {
     }
 
     const allRows = response.data || [];
-    const targetDateWIB = getWIBDate(tanggal);
-
-    let yoyiRows = allRows.filter((r: any) => {
-      if (!r.tanggal_serah_terima) return false;
-      const rowDateWIB = getWIBDate(r.tanggal_serah_terima);
-      return rowDateWIB === targetDateWIB;
-    });
-
-    if (yoyiRows.length === 0) {
+    if (allRows.length === 0) {
       return res.json({
         status: "empty",
         message: "Audit YoYi belum dilakukan untuk tanggal ini."
       });
     }
 
-    if (admin_id) {
-      yoyiRows = yoyiRows.filter((r: any) => {
-        return String(r.admin_id_terkait || "").trim().toUpperCase() === String(admin_id).trim().toUpperCase();
-      });
-      if (yoyiRows.length === 0) {
-        return res.json({
-          status: "empty",
-          message: "Audit YoYi belum dilakukan untuk tanggal ini."
-        });
-      }
-    }
-
     let db = readDb();
     db = await syncDbWithAppsScript(db);
 
-    const result = compareYoYiCompleteness(db, yoyiRows, outlet_id, tanggal);
-    return res.json(result);
+    const comparison = compareYoYiCompleteness(db, allRows, outlet_id, tanggal);
+    const targetDateWIB = getWIBDate(tanggal);
+    const adminKey = admin_id ? String(admin_id).trim().toUpperCase() : null;
+
+    const scopedResults = (comparison.results || []).filter((r: any) => {
+      if (r.audit_status === "CRITICAL") {
+        const srcRow = allRows.find((row: any) => 
+          String(row.resi_id || "").trim().toUpperCase() === String(r.resi_id || "").trim().toUpperCase()
+        );
+        if (!srcRow) return false;
+        const srcDate = srcRow.tanggal_serah_terima || 
+          (srcRow.waktu_serah_terima ? String(srcRow.waktu_serah_terima).split(" ")[0] : null) || 
+          (srcRow.waktu_pemesanan ? String(srcRow.waktu_pemesanan).split(" ")[0] : null);
+        return srcDate ? getWIBDate(srcDate) === targetDateWIB : false;
+      }
+
+      if (r.audit_status === "ECOMMERCE_SKIP") {
+        const srcRow = allRows.find((row: any) => 
+          String(row.resi_id || "").trim().toUpperCase() === String(r.resi_id || "").trim().toUpperCase()
+        );
+        if (!srcRow) return false;
+        const srcDate = srcRow.tanggal_serah_terima || 
+          (srcRow.waktu_serah_terima ? String(srcRow.waktu_serah_terima).split(" ")[0] : null) || 
+          (srcRow.waktu_pemesanan ? String(srcRow.waktu_pemesanan).split(" ")[0] : null);
+        return srcDate ? getWIBDate(srcDate) === targetDateWIB : false;
+      }
+
+      // FOUND or WARNING:
+      if (adminKey && r.admin_id) {
+        if (String(r.admin_id).trim().toUpperCase() !== adminKey) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    if (scopedResults.length === 0) {
+      return res.json({
+        status: "empty",
+        message: "Audit YoYi belum dilakukan untuk tanggal ini."
+      });
+    }
+
+    return res.json({
+      status: "success",
+      outlet_id,
+      tanggal,
+      total_yoyi_resi: scopedResults.length,
+      total_ecommerce_skip: scopedResults.filter(r => r.audit_status === "ECOMMERCE_SKIP").length,
+      total_found: scopedResults.filter(r => r.audit_status === "FOUND").length,
+      total_missing: scopedResults.filter(r => r.audit_status === "CRITICAL").length,
+      total_scope_mismatch: scopedResults.filter(r => r.audit_status === "SCOPE_MISMATCH").length,
+      results: scopedResults
+    });
   } catch (err: any) {
     console.error("Error in getAuditYoyiCompleteness:", err);
     return res.status(500).json({ status: "error", message: `Gagal menjalankan audit: ${err.message}` });
