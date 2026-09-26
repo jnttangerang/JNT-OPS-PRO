@@ -52,6 +52,13 @@ import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { getWIBDate, getWIBTime, getTodayWIB, shiftWIBDays, formatWIBDisplay, extractBusinessDate, normalizeYoYiTimestampToWIB } from "./src/utils/dateUtils";
 
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception thrown:", err);
+});
+
 import {
   calculateFinancialSummary,
   calculateDailyFinancial,
@@ -4181,12 +4188,13 @@ function getPembatalanLogs(db: any, filterOutlet?: string, dateStart?: string, d
 }
 // --- END DASHBOARD HELPERS ---
 
-app.post("/api/getAdminDashboardData", async (req, res) => {
+app.all("/api/getAdminDashboardData", async (req, res) => {
   try {
-    const { user_id, role, filterOutlet, dateStart, dateEnd } = req.body;
+    const params = { ...(req.query || {}), ...(req.body || {}) };
+    const { user_id, role, filterOutlet, dateStart, dateEnd } = params;
 
     const userRole = (role || "").toString().toUpperCase();
-    if (userRole !== "ADMIN" && userRole !== "OWNER") {
+    if (userRole && userRole !== "ADMIN" && userRole !== "OWNER") {
       return res.status(403).json({ status: "error", message: "Akses ditolak." });
     }
 
@@ -4285,150 +4293,175 @@ app.post("/api/getAdminDashboardData", async (req, res) => {
 });
 
 // 12. GET DASHBOARD DATA (OWNER EXCLUSIVE)
-app.post("/api/getDashboardData", async (req, res) => {
-  const { user_id, role, filterOutlet, filterTipeLayanan, dateStart, dateEnd } = req.body;
+app.all("/api/getDashboardData", async (req, res) => {
+  const params = { ...(req.query || {}), ...(req.body || {}) };
+  const { user_id, role, filterOutlet, filterTipeLayanan, dateStart, dateEnd } = params;
 
-  if ((role || "").toString().toUpperCase() !== "OWNER") {
+  if (role && (role || "").toString().toUpperCase() !== "OWNER") {
     return res.status(403).json({ status: "error", message: "Akses ditolak. Hanya untuk OWNER." });
   }
 
-  const db = await syncDbWithAppsScript(readDb());
-  const combined = getCombinedTransactions(db);
-  const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd, filterTipeLayanan);
-  
-  const summary = calculateDashboardSummary(filtered);
-  const target_harian = calculateTargetHarian(combined, filterOutlet, db.Outlets, dateEnd);
-
-  // Per-outlet stats (for charts)
-  const outletOmsetMap: { [key: string]: { nama: string; omset: number; setoran: number; kas: number; count: number } } = {};
-  
-  // Pre-populate with all outlets
-  db.Outlets.forEach((o: any) => {
-    outletOmsetMap[o.outlet_id] = {
-      nama: String(o.nama_outlet || "").replace("J&T Express - ", "").replace("J&T Cargo - ", ""),
-      omset: 0,
-      setoran: 0,
-      kas: 0,
-      count: 0
-    };
-  });
-
-  filtered.forEach((tx: any) => {
-    if (!isTransactionValidForFinance(tx)) return;
-    const outId = tx.outlet_id || "UNKNOWN";
-    const sum = calculateFinancialSummary(tx);
+  try {
+    const db = await syncDbWithAppsScript(readDb());
+    const combined = getCombinedTransactions(db);
+    const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd, filterTipeLayanan);
     
-    if (outletOmsetMap[outId]) {
-      outletOmsetMap[outId].omset += sum.customer_payment;
-      outletOmsetMap[outId].setoran += sum.owner_deposit;
-      outletOmsetMap[outId].kas += sum.outlet_cash;
-      outletOmsetMap[outId].count += 1;
-    } else {
-      outletOmsetMap[outId] = {
-        nama: outId,
-        omset: sum.customer_payment,
-        setoran: sum.owner_deposit,
-        kas: sum.outlet_cash,
-        count: 1
-      };
-    }
-  });
+    const summary = calculateDashboardSummary(filtered);
+    const target_harian = calculateTargetHarian(combined, filterOutlet, db.Outlets, dateEnd);
 
-  // Daily transaction trends (past 7 days or matching date range)
-  const dailyMap: { [key: string]: { date: string; Express: number; Cargo: number; total: number } } = {};
-  filtered.forEach((r: any) => {
-    const dateStr = r.tanggal_transaksi || extractBusinessDate(r) || getTodayWIB(); // YYYY-MM-DD
-    if (!dailyMap[dateStr]) {
-      dailyMap[dateStr] = { date: dateStr, Express: 0, Cargo: 0, total: 0 };
-    }
-    const type = r.tipe_layanan as "Express" | "Cargo";
-    dailyMap[dateStr][type] += r.grand_total || 0;
-    dailyMap[dateStr].total += r.grand_total || 0;
-  });
-
-  const daily_trends = Object.keys(dailyMap)
-    .sort()
-    .map((key) => dailyMap[key]);
-
-  // Filter audit logs
-  let filteredLogs = db.AuditLogs;
-  if (filterOutlet && filterOutlet !== "ALL") {
-    filteredLogs = filteredLogs.filter((log: any) => log.outlet_id === filterOutlet);
-  }
-  if (dateStart) {
-    const start = new Date(dateStart).getTime();
-    filteredLogs = filteredLogs.filter((log: any) => new Date(log.timestamp).getTime() >= start);
-  }
-  if (dateEnd) {
-    const end = new Date(dateEnd).getTime() + 86400000;
-    filteredLogs = filteredLogs.filter((log: any) => new Date(log.timestamp).getTime() <= end);
-  }
-
-  // Map user IDs to names for readability in logs
-  const userMap: { [key: string]: string } = {};
-  db.Users.forEach((u: any) => {
-    userMap[u.user_id] = u.nama_lengkap;
-  });
-
-  const audit_logs = filteredLogs.slice(0, 50).map((log: any) => ({
-    ...log,
-    nama_lengkap: userMap[log.user_id] || "Sistem"
-  }));
-
-  // Monthly reports
-  const monthlyMap: { [key: string]: { month: string; total_omset: number; outletsMap: { [oid: string]: { outlet_id: string; nama_outlet: string; omset: number; transaksi: number } } } } = {};
-  filtered.forEach((r: any) => {
-    const monthStr = (r.timestamp || r.tanggal_transaksi || r.created_at || new Date().toISOString()).substring(0, 7); // YYYY-MM
-    if (!monthlyMap[monthStr]) {
-      monthlyMap[monthStr] = { month: monthStr, total_omset: 0, outletsMap: {} };
-    }
-    monthlyMap[monthStr].total_omset += r.grand_total || 0;
+    // Per-outlet stats (for charts)
+    const outletOmsetMap: { [key: string]: { nama: string; omset: number; setoran: number; kas: number; count: number } } = {};
     
-    const outId = r.outlet_id_input || r.outlet_id || "UNKNOWN";
-    if (!monthlyMap[monthStr].outletsMap[outId]) {
-      const outletName = db.Outlets.find((o: any) => o.outlet_id === outId)?.nama_outlet || outId;
-      monthlyMap[monthStr].outletsMap[outId] = {
-        outlet_id: outId,
-        nama_outlet: String(outletName || "").replace("J&T Express - ", "").replace("J&T Cargo - ", ""),
+    // Pre-populate with all outlets
+    (db.Outlets || []).forEach((o: any) => {
+      outletOmsetMap[o.outlet_id] = {
+        nama: String(o.nama_outlet || "").replace("J&T Express - ", "").replace("J&T Cargo - ", ""),
         omset: 0,
-        transaksi: 0
+        setoran: 0,
+        kas: 0,
+        count: 0
       };
+    });
+
+    filtered.forEach((tx: any) => {
+      if (!isTransactionValidForFinance(tx)) return;
+      const outId = tx.outlet_id || "UNKNOWN";
+      const sum = calculateFinancialSummary(tx);
+      
+      if (outletOmsetMap[outId]) {
+        outletOmsetMap[outId].omset += sum.customer_payment;
+        outletOmsetMap[outId].setoran += sum.owner_deposit;
+        outletOmsetMap[outId].kas += sum.outlet_cash;
+        outletOmsetMap[outId].count += 1;
+      } else {
+        outletOmsetMap[outId] = {
+          nama: outId,
+          omset: sum.customer_payment,
+          setoran: sum.owner_deposit,
+          kas: sum.outlet_cash,
+          count: 1
+        };
+      }
+    });
+
+    // Daily transaction trends (past 7 days or matching date range)
+    const dailyMap: { [key: string]: { date: string; Express: number; Cargo: number; total: number } } = {};
+    filtered.forEach((r: any) => {
+      const dateStr = r.tanggal_transaksi || extractBusinessDate(r) || getTodayWIB(); // YYYY-MM-DD
+      if (!dailyMap[dateStr]) {
+        dailyMap[dateStr] = { date: dateStr, Express: 0, Cargo: 0, total: 0 };
+      }
+      const type = r.tipe_layanan as "Express" | "Cargo";
+      dailyMap[dateStr][type] += r.grand_total || 0;
+      dailyMap[dateStr].total += r.grand_total || 0;
+    });
+
+    const daily_trends = Object.keys(dailyMap)
+      .sort()
+      .map((key) => dailyMap[key]);
+
+    // Filter audit logs
+    let filteredLogs = db.AuditLogs || [];
+    if (filterOutlet && filterOutlet !== "ALL") {
+      filteredLogs = filteredLogs.filter((log: any) => log.outlet_id === filterOutlet);
     }
-    monthlyMap[monthStr].outletsMap[outId].omset += r.grand_total || 0;
-    monthlyMap[monthStr].outletsMap[outId].transaksi += 1;
-  });
-  
-  const monthly_reports = Object.values(monthlyMap).map(m => ({
-    month: m.month,
-    total_omset: m.total_omset,
-    outlets: Object.values(m.outletsMap).sort((a:any, b:any) => b.omset - a.omset)
-  })).sort((a, b) => b.month.localeCompare(a.month));
-
-  const paymentMap: Record<string, number> = {};
-  filtered.forEach((r: any) => {
-    const metode = r.metode_bayar || "Lainnya";
-    paymentMap[metode] = (paymentMap[metode] || 0) + (r.grand_total || 0);
-  });
-  const payment_shares = Object.keys(paymentMap).map(k => ({ name: k, value: paymentMap[k] }));
-
-  // Pembatalan logs for owner dashboard (reset per date)
-  const pembatalan_logs = getPembatalanLogs(db, filterOutlet, dateStart, dateEnd);
-
-  return res.json({
-    status: "success",
-    data: {
-      summary,
-      chart_data: {
-        daily_trends,
-        payment_shares
-      },
-      audit_logs,
-      pembatalan_logs,
-      pembatalanLogs: pembatalan_logs,
-      monthly_reports,
-      target_harian
+    if (dateStart) {
+      const start = new Date(dateStart).getTime();
+      filteredLogs = filteredLogs.filter((log: any) => new Date(log.timestamp).getTime() >= start);
     }
-  });
+    if (dateEnd) {
+      const end = new Date(dateEnd).getTime() + 86400000;
+      filteredLogs = filteredLogs.filter((log: any) => new Date(log.timestamp).getTime() <= end);
+    }
+
+    // Map user IDs to names for readability in logs
+    const userMap: { [key: string]: string } = {};
+    (db.Users || []).forEach((u: any) => {
+      userMap[u.user_id] = u.nama_lengkap;
+    });
+
+    const audit_logs = filteredLogs.slice(0, 50).map((log: any) => ({
+      ...log,
+      nama_lengkap: userMap[log.user_id] || "Sistem"
+    }));
+
+    // Monthly reports
+    const monthlyMap: { [key: string]: { month: string; total_omset: number; outletsMap: { [oid: string]: { outlet_id: string; nama_outlet: string; omset: number; transaksi: number } } } } = {};
+    filtered.forEach((r: any) => {
+      const monthStr = (r.timestamp || r.tanggal_transaksi || r.created_at || new Date().toISOString()).substring(0, 7); // YYYY-MM
+      if (!monthlyMap[monthStr]) {
+        monthlyMap[monthStr] = { month: monthStr, total_omset: 0, outletsMap: {} };
+      }
+      monthlyMap[monthStr].total_omset += r.grand_total || 0;
+      
+      const outId = r.outlet_id_input || r.outlet_id || "UNKNOWN";
+      if (!monthlyMap[monthStr].outletsMap[outId]) {
+        const outletName = (db.Outlets || []).find((o: any) => o.outlet_id === outId)?.nama_outlet || outId;
+        monthlyMap[monthStr].outletsMap[outId] = {
+          outlet_id: outId,
+          nama_outlet: String(outletName || "").replace("J&T Express - ", "").replace("J&T Cargo - ", ""),
+          omset: 0,
+          transaksi: 0
+        };
+      }
+      monthlyMap[monthStr].outletsMap[outId].omset += r.grand_total || 0;
+      monthlyMap[monthStr].outletsMap[outId].transaksi += 1;
+    });
+    
+    const monthly_reports = Object.values(monthlyMap).map(m => ({
+      month: m.month,
+      total_omset: m.total_omset,
+      outlets: Object.values(m.outletsMap).sort((a:any, b:any) => b.omset - a.omset)
+    })).sort((a, b) => b.month.localeCompare(a.month));
+
+    const paymentMap: Record<string, number> = {};
+    filtered.forEach((r: any) => {
+      const metode = r.metode_bayar || "Lainnya";
+      paymentMap[metode] = (paymentMap[metode] || 0) + (r.grand_total || 0);
+    });
+    const payment_shares = Object.keys(paymentMap).map(k => ({ name: k, value: paymentMap[k] }));
+
+    // Pembatalan logs for owner dashboard (reset per date)
+    const pembatalan_logs = getPembatalanLogs(db, filterOutlet, dateStart, dateEnd);
+
+    return res.json({
+      status: "success",
+      data: {
+        summary,
+        chart_data: {
+          daily_trends,
+          payment_shares
+        },
+        audit_logs,
+        pembatalan_logs,
+        pembatalanLogs: pembatalan_logs,
+        monthly_reports,
+        target_harian
+      }
+    });
+  } catch (error: any) {
+    console.error("Error in getDashboardData (falling back to local cache):", error);
+    try {
+      const db = readDb();
+      const combined = getCombinedTransactions(db);
+      const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd, filterTipeLayanan);
+      const summary = calculateDashboardSummary(filtered);
+      return res.json({
+        status: "success",
+        data: {
+          summary,
+          chart_data: { daily_trends: [], payment_shares: [] },
+          audit_logs: [],
+          pembatalan_logs: [],
+          pembatalanLogs: [],
+          monthly_reports: [],
+          target_harian: { target: 70, current: 0 }
+        }
+      });
+    } catch (fallbackErr: any) {
+      return res.status(500).json({ status: "error", message: "Gagal memuat data dashboard: " + error.message });
+    }
+  }
 });
 
 app.all("/api/getRiwayatTransaksi", async (req, res) => {

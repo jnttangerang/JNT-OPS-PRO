@@ -50,11 +50,11 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
         dateStart: startDate,
         dateEnd: endDate
       });
-      if (response.status === "success" && response.data) {
+      if (response && response.status === "success" && response.data) {
         setDashboardData(response.data);
       }
-    } catch (e) {
-      console.error("Failed to load dashboard data", e);
+    } catch (e: any) {
+      console.warn("Failed to load dashboard data:", e?.message || e);
     } finally {
       if (!isSilent) setLoadingDashboard(false);
     }
