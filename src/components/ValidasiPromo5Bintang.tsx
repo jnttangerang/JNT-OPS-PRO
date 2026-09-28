@@ -56,7 +56,7 @@ export default function ValidasiPromo5Bintang({ session, outlets }: Props) {
 
       // Filter candidates: VIP + EZ + discount > 0
       const cands = allExp.filter(tx => {
-        const source = (tx.source_order || "VIP").toUpperCase();
+        const source = String((tx as any).sumber_data ?? tx.source_order ?? "VIP").trim().toUpperCase();
         const type = (tx.tipe_produk || "EZ").toUpperCase();
         const discount = tx.discount_from_yoyi || 0;
         
@@ -245,7 +245,7 @@ export default function ValidasiPromo5Bintang({ session, outlets }: Props) {
                     <td className="px-4 py-3 text-xs">{c.outlet_id_input}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1">
-                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[10px] font-bold">{c.source_order || "VIP"}</span>
+                        <span className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded text-[10px] font-bold">{(c as any).sumber_data ?? c.source_order ?? "VIP"}</span>
                         <span className="bg-red-100 text-red-800 px-1.5 py-0.5 rounded text-[10px] font-bold">{c.tipe_produk || "EZ"}</span>
                       </div>
                     </td>

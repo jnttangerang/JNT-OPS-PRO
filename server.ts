@@ -9993,7 +9993,7 @@ app.post("/api/submitPromoReviewValidation", (req, res) => {
     return res.status(404).json({ status: "error", message: "Transaksi tidak ditemukan." });
   }
 
-  const source = (tx.source_order || "VIP").toUpperCase();
+  const source = String(tx.sumber_data ?? tx.source_order ?? "VIP").trim().toUpperCase();
   const type = (tx.tipe_produk || "EZ").toUpperCase();
   const discount = tx.discount_from_yoyi || 0;
   
@@ -10012,7 +10012,7 @@ app.post("/api/submitPromoReviewValidation", (req, res) => {
     transaction_id: tx.id || tx.transaksi_id,
     resi_id: tx.resi_id || tx.no_resi,
     outlet_id: tx.outlet_id,
-    source_order: tx.source_order,
+    source_order: tx.sumber_data ?? tx.source_order ?? "VIP",
     tipe_produk: tx.tipe_produk,
     discount_from_yoyi: discount,
     review_rating: review_rating || null,
