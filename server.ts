@@ -8069,8 +8069,9 @@ app.post("/api/saveAuditYoyiBatch", handleSaveAuditYoyiBatch);
 app.get("/api/getAuditYoyiBatch", handleGetAuditYoyiBatch);
 app.post("/api/getAuditYoyiBatch", handleGetAuditYoyiBatch);
 
-app.get("/api/auditYoyiCompleteness", async (req: any, res: any) => {
-  const { user_role, role, outlet_id, tanggal, admin_id } = req.query || {};
+const handleAuditYoyiCompleteness = async (req: any, res: any) => {
+  const params = { ...(req.query || {}), ...(req.body || {}) };
+  const { user_role, role, outlet_id, tanggal, admin_id } = params;
   const currentRole = (user_role || role || "").toUpperCase();
   if (currentRole !== "OWNER" && currentRole !== "ADMIN") {
     return res.status(403).json({ status: "error", message: "Akses ditolak. Perlu wewenang Owner atau Admin." });
@@ -8171,7 +8172,10 @@ app.get("/api/auditYoyiCompleteness", async (req: any, res: any) => {
     console.error("Error in getAuditYoyiCompleteness:", err);
     return res.status(500).json({ status: "error", message: `Gagal menjalankan audit: ${err.message}` });
   }
-});
+};
+
+app.get("/api/auditYoyiCompleteness", handleAuditYoyiCompleteness);
+app.post("/api/auditYoyiCompleteness", handleAuditYoyiCompleteness);
 
 app.post("/api/apps-script", async (req, res) => {
   try {

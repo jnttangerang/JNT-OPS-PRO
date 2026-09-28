@@ -549,8 +549,8 @@ export function compareYoYiCompleteness(
       const isDfod = String(paymentMethod).trim().toUpperCase().includes("DFOD");
       const expected_base = isDfod ? summary.dfod_outstanding : summary.owner_deposit;
 
-      // Promo Candidate & Validation APPROVED checking
-      const normSource = String(masterTx.source_order || "").trim().toUpperCase();
+      // Promo Candidate & Validation APPROVED checking (canonical: sumber_data, fallback: source_order)
+      const normSource = String(masterTx.sumber_data ?? masterTx.source_order ?? "").trim().toUpperCase();
       const normProduct = String(masterTx.tipe_produk || "EZ").trim().toUpperCase();
       const isPotentialVipPromo = normSource === "VIP" && normProduct === "EZ";
 
