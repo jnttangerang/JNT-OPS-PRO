@@ -1613,6 +1613,7 @@ const UTILITY_ACTIONS = new Set([
   "submitPromoReviewValidation",
   "approvePromoReviewValidation",
   "rejectPromoReviewValidation",
+  "upsertCustomerAndAddressBook",
   "apps-script",
   "dev"
 ]);
@@ -2607,9 +2608,19 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
     catatan: preInputObj.catatan_admin
   });
 
-  
-
   writeDb(db);
+
+  callAppsScript("upsertCustomerAndAddressBook", {
+    outlet_id: preInputObj.outlet_id_tugas,
+    admin_id: preInputObj.admin_id,
+    nama_pengirim: preInputObj.nama_pengirim,
+    hp_pengirim: preInputObj.hp_pengirim,
+    alamat_pengirim: preInputObj.alamat_pengirim,
+    nama_penerima: preInputObj.nama_penerima,
+    hp_penerima: preInputObj.hp_penerima,
+    alamat_penerima: preInputObj.alamat_penerima,
+    timestamp: preInputObj.timestamp
+  }).catch((e: any) => console.warn("savePreInput GAS customer upsert warning:", e.message));
 
   return res.json({
     status: "success",
@@ -10146,6 +10157,32 @@ app.post("/api/rejectPromoReviewValidation", async (req, res) => {
 });
 
 // ==========================================
+// DURABLE CUSTOMER PERSISTENCE ENDPOINTS
+// ==========================================
+app.post("/api/upsertCustomerAndAddressBook", async (req, res) => {
+  try {
+    const params = req.body || {};
+    const db = readDb();
+    const localResult = autoUpsertCustomerAndAddressBook(db, params);
+    writeDb(db);
+
+    let gasResult: any = null;
+    try {
+      gasResult = await callAppsScript("upsertCustomerAndAddressBook", params);
+    } catch (e: any) {
+      console.warn("GAS upsertCustomerAndAddressBook warning:", e.message);
+    }
+
+    return res.json({
+      status: "success",
+      data: gasResult?.data || gasResult || localResult
+    });
+  } catch (err: any) {
+    return res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+// ==========================================
 // YOYI COMPLETION ENDPOINTS
 // ==========================================
 
@@ -10314,7 +10351,15 @@ app.post("/api/yoyi/update", async (req, res) => {
          alamat_penerima: masterTx.snapshot_alamat_penerima
        });
        writeDb(db);
-       callAppsScript("apiSaveTransaksi", { jenis_layanan: "Express", data: masterTx }).catch(e => console.error("Trigger customer upsert failed", e));
+       callAppsScript("upsertCustomerAndAddressBook", {
+         outlet_id: masterTx.outlet_id || "OUTLET-YOYI",
+         nama_pengirim: masterTx.snapshot_nama_pengirim,
+         hp_pengirim: masterTx.snapshot_hp_pengirim,
+         alamat_pengirim: masterTx.snapshot_alamat_pengirim,
+         nama_penerima: masterTx.snapshot_nama_penerima,
+         hp_penerima: masterTx.snapshot_hp_penerima,
+         alamat_penerima: masterTx.snapshot_alamat_penerima
+       }).catch(e => console.error("Trigger customer upsert failed", e));
     }
     
     return res.json(appsScriptRes);

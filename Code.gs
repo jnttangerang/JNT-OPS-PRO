@@ -210,6 +210,8 @@ function handleRouting(action, params) {
       return apiApprovePromoReviewValidation(params);
     case "rejectPromoReviewValidation":
       return apiRejectPromoReviewValidation(params);
+    case "upsertCustomerAndAddressBook":
+      return upsertCustomerAndAddressBook(params);
     default:
       return { status: "error", message: "Aksi tidak dikenali: " + action };
   }
@@ -3930,57 +3932,26 @@ var TransactionService = {
     };
     DatabaseService.insertRow("PreInput_Backup", backupObj);
     
-    var existingCst = params.hp_pengirim ? DatabaseService.findRowByColumn("Master_Customer", "no_hp", params.hp_pengirim) : null;
-    var cstId = existingCst ? existingCst.customer_id : "CST-" + new Date().getTime().toString().slice(-5);
-    
-    if (params.hp_pengirim) {
-      if (existingCst) {
-        DatabaseService.updateRowByColumn("Master_Customer", "no_hp", params.hp_pengirim, {
-          nama_pengirim: params.nama_pengirim,
-          alamat_pengirim: params.alamat_pengirim,
-          outlet_id: params.outlet_id_tugas,
-          last_updated: nowStr,
-          nama: params.nama_pengirim,
-          telepon: params.hp_pengirim,
-          updated_at: nowStr
-        });
-      } else {
-        DatabaseService.appendRow("Master_Customer", {
-          customer_id: cstId,
-          nama_pengirim: params.nama_pengirim,
-          no_hp: params.hp_pengirim,
-          alamat_pengirim: params.alamat_pengirim,
-          outlet_id: params.outlet_id_tugas,
-          last_updated: nowStr,
-          nama: params.nama_pengirim,
-          telepon: params.hp_pengirim,
-          created_at: nowStr,
-          updated_at: nowStr,
-          status: "AKTIF"
-        });
-      }
+    // Durable Customer & Address Book Upsert
+    var custUpsert = null;
+    try {
+      custUpsert = upsertCustomerAndAddressBook({
+        outlet_id: params.outlet_id_tugas,
+        admin_id: params.admin_id,
+        nama_pengirim: params.nama_pengirim,
+        hp_pengirim: params.hp_pengirim,
+        alamat_pengirim: params.alamat_pengirim,
+        nama_penerima: params.nama_penerima,
+        hp_penerima: params.hp_penerima,
+        alamat_penerima: params.alamat_penerima,
+        timestamp: nowStr
+      });
+    } catch (eCust) {
+      Logger.log("Warning: upsertCustomerAndAddressBook in savePreInput failed: " + eCust.toString());
     }
-    
-    if (params.hp_penerima) {
-      var existingRec = DatabaseService.findRowByColumn("Riwayat_Penerima", "no_hp_penerima", params.hp_penerima);
-      if (existingRec) {
-        DatabaseService.updateRowByColumn("Riwayat_Penerima", "no_hp_penerima", params.hp_penerima, {
-          nama_penerima: params.nama_penerima,
-          alamat_penerima: params.alamat_penerima,
-          tanggal_terakhir_kirim: nowStr
-        });
-      } else {
-        var recId = "REC-" + new Date().getTime().toString().slice(-5) + Math.floor(Math.random() * 10);
-        DatabaseService.appendRow("Riwayat_Penerima", {
-          id: recId,
-          customer_id: cstId,
-          nama_penerima: params.nama_penerima,
-          no_hp_penerima: params.hp_penerima,
-          alamat_penerima: params.alamat_penerima,
-          tanggal_terakhir_kirim: nowStr
-        });
-      }
-    }
+
+    var pengirimId = (custUpsert && custUpsert.pengirim && custUpsert.pengirim.id) || "";
+    var penerimaId = (custUpsert && custUpsert.penerima && custUpsert.penerima.id) || "";
     
     DatabaseService.appendAudit(params.admin_id, "PREINPUT_SIMPAN", "Mencatat pre-input '" + params.nama_pengirim + "' ke '" + params.nama_penerima + "' (" + txId + ")", params.outlet_id_tugas);
 
@@ -3991,6 +3962,8 @@ var TransactionService = {
       tanggal_transaksi: nowStr.split("T")[0],
       jam_transaksi: nowStr.split("T")[1] ? nowStr.split("T")[1].slice(0, 8) : "00:00:00",
       ekspedisi: params.ekspedisi,
+      pengirim_id: pengirimId,
+      penerima_id: penerimaId,
       snapshot_nama_pengirim: params.nama_pengirim,
       snapshot_hp_pengirim: params.hp_pengirim,
       snapshot_alamat_pengirim: params.alamat_pengirim,
@@ -4236,6 +4209,31 @@ var TransactionService = {
       data.outlet_id_input
     );
 
+    // Durable Customer & Address Book Upsert (Counterpart to autoUpsertCustomerAndAddressBook)
+    var custUpsert = null;
+    try {
+      custUpsert = upsertCustomerAndAddressBook({
+        outlet_id: data.outlet_id_input,
+        admin_id: data.admin_id_pencatat,
+        nama_pengirim: data.nama_pengirim,
+        hp_pengirim: data.hp_pengirim,
+        alamat_pengirim: data.alamat_pengirim,
+        kode_pos_pengirim: data.kode_pos_pengirim || "",
+        hp_pengirim_alternatif: data.hp_pengirim_alternatif || "",
+        nama_penerima: data.nama_penerima,
+        hp_penerima: data.hp_penerima,
+        alamat_penerima: data.alamat_penerima,
+        kode_pos_penerima: data.kode_pos_penerima || "",
+        hp_penerima_alternatif: data.hp_penerima_alternatif || "",
+        timestamp: txTimestamp
+      });
+    } catch (eCust) {
+      Logger.log("Warning: upsertCustomerAndAddressBook failed in saveTransaction: " + eCust.toString());
+    }
+
+    var pengirimId = (custUpsert && custUpsert.pengirim && custUpsert.pengirim.id) || "";
+    var penerimaId = (custUpsert && custUpsert.penerima && custUpsert.penerima.id) || "";
+
     autoUpsertMasterTransaksiAndPengiriman({
       transaksi_id: transId,
       id: transId,
@@ -4249,6 +4247,8 @@ var TransactionService = {
       no_resi: resiId,
       ekspedisi: data.ekspedisi || jenisLayanan,
       tipe_produk: data.tipe_produk,
+      pengirim_id: pengirimId,
+      penerima_id: penerimaId,
       snapshot_nama_pengirim: data.nama_pengirim,
       snapshot_hp_pengirim: data.hp_pengirim,
       snapshot_alamat_pengirim: data.alamat_pengirim,
@@ -4380,6 +4380,31 @@ var TransactionService = {
     
     DatabaseService.updateFullRowByColumn(sheetName, "resi_id", targetResi, rowObj);
     
+    // Durable Customer & Address Book Upsert
+    var custUpsert = null;
+    try {
+      custUpsert = upsertCustomerAndAddressBook({
+        outlet_id: data.outlet_id_input || existingTx.outlet_id_input,
+        admin_id: existingTx.admin_id_pencatat || data.admin_id_pencatat || "SYSTEM",
+        nama_pengirim: data.nama_pengirim,
+        hp_pengirim: data.hp_pengirim,
+        alamat_pengirim: data.alamat_pengirim,
+        kode_pos_pengirim: data.kode_pos_pengirim || "",
+        hp_pengirim_alternatif: data.hp_pengirim_alternatif || "",
+        nama_penerima: data.nama_penerima,
+        hp_penerima: data.hp_penerima,
+        alamat_penerima: data.alamat_penerima,
+        kode_pos_penerima: data.kode_pos_penerima || "",
+        hp_penerima_alternatif: data.hp_penerima_alternatif || "",
+        timestamp: existingTx.timestamp || (existingMaster && existingMaster.created_at) || new Date().toISOString()
+      });
+    } catch (eCust) {
+      Logger.log("Warning: upsertCustomerAndAddressBook failed in updateTransaction: " + eCust.toString());
+    }
+
+    var pengirimId = (custUpsert && custUpsert.pengirim && custUpsert.pengirim.id) || existingTx.pengirim_id || "";
+    var penerimaId = (custUpsert && custUpsert.penerima && custUpsert.penerima.id) || existingTx.penerima_id || "";
+
     var existingStatus = data.status_transaksi
                       || (existingMaster && existingMaster.status_transaksi)
                       || existingTx.status_transaksi
@@ -4394,6 +4419,8 @@ var TransactionService = {
       resi_id: resiId,
       ekspedisi: data.ekspedisi || jenisLayanan,
       tipe_produk: data.tipe_produk,
+      pengirim_id: pengirimId,
+      penerima_id: penerimaId,
       snapshot_nama_pengirim: data.nama_pengirim,
       snapshot_hp_pengirim: data.hp_pengirim,
       snapshot_alamat_pengirim: data.alamat_pengirim,
@@ -7140,5 +7167,342 @@ function apiRejectPromoReviewValidation(params) {
     return { status: "success", message: "Validasi promo berhasil ditolak.", data: val };
   } catch (err) {
     return { status: "error", message: err.message || err.toString() };
+  }
+}
+
+/**
+ * Single Durable Customer Write Path.
+ * Persists and upserts customer and address book records to Google Sheets:
+ * - Master_Customer
+ * - MASTER_PENGIRIM
+ * - MASTER_PENERIMA
+ * - Riwayat_Penerima
+ */
+function upsertCustomerAndAddressBook(params) {
+  try {
+    params = params || {};
+    var nowStr = params.timestamp || new Date().toISOString();
+    var outletId = String(params.outlet_id || params.outlet_id_tugas || "OUT-001").trim();
+    var adminId = String(params.admin_id || "SYSTEM").trim();
+
+    var namaSenderClean = String(params.nama_pengirim || "").trim();
+    var hpSenderClean = String(params.hp_pengirim || "").trim();
+    var hpSenderNorm = normalizePhone_(hpSenderClean);
+    var alamatSenderClean = String(params.alamat_pengirim || "").trim();
+    var zipSenderClean = String(params.kode_pos_pengirim || "").trim();
+    var altPhoneSender = String(params.hp_pengirim_alternatif || "").trim();
+
+    var namaRecClean = String(params.nama_penerima || "").trim();
+    var hpRecClean = String(params.hp_penerima || "").trim();
+    var hpRecNorm = normalizePhone_(hpRecClean);
+    var alamatRecClean = String(params.alamat_penerima || "").trim();
+    var zipRecClean = String(params.kode_pos_penerima || "").trim();
+    var altPhoneRec = String(params.hp_penerima_alternatif || "").trim();
+
+    var created = { customer: false, pengirim: false, penerima: false, riwayat_penerima: false };
+    var updated = { customer: false, pengirim: false, penerima: false, riwayat_penerima: false };
+
+    // Helper: find customer by normalized phone in Master_Customer
+    function findCustomerByPhone(phoneNorm) {
+      if (!phoneNorm) return null;
+      var raw = DatabaseService.getSheetData("Master_Customer");
+      if (!raw || raw.length < 2) return null;
+      var headers = raw[0];
+      for (var i = 1; i < raw.length; i++) {
+        var rowObj = rowToObject_(headers, raw[i]);
+        if (rowObj.customer_id) {
+          var pNorm = normalizePhone_(rowObj.telepon || rowObj.no_hp);
+          if (pNorm === phoneNorm) {
+            return rowObj;
+          }
+        }
+      }
+      return null;
+    }
+
+    // Helper: find address in MASTER_PENGIRIM
+    function findPengirim(custId, phoneNorm, addrClean) {
+      var raw = DatabaseService.getSheetData("MASTER_PENGIRIM");
+      if (!raw || raw.length < 2) return null;
+      var headers = raw[0];
+      var fallbackMatch = null;
+      for (var i = 1; i < raw.length; i++) {
+        var rowObj = rowToObject_(headers, raw[i]);
+        var pNorm = normalizePhone_(rowObj.telepon);
+        var matchCust = custId && rowObj.customer_id === custId;
+        var matchPhone = phoneNorm && pNorm === phoneNorm;
+        if (matchCust || matchPhone) {
+          if (!fallbackMatch) fallbackMatch = rowObj;
+          if (addrClean && String(rowObj.alamat || "").trim().toLowerCase() === addrClean.toLowerCase()) {
+            return rowObj;
+          }
+        }
+      }
+      return addrClean ? null : fallbackMatch;
+    }
+
+    // Helper: find address in MASTER_PENERIMA
+    function findPenerima(custId, phoneNorm, addrClean) {
+      var raw = DatabaseService.getSheetData("MASTER_PENERIMA");
+      if (!raw || raw.length < 2) return null;
+      var headers = raw[0];
+      var fallbackMatch = null;
+      for (var i = 1; i < raw.length; i++) {
+        var rowObj = rowToObject_(headers, raw[i]);
+        var pNorm = normalizePhone_(rowObj.telepon);
+        var matchCust = custId && rowObj.customer_id === custId;
+        var matchPhone = phoneNorm && pNorm === phoneNorm;
+        if (matchCust || matchPhone) {
+          if (!fallbackMatch) fallbackMatch = rowObj;
+          if (addrClean && String(rowObj.alamat || "").trim().toLowerCase() === addrClean.toLowerCase()) {
+            return rowObj;
+          }
+        }
+      }
+      return addrClean ? null : fallbackMatch;
+    }
+
+    // Helper: find recipient history in Riwayat_Penerima
+    function findRiwayatPenerima(phoneNorm) {
+      if (!phoneNorm) return null;
+      var raw = DatabaseService.getSheetData("Riwayat_Penerima");
+      if (!raw || raw.length < 2) return null;
+      var headers = raw[0];
+      for (var i = 1; i < raw.length; i++) {
+        var rowObj = rowToObject_(headers, raw[i]);
+        var pNorm = normalizePhone_(rowObj.no_hp_penerima);
+        if (pNorm === phoneNorm) {
+          return rowObj;
+        }
+      }
+      return null;
+    }
+
+    // 1. SENDER: Master_Customer & MASTER_PENGIRIM
+    var senderCustId = "";
+    var pengirimId = "";
+    var finalSenderName = namaSenderClean;
+    var finalSenderPhone = hpSenderClean;
+
+    if (hpSenderNorm || hpSenderClean) {
+      var existingSenderCust = findCustomerByPhone(hpSenderNorm);
+      if (existingSenderCust) {
+        senderCustId = existingSenderCust.customer_id;
+        finalSenderPhone = existingSenderCust.telepon || existingSenderCust.no_hp || hpSenderClean;
+        var custUpdates = { updated_at: nowStr, last_updated: nowStr };
+        if (namaSenderClean && (!existingSenderCust.nama || existingSenderCust.nama !== namaSenderClean)) {
+          custUpdates.nama = namaSenderClean;
+          custUpdates.nama_pengirim = namaSenderClean;
+          finalSenderName = namaSenderClean;
+        } else {
+          finalSenderName = existingSenderCust.nama || existingSenderCust.nama_pengirim || namaSenderClean;
+        }
+        if (alamatSenderClean && !existingSenderCust.alamat_pengirim) {
+          custUpdates.alamat_pengirim = alamatSenderClean;
+        }
+        DatabaseService.updateRowByColumn("Master_Customer", "customer_id", senderCustId, custUpdates);
+        updated.customer = true;
+      } else {
+        senderCustId = "CST-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100);
+        var newCustObj = {
+          customer_id: senderCustId,
+          nama_pengirim: namaSenderClean,
+          no_hp: hpSenderClean,
+          alamat_pengirim: alamatSenderClean,
+          outlet_id: outletId,
+          last_updated: nowStr,
+          nama: namaSenderClean,
+          telepon: hpSenderClean,
+          created_at: nowStr,
+          updated_at: nowStr,
+          status: "AKTIF"
+        };
+        DatabaseService.appendRow("Master_Customer", newCustObj);
+        created.customer = true;
+      }
+
+      // Upsert MASTER_PENGIRIM
+      var existingPengirim = findPengirim(senderCustId, hpSenderNorm, alamatSenderClean);
+      if (existingPengirim) {
+        pengirimId = existingPengirim.id;
+        var sndUpdates = {
+          updated_at: nowStr,
+          tanggal_terakhir: nowStr,
+          jumlah_pengiriman: (Number(existingPengirim.jumlah_pengiriman) || 0) + 1
+        };
+        if (namaSenderClean && existingPengirim.nama !== namaSenderClean) sndUpdates.nama = namaSenderClean;
+        if (hpSenderClean && existingPengirim.telepon !== hpSenderClean) sndUpdates.telepon = hpSenderClean;
+        if (alamatSenderClean && existingPengirim.alamat !== alamatSenderClean) sndUpdates.alamat = alamatSenderClean;
+        if (zipSenderClean && existingPengirim.kode_pos !== zipSenderClean) sndUpdates.kode_pos = zipSenderClean;
+        if (altPhoneSender && existingPengirim.telepon_alternatif !== altPhoneSender) sndUpdates.telepon_alternatif = altPhoneSender;
+
+        DatabaseService.updateRowByColumn("MASTER_PENGIRIM", "id", pengirimId, sndUpdates);
+        updated.pengirim = true;
+      } else {
+        pengirimId = "SND-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100);
+        var newSndObj = {
+          id: pengirimId,
+          customer_id: senderCustId, // NEVER empty
+          nama: namaSenderClean,
+          telepon: hpSenderClean,
+          provinsi: "",
+          kabupaten: "",
+          kecamatan: "",
+          kelurahan: "",
+          kode_pos: zipSenderClean,
+          alamat: alamatSenderClean,
+          jumlah_pengiriman: 1,
+          tanggal_pertama: nowStr,
+          tanggal_terakhir: nowStr,
+          status: "AKTIF",
+          created_at: nowStr,
+          updated_at: nowStr,
+          outlet_id_asal: outletId,
+          telepon_alternatif: altPhoneSender,
+          import_id: ""
+        };
+        DatabaseService.appendRow("MASTER_PENGIRIM", newSndObj);
+        created.pengirim = true;
+      }
+    }
+
+    // 2. RECIPIENT: Master_Customer & MASTER_PENERIMA
+    var recCustId = "";
+    var penerimaId = "";
+    var finalRecName = namaRecClean;
+    var finalRecPhone = hpRecClean;
+
+    if (hpRecNorm || hpRecClean) {
+      var existingRecCust = findCustomerByPhone(hpRecNorm);
+      if (existingRecCust) {
+        recCustId = existingRecCust.customer_id;
+        finalRecPhone = existingRecCust.telepon || existingRecCust.no_hp || hpRecClean;
+        var rCustUpdates = { updated_at: nowStr, last_updated: nowStr };
+        if (namaRecClean && (!existingRecCust.nama || existingRecCust.nama !== namaRecClean)) {
+          rCustUpdates.nama = namaRecClean;
+          rCustUpdates.nama_pengirim = namaRecClean;
+          finalRecName = namaRecClean;
+        } else {
+          finalRecName = existingRecCust.nama || existingRecCust.nama_pengirim || namaRecClean;
+        }
+        DatabaseService.updateRowByColumn("Master_Customer", "customer_id", recCustId, rCustUpdates);
+      } else {
+        recCustId = "CST-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100);
+        var newRecCustObj = {
+          customer_id: recCustId,
+          nama_pengirim: namaRecClean,
+          no_hp: hpRecClean,
+          alamat_pengirim: alamatRecClean,
+          outlet_id: outletId,
+          last_updated: nowStr,
+          nama: namaRecClean,
+          telepon: hpRecClean,
+          created_at: nowStr,
+          updated_at: nowStr,
+          status: "AKTIF"
+        };
+        DatabaseService.appendRow("Master_Customer", newRecCustObj);
+      }
+
+      // Upsert MASTER_PENERIMA
+      var existingPenerima = findPenerima(recCustId, hpRecNorm, alamatRecClean);
+      if (existingPenerima) {
+        penerimaId = existingPenerima.id;
+        var rcvUpdates = {
+          updated_at: nowStr,
+          tanggal_terakhir: nowStr,
+          jumlah_diterima: (Number(existingPenerima.jumlah_diterima) || 0) + 1
+        };
+        if (namaRecClean && existingPenerima.nama !== namaRecClean) rcvUpdates.nama = namaRecClean;
+        if (hpRecClean && existingPenerima.telepon !== hpRecClean) rcvUpdates.telepon = hpRecClean;
+        if (alamatRecClean && existingPenerima.alamat !== alamatRecClean) rcvUpdates.alamat = alamatRecClean;
+        if (zipRecClean && existingPenerima.kode_pos !== zipRecClean) rcvUpdates.kode_pos = zipRecClean;
+        if (altPhoneRec && existingPenerima.telepon_alternatif !== altPhoneRec) rcvUpdates.telepon_alternatif = altPhoneRec;
+
+        DatabaseService.updateRowByColumn("MASTER_PENERIMA", "id", penerimaId, rcvUpdates);
+        updated.penerima = true;
+      } else {
+        penerimaId = "RCV-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100);
+        var newRcvObj = {
+          id: penerimaId,
+          customer_id: recCustId, // Recipient's own valid customer_id (NEVER empty)
+          nama: namaRecClean,
+          telepon: hpRecClean,
+          provinsi: "",
+          kabupaten: "",
+          kecamatan: "",
+          kelurahan: "",
+          kode_pos: zipRecClean,
+          alamat: alamatRecClean,
+          jumlah_diterima: 1,
+          tanggal_pertama: nowStr,
+          tanggal_terakhir: nowStr,
+          status: "AKTIF",
+          created_at: nowStr,
+          updated_at: nowStr,
+          outlet_id_asal: outletId,
+          telepon_alternatif: altPhoneRec,
+          import_id: ""
+        };
+        DatabaseService.appendRow("MASTER_PENERIMA", newRcvObj);
+        created.penerima = true;
+      }
+
+      // Upsert Riwayat_Penerima (Recipient history)
+      var riwayatId = "";
+      var existingRiwayat = findRiwayatPenerima(hpRecNorm);
+      if (existingRiwayat) {
+        riwayatId = existingRiwayat.id;
+        var rwUpdates = { tanggal_terakhir_kirim: nowStr };
+        if (namaRecClean && existingRiwayat.nama_penerima !== namaRecClean) rwUpdates.nama_penerima = namaRecClean;
+        if (alamatRecClean && existingRiwayat.alamat_penerima !== alamatRecClean) rwUpdates.alamat_penerima = alamatRecClean;
+        DatabaseService.updateRowByColumn("Riwayat_Penerima", "id", riwayatId, rwUpdates);
+        updated.riwayat_penerima = true;
+      } else {
+        riwayatId = "REC-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100);
+        var newRwObj = {
+          id: riwayatId,
+          customer_id: recCustId, // Recipient's own customer ID
+          nama_penerima: namaRecClean,
+          no_hp_penerima: hpRecClean,
+          alamat_penerima: alamatRecClean,
+          tanggal_terakhir_kirim: nowStr
+        };
+        DatabaseService.appendRow("Riwayat_Penerima", newRwObj);
+        created.riwayat_penerima = true;
+      }
+    }
+
+    return {
+      status: "success",
+      customer: {
+        customer_id: senderCustId,
+        nama: finalSenderName,
+        telepon: finalSenderPhone
+      },
+      recipient_customer: {
+        customer_id: recCustId,
+        nama: finalRecName,
+        telepon: finalRecPhone
+      },
+      pengirim: {
+        id: pengirimId,
+        customer_id: senderCustId
+      },
+      penerima: {
+        id: penerimaId,
+        customer_id: recCustId
+      },
+      riwayat_penerima: {
+        id: riwayatId || ""
+      },
+      created: created,
+      updated: updated
+    };
+  } catch (err) {
+    return {
+      status: "error",
+      message: err.message || err.toString()
+    };
   }
 }
