@@ -202,6 +202,14 @@ function handleRouting(action, params) {
       return apiSaveAuditYoyiBatch(params);
     case "getAuditYoyiBatch":
       return apiGetAuditYoyiBatch(params);
+    case "savePromoReviewValidation":
+      return apiSavePromoReviewValidation(params);
+    case "getPromoReviewValidations":
+      return apiGetPromoReviewValidations(params);
+    case "approvePromoReviewValidation":
+      return apiApprovePromoReviewValidation(params);
+    case "rejectPromoReviewValidation":
+      return apiRejectPromoReviewValidation(params);
     default:
       return { status: "error", message: "Aksi tidak dikenali: " + action };
   }
@@ -2755,7 +2763,7 @@ function simulateSha256(input) {
 // Jangan hapus/reorder kolom existing di sini — itu mengubah posisi index yang
 // sudah dipakai kode lain (mis. getRange(row, N)).
 // ==========================================
-var DB_SCHEMA_VERSION = 13; // v13: tambah AuditYoyiBatch snapshot table
+var DB_SCHEMA_VERSION = 14; // v14: tambah PromoReviewValidations table
 
 var DB_SCHEMA = {
   // Kolom lama TIDAK BOLEH dihapus/direorder — hanya tambah di ujung kanan.
@@ -2837,6 +2845,11 @@ var DB_SCHEMA = {
   AuditYoyiBatch: [
     "id", "outlet_id", "admin_id_terkait", "tanggal_serah_terima", "resi_id", "sumber_order", "waktu_pemesanan",
     "metode_perhitungan", "status_waybill", "waktu_serah_terima", "operator_yoyi", "total_yoyi", "imported_by", "imported_at"
+  ],
+  PromoReviewValidations: [
+    "id", "transaction_id", "resi_id", "outlet_id", "source_order", "tipe_produk",
+    "discount_from_yoyi", "review_rating", "reviewer_name", "review_url", "evidence_file_url",
+    "status", "submitted_by", "submitted_at", "reviewed_by", "reviewed_at", "rejection_reason"
   ]
 };
 
@@ -6907,6 +6920,224 @@ function apiGetAuditYoyiBatch(params) {
     }
 
     return { status: "success", data: list };
+  } catch (err) {
+    return { status: "error", message: err.message || err.toString() };
+  }
+}
+
+/**
+ * Save PromoReviewValidation.
+ * Receives: { validation: Object } or direct validation Object
+ */
+function apiSavePromoReviewValidation(params) {
+  try {
+    params = params || {};
+    var v = params.validation || params;
+    if (!v || typeof v !== "object") {
+      return { status: "error", message: "Parameter validation wajib diisi." };
+    }
+
+    var resiId = String(v.resi_id || "").trim();
+    if (!resiId) {
+      return { status: "error", message: "Parameter resi_id wajib diisi." };
+    }
+
+    // Check duplicate: resi_id with status PENDING or APPROVED
+    var allRows = DatabaseService.getSheetData("PromoReviewValidations");
+    if (allRows && allRows.length > 1) {
+      var headers = allRows[0];
+      var resiIdx = headers.indexOf("resi_id");
+      var statusIdx = headers.indexOf("status");
+      if (resiIdx !== -1 && statusIdx !== -1) {
+        for (var i = 1; i < allRows.length; i++) {
+          var rResi = String(allRows[i][resiIdx] || "").trim().toUpperCase();
+          var rStatus = String(allRows[i][statusIdx] || "").trim().toUpperCase();
+          if (rResi === resiId.toUpperCase() && (rStatus === "PENDING" || rStatus === "APPROVED")) {
+            return { status: "error", message: "Validasi untuk resi ini sudah ada (PENDING/APPROVED)." };
+          }
+        }
+      }
+    }
+
+    var id = String(v.id || ("PRV-" + Date.now())).trim();
+    var nowStr = new Date().toISOString();
+
+    var rowObj = {
+      id: id,
+      transaction_id: String(v.transaction_id || "").trim(),
+      resi_id: resiId,
+      outlet_id: String(v.outlet_id || "OUT-001").trim(),
+      source_order: String(v.source_order || "VIP").trim(),
+      tipe_produk: String(v.tipe_produk || "EZ").trim(),
+      discount_from_yoyi: Number(v.discount_from_yoyi) || 0,
+      review_rating: (v.review_rating !== null && v.review_rating !== undefined && v.review_rating !== "") ? Number(v.review_rating) : "",
+      reviewer_name: String(v.reviewer_name || "").trim(),
+      review_url: String(v.review_url || "").trim(),
+      evidence_file_url: String(v.evidence_file_url || "").trim(),
+      status: String(v.status || "PENDING").trim(),
+      submitted_by: String(v.submitted_by || "").trim(),
+      submitted_at: v.submitted_at || nowStr,
+      reviewed_by: String(v.reviewed_by || "").trim(),
+      reviewed_at: String(v.reviewed_at || "").trim(),
+      rejection_reason: String(v.rejection_reason || "").trim()
+    };
+
+    DatabaseService.insertRow("PromoReviewValidations", rowObj);
+
+    DatabaseService.appendAudit(
+      rowObj.submitted_by || "SYSTEM",
+      "PROMO_REVIEW_SUBMIT",
+      "Submit validasi promo ulasan 5-star resi " + rowObj.resi_id,
+      rowObj.outlet_id
+    );
+
+    return { status: "success", message: "Validasi promo berhasil disimpan.", data: rowObj };
+  } catch (err) {
+    return { status: "error", message: err.message || err.toString() };
+  }
+}
+
+/**
+ * Get PromoReviewValidations rows.
+ * Optional filters: outlet_id, status, resi_id
+ */
+function apiGetPromoReviewValidations(params) {
+  try {
+    params = params || {};
+    var rows = DatabaseService.getSheetData("PromoReviewValidations");
+    if (!rows || rows.length < 2) {
+      return { status: "success", data: [] };
+    }
+
+    var headers = rows[0];
+    var list = [];
+
+    for (var i = 1; i < rows.length; i++) {
+      var obj = rowToObject_(headers, rows[i]);
+      if (!obj.id) continue;
+
+      if (params.outlet_id && params.outlet_id !== "ALL" && obj.outlet_id !== params.outlet_id) continue;
+      if (params.status && obj.status !== params.status) continue;
+      if (params.resi_id && String(obj.resi_id).toUpperCase() !== String(params.resi_id).toUpperCase()) continue;
+
+      obj.discount_from_yoyi = Number(obj.discount_from_yoyi) || 0;
+      obj.review_rating = (obj.review_rating !== "" && obj.review_rating !== null && obj.review_rating !== undefined) ? Number(obj.review_rating) : null;
+
+      list.push(obj);
+    }
+
+    return { status: "success", data: list };
+  } catch (err) {
+    return { status: "error", message: err.message || err.toString() };
+  }
+}
+
+/**
+ * Approve PromoReviewValidation.
+ * Receives: { validation_id, owner_id }
+ */
+function apiApprovePromoReviewValidation(params) {
+  try {
+    params = params || {};
+    var validationId = String(params.validation_id || "").trim();
+    var ownerId = String(params.owner_id || "OWNER").trim();
+
+    if (!validationId) {
+      return { status: "error", message: "Parameter validation_id wajib diisi." };
+    }
+
+    var val = DatabaseService.findRowByColumn("PromoReviewValidations", "id", validationId);
+    if (!val) {
+      return { status: "error", message: "Data validasi tidak ditemukan." };
+    }
+
+    if (val.status !== "PENDING") {
+      return { status: "error", message: "Tidak dapat disetujui. Status saat ini: " + val.status };
+    }
+
+    var nowStr = new Date().toISOString();
+    var updateData = {
+      status: "APPROVED",
+      reviewed_by: ownerId,
+      reviewed_at: nowStr
+    };
+
+    var ok = DatabaseService.updateRowByColumn("PromoReviewValidations", "id", validationId, updateData);
+    if (!ok) {
+      return { status: "error", message: "Gagal memperbarui status di Google Spreadsheet." };
+    }
+
+    val.status = "APPROVED";
+    val.reviewed_by = ownerId;
+    val.reviewed_at = nowStr;
+    val.discount_from_yoyi = Number(val.discount_from_yoyi) || 0;
+    val.review_rating = (val.review_rating !== "" && val.review_rating !== null && val.review_rating !== undefined) ? Number(val.review_rating) : null;
+
+    DatabaseService.appendAudit(
+      ownerId,
+      "PROMO_REVIEW_APPROVE",
+      "Menyetujui validasi promo ulasan 5-star resi " + val.resi_id,
+      val.outlet_id || "OUT-001"
+    );
+
+    return { status: "success", message: "Validasi promo berhasil disetujui.", data: val };
+  } catch (err) {
+    return { status: "error", message: err.message || err.toString() };
+  }
+}
+
+/**
+ * Reject PromoReviewValidation.
+ * Receives: { validation_id, owner_id, reason }
+ */
+function apiRejectPromoReviewValidation(params) {
+  try {
+    params = params || {};
+    var validationId = String(params.validation_id || "").trim();
+    var ownerId = String(params.owner_id || "OWNER").trim();
+    var reason = String(params.reason || "").trim();
+
+    if (!validationId || !reason) {
+      return { status: "error", message: "Parameter validation_id dan alasan penolakan wajib diisi." };
+    }
+
+    var val = DatabaseService.findRowByColumn("PromoReviewValidations", "id", validationId);
+    if (!val) {
+      return { status: "error", message: "Data validasi tidak ditemukan." };
+    }
+
+    if (val.status !== "PENDING") {
+      return { status: "error", message: "Tidak dapat ditolak. Status saat ini: " + val.status };
+    }
+
+    var nowStr = new Date().toISOString();
+    var updateData = {
+      status: "REJECTED",
+      reviewed_by: ownerId,
+      reviewed_at: nowStr,
+      rejection_reason: reason
+    };
+
+    var ok = DatabaseService.updateRowByColumn("PromoReviewValidations", "id", validationId, updateData);
+    if (!ok) {
+      return { status: "error", message: "Gagal memperbarui status di Google Spreadsheet." };
+    }
+
+    val.status = "REJECTED";
+    val.reviewed_by = ownerId;
+    val.reviewed_at = nowStr;
+    val.rejection_reason = reason;
+    val.discount_from_yoyi = Number(val.discount_from_yoyi) || 0;
+    val.review_rating = (val.review_rating !== "" && val.review_rating !== null && val.review_rating !== undefined) ? Number(val.review_rating) : null;
+
+    DatabaseService.appendAudit(
+      ownerId,
+      "PROMO_REVIEW_REJECT",
+      "Menolak validasi promo ulasan 5-star resi " + val.resi_id + " - " + reason,
+      val.outlet_id || "OUT-001"
+    );
+
+    return { status: "success", message: "Validasi promo berhasil ditolak.", data: val };
   } catch (err) {
     return { status: "error", message: err.message || err.toString() };
   }

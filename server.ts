@@ -9967,12 +9967,25 @@ app.get("/api/management-review/history/:id", (req, res) => {
 
 app.get("/api/getPromoReviewValidations", async (req, res) => {
   let db = readDb();
-  db = await syncDbWithAppsScript(db);
   if (!db.PromoReviewValidations) db.PromoReviewValidations = [];
+
+  try {
+    const gasRes = await callAppsScript("getPromoReviewValidations", req.query || {});
+    if (gasRes && gasRes.status === "success" && Array.isArray(gasRes.data)) {
+      const remoteList = gasRes.data;
+      const remoteIds = new Set(remoteList.map((r: any) => String(r.id || "")));
+      const localOnly = db.PromoReviewValidations.filter((l: any) => l.id && !remoteIds.has(String(l.id)));
+      db.PromoReviewValidations = [...remoteList, ...localOnly];
+      writeDb(db);
+    }
+  } catch (err: any) {
+    console.warn("Apps Script getPromoReviewValidations error, fallback to local cache:", err.message);
+  }
+
   return res.json({ status: "success", data: db.PromoReviewValidations });
 });
 
-app.post("/api/submitPromoReviewValidation", (req, res) => {
+app.post("/api/submitPromoReviewValidation", async (req, res) => {
   const db = readDb();
   const { transaction_id, resi_id, admin_id, evidence_file_url, review_rating, reviewer_name, review_url } = req.body;
   
@@ -10024,14 +10037,32 @@ app.post("/api/submitPromoReviewValidation", (req, res) => {
     submitted_at: new Date().toISOString(),
   };
 
-  db.PromoReviewValidations.push(newValidation);
-  writeDb(db);
-  syncDbWithAppsScript(db).catch(console.error);
+  // STEP 5: Persist ke Apps Script / Google Sheet FIRST (fail-closed)
+  try {
+    const gasRes = await callAppsScript("savePromoReviewValidation", { validation: newValidation });
+    if (!gasRes || gasRes.status !== "success") {
+      return res.status(500).json({ status: "error", message: gasRes?.message || "Gagal menyimpan validasi ke Google Spreadsheet." });
+    }
 
-  return res.json({ status: "success", data: newValidation });
+    const savedData = gasRes.data || newValidation;
+    let freshDb = readDb();
+    if (!freshDb.PromoReviewValidations) freshDb.PromoReviewValidations = [];
+    const idx = freshDb.PromoReviewValidations.findIndex((v: any) => v.id === savedData.id || v.resi_id === savedData.resi_id);
+    if (idx >= 0) {
+      freshDb.PromoReviewValidations[idx] = savedData;
+    } else {
+      freshDb.PromoReviewValidations.push(savedData);
+    }
+    writeDb(freshDb);
+
+    return res.json({ status: "success", data: savedData });
+  } catch (err: any) {
+    console.error("Apps Script savePromoReviewValidation error:", err);
+    return res.status(500).json({ status: "error", message: `Gagal menyimpan ke Google Spreadsheet: ${err.message}` });
+  }
 });
 
-app.post("/api/approvePromoReviewValidation", (req, res) => {
+app.post("/api/approvePromoReviewValidation", async (req, res) => {
   const db = readDb();
   const { validation_id, owner_id } = req.body;
 
@@ -10045,28 +10076,34 @@ app.post("/api/approvePromoReviewValidation", (req, res) => {
     return res.status(403).json({ status: "error", message: "Hanya OWNER yang dapat menyetujui validasi promo." });
   }
 
-  if (!db.PromoReviewValidations) db.PromoReviewValidations = [];
-  const val = db.PromoReviewValidations.find((v: any) => v.id === validation_id);
-  
-  if (!val) {
-    return res.status(404).json({ status: "error", message: "Data validasi tidak ditemukan." });
+  // STEP 6: Persist update to Apps Script / Google Sheet FIRST (fail-closed)
+  try {
+    const gasRes = await callAppsScript("approvePromoReviewValidation", { validation_id, owner_id });
+    if (!gasRes || gasRes.status !== "success") {
+      return res.status(400).json({ status: "error", message: gasRes?.message || "Gagal menyetujui validasi di Google Spreadsheet." });
+    }
+
+    const updatedData = gasRes.data;
+    let freshDb = readDb();
+    if (!freshDb.PromoReviewValidations) freshDb.PromoReviewValidations = [];
+    const val = freshDb.PromoReviewValidations.find((v: any) => v.id === validation_id);
+    if (val) {
+      val.status = "APPROVED";
+      val.reviewed_by = owner_id;
+      val.reviewed_at = updatedData?.reviewed_at || new Date().toISOString();
+    } else if (updatedData) {
+      freshDb.PromoReviewValidations.push(updatedData);
+    }
+    writeDb(freshDb);
+
+    return res.json({ status: "success", data: updatedData || val });
+  } catch (err: any) {
+    console.error("Apps Script approvePromoReviewValidation error:", err);
+    return res.status(500).json({ status: "error", message: `Gagal menyetujui di Google Spreadsheet: ${err.message}` });
   }
-
-  if (val.status !== "PENDING") {
-    return res.status(400).json({ status: "error", message: `Tidak dapat disetujui. Status saat ini: ${val.status}` });
-  }
-
-  val.status = "APPROVED";
-  val.reviewed_by = owner_id;
-  val.reviewed_at = new Date().toISOString();
-
-  writeDb(db);
-  syncDbWithAppsScript(db).catch(console.error);
-
-  return res.json({ status: "success", data: val });
 });
 
-app.post("/api/rejectPromoReviewValidation", (req, res) => {
+app.post("/api/rejectPromoReviewValidation", async (req, res) => {
   const db = readDb();
   const { validation_id, owner_id, reason } = req.body;
 
@@ -10080,26 +10117,32 @@ app.post("/api/rejectPromoReviewValidation", (req, res) => {
     return res.status(403).json({ status: "error", message: "Hanya OWNER yang dapat menolak validasi promo." });
   }
 
-  if (!db.PromoReviewValidations) db.PromoReviewValidations = [];
-  const val = db.PromoReviewValidations.find((v: any) => v.id === validation_id);
-  
-  if (!val) {
-    return res.status(404).json({ status: "error", message: "Data validasi tidak ditemukan." });
+  // STEP 7: Persist update to Apps Script / Google Sheet FIRST (fail-closed)
+  try {
+    const gasRes = await callAppsScript("rejectPromoReviewValidation", { validation_id, owner_id, reason });
+    if (!gasRes || gasRes.status !== "success") {
+      return res.status(400).json({ status: "error", message: gasRes?.message || "Gagal menolak validasi di Google Spreadsheet." });
+    }
+
+    const updatedData = gasRes.data;
+    let freshDb = readDb();
+    if (!freshDb.PromoReviewValidations) freshDb.PromoReviewValidations = [];
+    const val = freshDb.PromoReviewValidations.find((v: any) => v.id === validation_id);
+    if (val) {
+      val.status = "REJECTED";
+      val.reviewed_by = owner_id;
+      val.reviewed_at = updatedData?.reviewed_at || new Date().toISOString();
+      val.rejection_reason = reason;
+    } else if (updatedData) {
+      freshDb.PromoReviewValidations.push(updatedData);
+    }
+    writeDb(freshDb);
+
+    return res.json({ status: "success", data: updatedData || val });
+  } catch (err: any) {
+    console.error("Apps Script rejectPromoReviewValidation error:", err);
+    return res.status(500).json({ status: "error", message: `Gagal menolak di Google Spreadsheet: ${err.message}` });
   }
-
-  if (val.status !== "PENDING") {
-    return res.status(400).json({ status: "error", message: `Tidak dapat ditolak. Status saat ini: ${val.status}` });
-  }
-
-  val.status = "REJECTED";
-  val.reviewed_by = owner_id;
-  val.reviewed_at = new Date().toISOString();
-  val.rejection_reason = reason;
-
-  writeDb(db);
-  syncDbWithAppsScript(db).catch(console.error);
-
-  return res.json({ status: "success", data: val });
 });
 
 // ==========================================
