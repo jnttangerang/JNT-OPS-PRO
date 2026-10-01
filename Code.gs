@@ -4284,17 +4284,27 @@ var TransactionService = {
       Logger.log("Warning: gagal ambil record untuk response: " + e.toString());
     }
     
+    var gasCustIds = {
+      sender_customer_id: customerIds.sender_customer_id,
+      recipient_customer_id: customerIds.recipient_customer_id,
+      pengirim_id: customerIds.pengirim_id,
+      penerima_id: customerIds.penerima_id,
+      riwayat_penerima_id: (custUpsert && custUpsert.riwayat_penerima && custUpsert.riwayat_penerima.id) ? custUpsert.riwayat_penerima.id : ""
+    };
+
     return {
       status: "success",
       resi_id: resiId,
       transaksi_id: transId,
       transaksi: txRecord,
       exp_resi: expRecord,
+      customer_ids: gasCustIds,
       data: {
         resi_id: resiId,
         transaksi_id: transId,
         transaksi: txRecord,
-        exp_resi: expRecord
+        exp_resi: expRecord,
+        customer_ids: gasCustIds
       }
     };
   },
