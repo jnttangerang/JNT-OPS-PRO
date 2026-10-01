@@ -10445,13 +10445,6 @@ app.post("/api/yoyi/update", async (req, res) => {
   if (!transaksi_id && !resi_id) return res.status(400).json({ status: "error", message: "transaksi_id atau resi_id diperlukan" });
   
   try {
-    // 1. Await callAppsScript("updateYoYiTransaction", ...)
-    const appsScriptRes = await callAppsScript("updateYoYiTransaction", req.body);
-    // 2. Jika gagal -> HTTP error, STOP
-    if (!appsScriptRes || appsScriptRes.status !== "success") {
-      return res.status(500).json(appsScriptRes || { status: "error", message: "Gagal memperbarui transaksi YoYi di Apps Script" });
-    }
-    
     // Check if customer/sender/recipient info changed
     const hasCustomerChanges = 
       updates.nama_pengirim !== undefined ||
@@ -10461,86 +10454,136 @@ app.post("/api/yoyi/update", async (req, res) => {
       updates.hp_penerima !== undefined ||
       updates.alamat_penerima !== undefined;
 
-    // Update local cache
     const db = readDb();
     const masterTx = (db.MASTER_TRANSAKSI || []).find((t: any) => t.id === transaksi_id || t.transaksi_id === transaksi_id || t.no_resi === resi_id);
-    if (masterTx) {
-       Object.assign(masterTx, appsScriptRes.data);
-       if (updates.nama_pengirim !== undefined) masterTx.snapshot_nama_pengirim = updates.nama_pengirim;
-       if (updates.hp_pengirim !== undefined) masterTx.snapshot_hp_pengirim = updates.hp_pengirim;
-       if (updates.alamat_pengirim !== undefined) masterTx.snapshot_alamat_pengirim = updates.alamat_pengirim;
-       if (updates.nama_penerima !== undefined) masterTx.snapshot_nama_penerima = updates.nama_penerima;
-       if (updates.hp_penerima !== undefined) masterTx.snapshot_hp_penerima = updates.hp_penerima;
-       if (updates.alamat_penerima !== undefined) masterTx.snapshot_alamat_penerima = updates.alamat_penerima;
-       
-       if (hasCustomerChanges) {
-         // 3. Await callAppsScript("upsertCustomerAndAddressBook", ...)
-         let gasCustRes: any;
-         try {
-           gasCustRes = await callAppsScript("upsertCustomerAndAddressBook", {
-             outlet_id: masterTx.outlet_id || "OUTLET-YOYI",
-             nama_pengirim: masterTx.snapshot_nama_pengirim,
-             hp_pengirim: masterTx.snapshot_hp_pengirim,
-             alamat_pengirim: masterTx.snapshot_alamat_pengirim,
-             nama_penerima: masterTx.snapshot_nama_penerima,
-             hp_penerima: masterTx.snapshot_hp_penerima,
-             alamat_penerima: masterTx.snapshot_alamat_penerima
-           });
-         } catch (gasErr: any) {
-           return res.status(503).json({
-             status: "error",
-             message: "Gagal menyimpan customer ke Google Sheets: " + (gasErr.message || "Apps Script tidak merespons"),
-             retry: true
-           });
-         }
 
-         if (!gasCustRes || gasCustRes.status !== "success") {
-           return res.status(503).json({
-             status: "error",
-             message: gasCustRes?.message || "Gagal melakukan durable upsert customer di Google Apps Script",
-             retry: true
-           });
-         }
+    if (hasCustomerChanges) {
+      const targetOutletId = updates.outlet_id || masterTx?.outlet_id || req.body.outlet_id || "OUTLET-YOYI";
+      const targetNamaPengirim = updates.nama_pengirim !== undefined ? updates.nama_pengirim : (masterTx?.snapshot_nama_pengirim || masterTx?.nama_pengirim || "");
+      const targetHpPengirim = updates.hp_pengirim !== undefined ? updates.hp_pengirim : (masterTx?.snapshot_hp_pengirim || masterTx?.hp_pengirim || "");
+      const targetAlamatPengirim = updates.alamat_pengirim !== undefined ? updates.alamat_pengirim : (masterTx?.snapshot_alamat_pengirim || masterTx?.alamat_pengirim || "");
+      const targetNamaPenerima = updates.nama_penerima !== undefined ? updates.nama_penerima : (masterTx?.snapshot_nama_penerima || masterTx?.nama_penerima || "");
+      const targetHpPenerima = updates.hp_penerima !== undefined ? updates.hp_penerima : (masterTx?.snapshot_hp_penerima || masterTx?.hp_penerima || "");
+      const targetAlamatPenerima = updates.alamat_penerima !== undefined ? updates.alamat_penerima : (masterTx?.snapshot_alamat_penerima || masterTx?.alamat_penerima || "");
 
-         // 4 & 5. Validasi: customer.customer_id, recipient_customer.customer_id, pengirim.id, penerima.id
-         const custData = gasCustRes.data || gasCustRes;
-         const senderCustId = custData.customer?.customer_id ? String(custData.customer.customer_id).trim() : "";
-         const recCustId = custData.recipient_customer?.customer_id ? String(custData.recipient_customer.customer_id).trim() : "";
-         const pengirimId = custData.pengirim?.id ? String(custData.pengirim.id).trim() : "";
-         const penerimaId = custData.penerima?.id ? String(custData.penerima.id).trim() : "";
+      // 1. DURABLE CUSTOMER FIRST
+      let gasCustRes: any;
+      try {
+        gasCustRes = await callAppsScript("upsertCustomerAndAddressBook", {
+          outlet_id: targetOutletId,
+          nama_pengirim: targetNamaPengirim,
+          hp_pengirim: targetHpPengirim,
+          alamat_pengirim: targetAlamatPengirim,
+          nama_penerima: targetNamaPenerima,
+          hp_penerima: targetHpPenerima,
+          alamat_penerima: targetAlamatPenerima
+        });
+      } catch (gasErr: any) {
+        return res.status(503).json({
+          status: "error",
+          success: false,
+          retry: true,
+          message: "Gagal menyimpan customer ke Google Sheets: " + (gasErr.message || "Apps Script tidak merespons")
+        });
+      }
 
-         if (!senderCustId || !recCustId || !pengirimId || !penerimaId) {
-           return res.status(503).json({
-             status: "error",
-             message: "Respons GAS tidak memuat ID customer/alamat lengkap (sender_customer_id, recipient_customer_id, pengirim_id, penerima_id wajib ada).",
-             retry: true
-           });
-         }
+      // 2. FAIL CLOSED
+      if (!gasCustRes || gasCustRes.status !== "success") {
+        return res.status(503).json({
+          status: "error",
+          success: false,
+          retry: true,
+          message: gasCustRes?.message || "Gagal melakukan durable upsert customer di Google Apps Script"
+        });
+      }
 
-         // 6. Setelah GAS customer sukses: update local cache menggunakan ID dari GAS
-         autoUpsertCustomerAndAddressBook(db, {
-           outlet_id: masterTx.outlet_id || "OUTLET-YOYI",
-           nama_pengirim: masterTx.snapshot_nama_pengirim,
-           hp_pengirim: masterTx.snapshot_hp_pengirim,
-           alamat_pengirim: masterTx.snapshot_alamat_pengirim,
-           nama_penerima: masterTx.snapshot_nama_penerima,
-           hp_penerima: masterTx.snapshot_hp_penerima,
-           alamat_penerima: masterTx.snapshot_alamat_penerima,
-           gas_ids: {
-             sender_customer_id: senderCustId,
-             recipient_customer_id: recCustId,
-             pengirim_id: pengirimId,
-             penerima_id: penerimaId,
-             riwayat_penerima_id: custData.riwayat_penerima?.id
-           }
-         });
-       }
+      // 3. VALIDATE CANONICAL IDS
+      const custData = gasCustRes.data || gasCustRes;
+      const senderCustId = custData.customer?.customer_id ? String(custData.customer.customer_id).trim() : "";
+      const recCustId = custData.recipient_customer?.customer_id ? String(custData.recipient_customer.customer_id).trim() : "";
+      const pengirimId = custData.pengirim?.id ? String(custData.pengirim.id).trim() : "";
+      const penerimaId = custData.penerima?.id ? String(custData.penerima.id).trim() : "";
 
-       // 7. Baru writeDb()
-       writeDb(db);
+      if (!senderCustId || !recCustId || !pengirimId || !penerimaId) {
+        return res.status(503).json({
+          status: "error",
+          success: false,
+          retry: true,
+          message: "Respons GAS tidak memuat ID customer/alamat lengkap (sender_customer_id, recipient_customer_id, pengirim_id, penerima_id wajib ada)."
+        });
+      }
+
+      // 4. ONLY NOW UPDATE TRANSACTION DURABLY
+      let appsScriptRes: any;
+      try {
+        appsScriptRes = await callAppsScript("updateYoYiTransaction", req.body);
+      } catch (txErr: any) {
+        return res.status(500).json({
+          status: "error",
+          message: "Gagal memperbarui transaksi YoYi di Apps Script: " + (txErr.message || "Apps Script error")
+        });
+      }
+
+      if (!appsScriptRes || appsScriptRes.status !== "success") {
+        return res.status(500).json(appsScriptRes || { status: "error", message: "Gagal memperbarui transaksi YoYi di Apps Script" });
+      }
+
+      // 5. CACHE ONLY AFTER BOTH DURABLE OPERATIONS SUCCEED
+      if (masterTx) {
+        Object.assign(masterTx, appsScriptRes.data);
+        if (updates.nama_pengirim !== undefined) masterTx.snapshot_nama_pengirim = updates.nama_pengirim;
+        if (updates.hp_pengirim !== undefined) masterTx.snapshot_hp_pengirim = updates.hp_pengirim;
+        if (updates.alamat_pengirim !== undefined) masterTx.snapshot_alamat_pengirim = updates.alamat_pengirim;
+        if (updates.nama_penerima !== undefined) masterTx.snapshot_nama_penerima = updates.nama_penerima;
+        if (updates.hp_penerima !== undefined) masterTx.snapshot_hp_penerima = updates.hp_penerima;
+        if (updates.alamat_penerima !== undefined) masterTx.snapshot_alamat_penerima = updates.alamat_penerima;
+        masterTx.pengirim_id = pengirimId;
+        masterTx.penerima_id = penerimaId;
+
+        autoUpsertCustomerAndAddressBook(db, {
+          outlet_id: targetOutletId,
+          nama_pengirim: targetNamaPengirim,
+          hp_pengirim: targetHpPengirim,
+          alamat_pengirim: targetAlamatPengirim,
+          nama_penerima: targetNamaPenerima,
+          hp_penerima: targetHpPenerima,
+          alamat_penerima: targetAlamatPenerima,
+          gas_ids: {
+            sender_customer_id: senderCustId,
+            recipient_customer_id: recCustId,
+            pengirim_id: pengirimId,
+            penerima_id: penerimaId,
+            riwayat_penerima_id: custData.riwayat_penerima?.id
+          }
+        });
+
+        writeDb(db);
+      }
+
+      return res.json(appsScriptRes);
+    } else {
+      // Preserve existing transaction-only flow (CASE A)
+      let appsScriptRes: any;
+      try {
+        appsScriptRes = await callAppsScript("updateYoYiTransaction", req.body);
+      } catch (txErr: any) {
+        return res.status(500).json({
+          status: "error",
+          message: "Gagal memperbarui transaksi YoYi di Apps Script: " + (txErr.message || "Apps Script error")
+        });
+      }
+
+      if (!appsScriptRes || appsScriptRes.status !== "success") {
+        return res.status(500).json(appsScriptRes || { status: "error", message: "Gagal memperbarui transaksi YoYi di Apps Script" });
+      }
+
+      if (masterTx) {
+        Object.assign(masterTx, appsScriptRes.data);
+        writeDb(db);
+      }
+
+      return res.json(appsScriptRes);
     }
-    
-    return res.json(appsScriptRes);
   } catch (e: any) {
     return res.status(500).json({ status: "error", message: e.message });
   }
