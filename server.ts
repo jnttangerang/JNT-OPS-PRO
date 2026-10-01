@@ -548,6 +548,13 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
   actor_id?: string;
   actor_name?: string;
   correlation_id?: string;
+  gas_ids?: {
+    sender_customer_id?: string;
+    recipient_customer_id?: string;
+    pengirim_id?: string;
+    penerima_id?: string;
+    riwayat_penerima_id?: string;
+  };
 }) {
   const nowStr = params.timestamp || new Date().toISOString();
   
@@ -561,14 +568,18 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
   const namaSenderClean = String(params.nama_pengirim || "").trim();
   const alamatSenderClean = String(params.alamat_pengirim || "").trim();
 
-  let senderCustId = "";
-  let pengirim_id = "";
-  if (hpSenderClean || hpSenderNorm) {
+  let senderCustId = params.gas_ids?.sender_customer_id || "";
+  let pengirim_id = params.gas_ids?.pengirim_id || "";
+  if (hpSenderClean || hpSenderNorm || senderCustId) {
     let custObj = db.MASTER_CUSTOMER.find((c: any) => 
-      normalizePhone(c.telepon || c.no_hp) === hpSenderNorm
+      (senderCustId && c.customer_id === senderCustId) ||
+      (hpSenderNorm && normalizePhone(c.telepon || c.no_hp) === hpSenderNorm)
     );
 
     if (custObj) {
+      if (params.gas_ids?.sender_customer_id) {
+        custObj.customer_id = params.gas_ids.sender_customer_id;
+      }
       if (namaSenderClean && custObj.nama !== namaSenderClean) {
         custObj.nama = namaSenderClean;
       }
@@ -576,7 +587,7 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
       senderCustId = custObj.customer_id;
     } else {
       const count = db.MASTER_CUSTOMER.length + 1;
-      senderCustId = "CUS" + String(count).padStart(6, "0");
+      senderCustId = params.gas_ids?.sender_customer_id || ("CUS" + String(count).padStart(6, "0"));
       custObj = {
         customer_id: senderCustId,
         nama: namaSenderClean,
@@ -604,8 +615,12 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
     }
 
     if (db.Master_Customer) {
-      let legacyCust = db.Master_Customer.find((c: any) => normalizePhone(c.no_hp) === hpSenderNorm);
+      let legacyCust = db.Master_Customer.find((c: any) => 
+        (senderCustId && c.customer_id === senderCustId) ||
+        (hpSenderNorm && normalizePhone(c.no_hp) === hpSenderNorm)
+      );
       if (legacyCust) {
+        if (params.gas_ids?.sender_customer_id) legacyCust.customer_id = params.gas_ids.sender_customer_id;
         legacyCust.nama_pengirim = namaSenderClean;
         legacyCust.alamat_pengirim = alamatSenderClean;
         legacyCust.last_updated = nowStr;
@@ -621,13 +636,16 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
       }
     }
 
-    if (alamatSenderClean) {
+    if (alamatSenderClean || pengirim_id) {
       let sndAddress = db.MASTER_PENGIRIM.find((p: any) => 
-        (p.customer_id === senderCustId || normalizePhone(p.telepon) === hpSenderNorm) &&
-        String(p.alamat || "").trim().toLowerCase() === alamatSenderClean.toLowerCase()
+        (pengirim_id && p.id === pengirim_id) ||
+        ((p.customer_id === senderCustId || normalizePhone(p.telepon) === hpSenderNorm) &&
+         String(p.alamat || "").trim().toLowerCase() === alamatSenderClean.toLowerCase())
       );
 
       if (sndAddress) {
+        if (params.gas_ids?.pengirim_id) sndAddress.id = params.gas_ids.pengirim_id;
+        if (senderCustId) sndAddress.customer_id = senderCustId;
         sndAddress.jumlah_pengiriman = (sndAddress.jumlah_pengiriman || 0) + 1;
         sndAddress.tanggal_terakhir = nowStr;
         sndAddress.updated_at = nowStr;
@@ -636,8 +654,9 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
         pengirim_id = sndAddress.id;
       } else {
         const sndCount = db.MASTER_PENGIRIM.length + 1;
+        const newSndId = params.gas_ids?.pengirim_id || ("SND-" + String(sndCount).padStart(6, "0"));
         const newSnd = {
-          id: "SND-" + String(sndCount).padStart(6, "0"),
+          id: newSndId,
           customer_id: senderCustId,
           nama: namaSenderClean,
           telepon: hpSenderClean,
@@ -660,6 +679,7 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
       }
     } else {
       let anySnd = db.MASTER_PENGIRIM.find((p: any) => 
+        (pengirim_id && p.id === pengirim_id) ||
         p.customer_id === senderCustId || normalizePhone(p.telepon) === hpSenderNorm
       );
       if (anySnd) pengirim_id = anySnd.id;
@@ -672,14 +692,18 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
   const namaRecClean = String(params.nama_penerima || "").trim();
   const alamatRecClean = String(params.alamat_penerima || "").trim();
 
-  let recCustId = "";
-  let penerima_id = "";
-  if (hpRecClean || hpRecNorm) {
+  let recCustId = params.gas_ids?.recipient_customer_id || "";
+  let penerima_id = params.gas_ids?.penerima_id || "";
+  if (hpRecClean || hpRecNorm || recCustId) {
     let recCustObj = db.MASTER_CUSTOMER.find((c: any) => 
-      normalizePhone(c.telepon || c.no_hp) === hpRecNorm
+      (recCustId && c.customer_id === recCustId) ||
+      (hpRecNorm && normalizePhone(c.telepon || c.no_hp) === hpRecNorm)
     );
 
     if (recCustObj) {
+      if (params.gas_ids?.recipient_customer_id) {
+        recCustObj.customer_id = params.gas_ids.recipient_customer_id;
+      }
       if (namaRecClean && recCustObj.nama !== namaRecClean) {
         recCustObj.nama = namaRecClean;
       }
@@ -687,7 +711,7 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
       recCustId = recCustObj.customer_id;
     } else {
       const count = db.MASTER_CUSTOMER.length + 1;
-      recCustId = "CUS" + String(count).padStart(6, "0");
+      recCustId = params.gas_ids?.recipient_customer_id || ("CUS" + String(count).padStart(6, "0"));
       recCustObj = {
         customer_id: recCustId,
         nama: namaRecClean,
@@ -696,7 +720,7 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
         updated_at: nowStr,
         status: "AKTIF"
       };
-            db.MASTER_CUSTOMER.push(recCustObj);
+      db.MASTER_CUSTOMER.push(recCustObj);
       if (params.correlation_id) {
         logAuditEvent(db, {
           actor_id: params.actor_id,
@@ -714,13 +738,16 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
 
     }
 
-    if (alamatRecClean) {
+    if (alamatRecClean || penerima_id) {
       let rcvAddress = db.MASTER_PENERIMA.find((r: any) => 
-        (r.customer_id === recCustId || normalizePhone(r.telepon) === hpRecNorm) &&
-        String(r.alamat || "").trim().toLowerCase() === alamatRecClean.toLowerCase()
+        (penerima_id && r.id === penerima_id) ||
+        ((r.customer_id === recCustId || normalizePhone(r.telepon) === hpRecNorm) &&
+         String(r.alamat || "").trim().toLowerCase() === alamatRecClean.toLowerCase())
       );
 
       if (rcvAddress) {
+        if (params.gas_ids?.penerima_id) rcvAddress.id = params.gas_ids.penerima_id;
+        if (recCustId) rcvAddress.customer_id = recCustId;
         rcvAddress.jumlah_diterima = (rcvAddress.jumlah_diterima || 0) + 1;
         rcvAddress.tanggal_terakhir = nowStr;
         rcvAddress.updated_at = nowStr;
@@ -729,8 +756,9 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
         penerima_id = rcvAddress.id;
       } else {
         const rcvCount = db.MASTER_PENERIMA.length + 1;
+        const newRcvId = params.gas_ids?.penerima_id || ("RCV-" + String(rcvCount).padStart(6, "0"));
         const newRcv = {
-          id: "RCV-" + String(rcvCount).padStart(6, "0"),
+          id: newRcvId,
           customer_id: recCustId,
           nama: namaRecClean,
           telepon: hpRecClean,
@@ -753,23 +781,27 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
       }
     } else {
       let anyRcv = db.MASTER_PENERIMA.find((r: any) => 
+        (penerima_id && r.id === penerima_id) ||
         r.customer_id === recCustId || normalizePhone(r.telepon) === hpRecNorm
       );
       if (anyRcv) penerima_id = anyRcv.id;
     }
 
     if (db.Riwayat_Penerima) {
+      // P0-3 & P0-6: Riwayat_Penerima.customer_id MUST always be recipient_customer.customer_id
       let rPenerima = db.Riwayat_Penerima.find(
-        (r: any) => (r.customer_id === senderCustId || r.customer_id === recCustId) && normalizePhone(r.no_hp_penerima) === hpRecNorm
+        (r: any) => (r.customer_id === recCustId || (hpRecNorm && normalizePhone(r.no_hp_penerima) === hpRecNorm))
       );
       if (rPenerima) {
+        rPenerima.customer_id = recCustId;
         rPenerima.nama_penerima = namaRecClean;
         rPenerima.alamat_penerima = alamatRecClean;
         rPenerima.tanggal_terakhir_kirim = nowStr;
       } else {
+        const newRecId = params.gas_ids?.riwayat_penerima_id || ("REC-" + String(Date.now()).slice(-5) + Math.floor(Math.random() * 10));
         db.Riwayat_Penerima.push({
-          id: "REC-" + String(Date.now()).slice(-5) + Math.floor(Math.random() * 10),
-          customer_id: senderCustId || recCustId,
+          id: newRecId,
+          customer_id: recCustId, // Always recipient's own customer ID
           nama_penerima: namaRecClean,
           no_hp_penerima: hpRecClean,
           alamat_penerima: alamatRecClean,
@@ -2473,7 +2505,7 @@ app.post("/api/deletePreInputDraft", (req, res) => {
   return res.status(404).json({ status: "error", message: "Draft tidak ditemukan." });
 });
 
-app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
+app.post(["/api/saveDataPreInput", "/api/savePreInput"], async (req, res) => {
   const {
     transaksi_id,
     is_draft,
@@ -2563,14 +2595,58 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
     status: finalStatus
   };
 
+  // 1. MUST BE FIRST: Durable Customer & Address Book Upsert via GAS (Fail-Closed)
+  let gasCustRes: any;
+  try {
+    gasCustRes = await callAppsScript("upsertCustomerAndAddressBook", {
+      outlet_id: preInputObj.outlet_id_tugas,
+      admin_id: preInputObj.admin_id,
+      nama_pengirim: preInputObj.nama_pengirim,
+      hp_pengirim: preInputObj.hp_pengirim,
+      alamat_pengirim: preInputObj.alamat_pengirim,
+      nama_penerima: preInputObj.nama_penerima,
+      hp_penerima: preInputObj.hp_penerima,
+      alamat_penerima: preInputObj.alamat_penerima,
+      timestamp: preInputObj.timestamp
+    });
+  } catch (gasErr: any) {
+    return res.status(503).json({
+      status: "error",
+      message: "Gagal menyimpan customer ke database: " + (gasErr.message || "Apps Script tidak merespons"),
+      retry: true
+    });
+  }
+
+  if (!gasCustRes || gasCustRes.status !== "success") {
+    return res.status(503).json({
+      status: "error",
+      message: gasCustRes?.message || "Gagal melakukan durable upsert customer di Google Apps Script",
+      retry: true
+    });
+  }
+
+  const custData = gasCustRes.data || gasCustRes;
+  const senderCustId = custData.customer?.customer_id ? String(custData.customer.customer_id).trim() : "";
+  const recCustId = custData.recipient_customer?.customer_id ? String(custData.recipient_customer.customer_id).trim() : "";
+  const pengirimId = custData.pengirim?.id ? String(custData.pengirim.id).trim() : "";
+  const penerimaId = custData.penerima?.id ? String(custData.penerima.id).trim() : "";
+
+  if (!senderCustId || !recCustId || !pengirimId || !penerimaId) {
+    return res.status(503).json({
+      status: "error",
+      message: "Respons GAS tidak memuat ID customer/alamat lengkap (sender_customer_id, recipient_customer_id, pengirim_id, penerima_id wajib ada).",
+      retry: true
+    });
+  }
+
+  // 2. Only after durable success, mutate local db cache
   if (existing) {
     Object.assign(existing, preInputObj);
   } else {
     db.PreInput_Backup.unshift(preInputObj);
   }
 
-  // Auto upsert customer & address book
-  const { pengirim_id, penerima_id } = autoUpsertCustomerAndAddressBook(db, {
+  autoUpsertCustomerAndAddressBook(db, {
     nama_pengirim: preInputObj.nama_pengirim,
     hp_pengirim: preInputObj.hp_pengirim,
     alamat_pengirim: preInputObj.alamat_pengirim,
@@ -2578,7 +2654,14 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
     hp_penerima: preInputObj.hp_penerima,
     alamat_penerima: preInputObj.alamat_penerima,
     timestamp: preInputObj.timestamp,
-    outlet_id_tugas: preInputObj.outlet_id_tugas
+    outlet_id_tugas: preInputObj.outlet_id_tugas,
+    gas_ids: {
+      sender_customer_id: senderCustId,
+      recipient_customer_id: recCustId,
+      pengirim_id: pengirimId,
+      penerima_id: penerimaId,
+      riwayat_penerima_id: custData.riwayat_penerima?.id
+    }
   });
 
   // Auto upsert MASTER_TRANSAKSI and MASTER_PENGIRIMAN
@@ -2589,8 +2672,8 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
     tanggal_transaksi: getWIBDate(preInputObj.timestamp || new Date()),
     jam_transaksi: getWIBTime(preInputObj.timestamp || new Date()),
     ekspedisi: preInputObj.ekspedisi,
-    pengirim_id,
-    penerima_id,
+    pengirim_id: pengirimId,
+    penerima_id: penerimaId,
     snapshot_nama_pengirim: preInputObj.nama_pengirim,
     snapshot_hp_pengirim: preInputObj.hp_pengirim,
     snapshot_alamat_pengirim: preInputObj.alamat_pengirim,
@@ -2609,18 +2692,6 @@ app.post(["/api/saveDataPreInput", "/api/savePreInput"], (req, res) => {
   });
 
   writeDb(db);
-
-  callAppsScript("upsertCustomerAndAddressBook", {
-    outlet_id: preInputObj.outlet_id_tugas,
-    admin_id: preInputObj.admin_id,
-    nama_pengirim: preInputObj.nama_pengirim,
-    hp_pengirim: preInputObj.hp_pengirim,
-    alamat_pengirim: preInputObj.alamat_pengirim,
-    nama_penerima: preInputObj.nama_penerima,
-    hp_penerima: preInputObj.hp_penerima,
-    alamat_penerima: preInputObj.alamat_penerima,
-    timestamp: preInputObj.timestamp
-  }).catch((e: any) => console.warn("savePreInput GAS customer upsert warning:", e.message));
 
   return res.json({
     status: "success",
@@ -10162,20 +10233,60 @@ app.post("/api/rejectPromoReviewValidation", async (req, res) => {
 app.post("/api/upsertCustomerAndAddressBook", async (req, res) => {
   try {
     const params = req.body || {};
-    const db = readDb();
-    const localResult = autoUpsertCustomerAndAddressBook(db, params);
-    writeDb(db);
 
-    let gasResult: any = null;
+    // 1 & 2. Call Apps Script first (Durable-first, fail-closed)
+    let gasResult: any;
     try {
       gasResult = await callAppsScript("upsertCustomerAndAddressBook", params);
     } catch (e: any) {
-      console.warn("GAS upsertCustomerAndAddressBook warning:", e.message);
+      return res.status(503).json({
+        status: "error",
+        message: "Gagal menyimpan customer ke Google Sheets: " + (e.message || "Apps Script tidak merespons"),
+        retry: true
+      });
     }
 
+    if (!gasResult || gasResult.status !== "success") {
+      return res.status(503).json({
+        status: "error",
+        message: gasResult?.message || "Gagal melakukan durable upsert customer di Google Apps Script",
+        retry: true
+      });
+    }
+
+    const custData = gasResult.data || gasResult;
+    const senderCustId = custData.customer?.customer_id ? String(custData.customer.customer_id).trim() : "";
+    const recCustId = custData.recipient_customer?.customer_id ? String(custData.recipient_customer.customer_id).trim() : "";
+    const pengirimId = custData.pengirim?.id ? String(custData.pengirim.id).trim() : "";
+    const penerimaId = custData.penerima?.id ? String(custData.penerima.id).trim() : "";
+
+    // 3 & 4. Validate all IDs. If any missing -> HTTP 503 + retry=true
+    if (!senderCustId || !recCustId || !pengirimId || !penerimaId) {
+      return res.status(503).json({
+        status: "error",
+        message: "Respons GAS tidak memuat ID customer/alamat lengkap (sender_customer_id, recipient_customer_id, pengirim_id, penerima_id wajib ada).",
+        retry: true
+      });
+    }
+
+    // 5 & 6. Only after durable success, update db.json cache with IDs from GAS
+    const db = readDb();
+    autoUpsertCustomerAndAddressBook(db, {
+      ...params,
+      gas_ids: {
+        sender_customer_id: senderCustId,
+        recipient_customer_id: recCustId,
+        pengirim_id: pengirimId,
+        penerima_id: penerimaId,
+        riwayat_penerima_id: custData.riwayat_penerima?.id
+      }
+    });
+    writeDb(db);
+
+    // 7. Return durable GAS result
     return res.json({
       status: "success",
-      data: gasResult?.data || gasResult || localResult
+      data: gasResult.data || gasResult
     });
   } catch (err: any) {
     return res.status(500).json({ status: "error", message: err.message });

@@ -3911,6 +3911,21 @@ var TransactionService = {
     var txId = this.generateTransactionId();
     var nowStr = new Date().toISOString();
     
+    // P0-2: Durable Customer & Address Book Upsert MUST be first & validated (Fail-Closed)
+    var custUpsert = upsertCustomerAndAddressBook({
+      outlet_id: params.outlet_id_tugas,
+      admin_id: params.admin_id,
+      nama_pengirim: params.nama_pengirim,
+      hp_pengirim: params.hp_pengirim,
+      alamat_pengirim: params.alamat_pengirim,
+      nama_penerima: params.nama_penerima,
+      hp_penerima: params.hp_penerima,
+      alamat_penerima: params.alamat_penerima,
+      timestamp: nowStr
+    });
+    var customerIds = requireCustomerAddressIds_(custUpsert);
+
+    // Only after durable customer success, proceed to PreInput_Backup and transaction write
     var backupObj = {
       transaksi_id: txId,
       timestamp: nowStr,
@@ -3932,27 +3947,6 @@ var TransactionService = {
     };
     DatabaseService.insertRow("PreInput_Backup", backupObj);
     
-    // Durable Customer & Address Book Upsert
-    var custUpsert = null;
-    try {
-      custUpsert = upsertCustomerAndAddressBook({
-        outlet_id: params.outlet_id_tugas,
-        admin_id: params.admin_id,
-        nama_pengirim: params.nama_pengirim,
-        hp_pengirim: params.hp_pengirim,
-        alamat_pengirim: params.alamat_pengirim,
-        nama_penerima: params.nama_penerima,
-        hp_penerima: params.hp_penerima,
-        alamat_penerima: params.alamat_penerima,
-        timestamp: nowStr
-      });
-    } catch (eCust) {
-      Logger.log("Warning: upsertCustomerAndAddressBook in savePreInput failed: " + eCust.toString());
-    }
-
-    var pengirimId = (custUpsert && custUpsert.pengirim && custUpsert.pengirim.id) || "";
-    var penerimaId = (custUpsert && custUpsert.penerima && custUpsert.penerima.id) || "";
-    
     DatabaseService.appendAudit(params.admin_id, "PREINPUT_SIMPAN", "Mencatat pre-input '" + params.nama_pengirim + "' ke '" + params.nama_penerima + "' (" + txId + ")", params.outlet_id_tugas);
 
     autoUpsertMasterTransaksiAndPengiriman({
@@ -3962,8 +3956,8 @@ var TransactionService = {
       tanggal_transaksi: nowStr.split("T")[0],
       jam_transaksi: nowStr.split("T")[1] ? nowStr.split("T")[1].slice(0, 8) : "00:00:00",
       ekspedisi: params.ekspedisi,
-      pengirim_id: pengirimId,
-      penerima_id: penerimaId,
+      pengirim_id: customerIds.pengirim_id,
+      penerima_id: customerIds.penerima_id,
       snapshot_nama_pengirim: params.nama_pengirim,
       snapshot_hp_pengirim: params.hp_pengirim,
       snapshot_alamat_pengirim: params.alamat_pengirim,
@@ -4074,6 +4068,24 @@ var TransactionService = {
       rowObj.kelengkapan_motor = data.kelengkapan_motor || "";
     }
     
+    // P0-2: Durable Customer & Address Book Upsert MUST be first & validated (Fail-Closed)
+    var custUpsert = upsertCustomerAndAddressBook({
+      outlet_id: data.outlet_id_input,
+      admin_id: data.admin_id_pencatat,
+      nama_pengirim: data.nama_pengirim,
+      hp_pengirim: data.hp_pengirim,
+      alamat_pengirim: data.alamat_pengirim,
+      kode_pos_pengirim: data.kode_pos_pengirim || "",
+      hp_pengirim_alternatif: data.hp_pengirim_alternatif || "",
+      nama_penerima: data.nama_penerima,
+      hp_penerima: data.hp_penerima,
+      alamat_penerima: data.alamat_penerima,
+      kode_pos_penerima: data.kode_pos_penerima || "",
+      hp_penerima_alternatif: data.hp_penerima_alternatif || "",
+      timestamp: txTimestamp
+    });
+    var customerIds = requireCustomerAddressIds_(custUpsert);
+
     DatabaseService.insertRow(targetSheetName, rowObj);
     
     Logger.log("[saveTransaction] Checking ledger entries for resi: " + resiId + " | biaya_packing: " + fin.biaya_packing + " | biaya_amplop: " + fin.biaya_amplop + " | outlet: " + data.outlet_id_input);
@@ -4209,31 +4221,6 @@ var TransactionService = {
       data.outlet_id_input
     );
 
-    // Durable Customer & Address Book Upsert (Counterpart to autoUpsertCustomerAndAddressBook)
-    var custUpsert = null;
-    try {
-      custUpsert = upsertCustomerAndAddressBook({
-        outlet_id: data.outlet_id_input,
-        admin_id: data.admin_id_pencatat,
-        nama_pengirim: data.nama_pengirim,
-        hp_pengirim: data.hp_pengirim,
-        alamat_pengirim: data.alamat_pengirim,
-        kode_pos_pengirim: data.kode_pos_pengirim || "",
-        hp_pengirim_alternatif: data.hp_pengirim_alternatif || "",
-        nama_penerima: data.nama_penerima,
-        hp_penerima: data.hp_penerima,
-        alamat_penerima: data.alamat_penerima,
-        kode_pos_penerima: data.kode_pos_penerima || "",
-        hp_penerima_alternatif: data.hp_penerima_alternatif || "",
-        timestamp: txTimestamp
-      });
-    } catch (eCust) {
-      Logger.log("Warning: upsertCustomerAndAddressBook failed in saveTransaction: " + eCust.toString());
-    }
-
-    var pengirimId = (custUpsert && custUpsert.pengirim && custUpsert.pengirim.id) || "";
-    var penerimaId = (custUpsert && custUpsert.penerima && custUpsert.penerima.id) || "";
-
     autoUpsertMasterTransaksiAndPengiriman({
       transaksi_id: transId,
       id: transId,
@@ -4247,8 +4234,8 @@ var TransactionService = {
       no_resi: resiId,
       ekspedisi: data.ekspedisi || jenisLayanan,
       tipe_produk: data.tipe_produk,
-      pengirim_id: pengirimId,
-      penerima_id: penerimaId,
+      pengirim_id: customerIds.pengirim_id,
+      penerima_id: customerIds.penerima_id,
       snapshot_nama_pengirim: data.nama_pengirim,
       snapshot_hp_pengirim: data.hp_pengirim,
       snapshot_alamat_pengirim: data.alamat_pengirim,
@@ -4378,32 +4365,25 @@ var TransactionService = {
       rowObj.kelengkapan_motor = data.kelengkapan_motor || "";
     }
     
-    DatabaseService.updateFullRowByColumn(sheetName, "resi_id", targetResi, rowObj);
-    
-    // Durable Customer & Address Book Upsert
-    var custUpsert = null;
-    try {
-      custUpsert = upsertCustomerAndAddressBook({
-        outlet_id: data.outlet_id_input || existingTx.outlet_id_input,
-        admin_id: existingTx.admin_id_pencatat || data.admin_id_pencatat || "SYSTEM",
-        nama_pengirim: data.nama_pengirim,
-        hp_pengirim: data.hp_pengirim,
-        alamat_pengirim: data.alamat_pengirim,
-        kode_pos_pengirim: data.kode_pos_pengirim || "",
-        hp_pengirim_alternatif: data.hp_pengirim_alternatif || "",
-        nama_penerima: data.nama_penerima,
-        hp_penerima: data.hp_penerima,
-        alamat_penerima: data.alamat_penerima,
-        kode_pos_penerima: data.kode_pos_penerima || "",
-        hp_penerima_alternatif: data.hp_penerima_alternatif || "",
-        timestamp: existingTx.timestamp || (existingMaster && existingMaster.created_at) || new Date().toISOString()
-      });
-    } catch (eCust) {
-      Logger.log("Warning: upsertCustomerAndAddressBook failed in updateTransaction: " + eCust.toString());
-    }
+    // P0-2: Durable Customer & Address Book Upsert MUST be first & validated (Fail-Closed)
+    var custUpsert = upsertCustomerAndAddressBook({
+      outlet_id: data.outlet_id_input || existingTx.outlet_id_input,
+      admin_id: existingTx.admin_id_pencatat || data.admin_id_pencatat || "SYSTEM",
+      nama_pengirim: data.nama_pengirim,
+      hp_pengirim: data.hp_pengirim,
+      alamat_pengirim: data.alamat_pengirim,
+      kode_pos_pengirim: data.kode_pos_pengirim || "",
+      hp_pengirim_alternatif: data.hp_pengirim_alternatif || "",
+      nama_penerima: data.nama_penerima,
+      hp_penerima: data.hp_penerima,
+      alamat_penerima: data.alamat_penerima,
+      kode_pos_penerima: data.kode_pos_penerima || "",
+      hp_penerima_alternatif: data.hp_penerima_alternatif || "",
+      timestamp: existingTx.timestamp || (existingMaster && existingMaster.created_at) || new Date().toISOString()
+    });
+    var customerIds = requireCustomerAddressIds_(custUpsert);
 
-    var pengirimId = (custUpsert && custUpsert.pengirim && custUpsert.pengirim.id) || existingTx.pengirim_id || "";
-    var penerimaId = (custUpsert && custUpsert.penerima && custUpsert.penerima.id) || existingTx.penerima_id || "";
+    DatabaseService.updateFullRowByColumn(sheetName, "resi_id", targetResi, rowObj);
 
     var existingStatus = data.status_transaksi
                       || (existingMaster && existingMaster.status_transaksi)
@@ -4419,8 +4399,8 @@ var TransactionService = {
       resi_id: resiId,
       ekspedisi: data.ekspedisi || jenisLayanan,
       tipe_produk: data.tipe_produk,
-      pengirim_id: pengirimId,
-      penerima_id: penerimaId,
+      pengirim_id: customerIds.pengirim_id,
+      penerima_id: customerIds.penerima_id,
       snapshot_nama_pengirim: data.nama_pengirim,
       snapshot_hp_pengirim: data.hp_pengirim,
       snapshot_alamat_pengirim: data.alamat_pengirim,
@@ -7171,6 +7151,31 @@ function apiRejectPromoReviewValidation(params) {
 }
 
 /**
+ * P0-3: Gate validator for durable customer persistence IDs.
+ * Throws error if any required ID is missing or empty.
+ */
+function requireCustomerAddressIds_(result) {
+  if (!result || typeof result !== "object") {
+    throw new Error("Durable customer persistence failed: no response object returned");
+  }
+  var senderCustId = result.customer && result.customer.customer_id ? String(result.customer.customer_id).trim() : "";
+  var recCustId = result.recipient_customer && result.recipient_customer.customer_id ? String(result.recipient_customer.customer_id).trim() : "";
+  var pengirimId = result.pengirim && result.pengirim.id ? String(result.pengirim.id).trim() : "";
+  var penerimaId = result.penerima && result.penerima.id ? String(result.penerima.id).trim() : "";
+
+  if (!senderCustId || !recCustId || !pengirimId || !penerimaId) {
+    throw new Error("Durable customer persistence failed: missing required IDs (sender_customer_id: '" + senderCustId + "', recipient_customer_id: '" + recCustId + "', pengirim_id: '" + pengirimId + "', penerima_id: '" + penerimaId + "')");
+  }
+
+  return {
+    sender_customer_id: senderCustId,
+    recipient_customer_id: recCustId,
+    pengirim_id: pengirimId,
+    penerima_id: penerimaId
+  };
+}
+
+/**
  * Single Durable Customer Write Path.
  * Persists and upserts customer and address book records to Google Sheets:
  * - Master_Customer
@@ -7473,25 +7478,120 @@ function upsertCustomerAndAddressBook(params) {
       }
     }
 
+    if (!senderCustId) {
+      senderCustId = "CST-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100);
+      DatabaseService.appendRow("Master_Customer", {
+        customer_id: senderCustId,
+        nama_pengirim: namaSenderClean,
+        no_hp: hpSenderClean,
+        alamat_pengirim: alamatSenderClean,
+        outlet_id: outletId,
+        last_updated: nowStr,
+        nama: namaSenderClean,
+        telepon: hpSenderClean,
+        created_at: nowStr,
+        updated_at: nowStr,
+        status: "AKTIF"
+      });
+      created.customer = true;
+    }
+
+    if (!pengirimId) {
+      pengirimId = "SND-" + new Date().getTime().toString().slice(-6) + Math.floor(Math.random() * 100);
+      DatabaseService.appendRow("MASTER_PENGIRIM", {
+        id: pengirimId,
+        customer_id: senderCustId,
+        nama: namaSenderClean,
+        telepon: hpSenderClean,
+        provinsi: "",
+        kabupaten: "",
+        kecamatan: "",
+        kelurahan: "",
+        kode_pos: zipSenderClean,
+        alamat: alamatSenderClean,
+        jumlah_pengiriman: 1,
+        tanggal_pertama: nowStr,
+        tanggal_terakhir: nowStr,
+        status: "AKTIF",
+        created_at: nowStr,
+        updated_at: nowStr,
+        outlet_id_asal: outletId,
+        telepon_alternatif: altPhoneSender,
+        import_id: ""
+      });
+      created.pengirim = true;
+    }
+
+    if (!recCustId) {
+      recCustId = "CST-" + (new Date().getTime() + 1).toString().slice(-6) + Math.floor(Math.random() * 100);
+      DatabaseService.appendRow("Master_Customer", {
+        customer_id: recCustId,
+        nama_pengirim: namaRecClean,
+        no_hp: hpRecClean,
+        alamat_pengirim: alamatRecClean,
+        outlet_id: outletId,
+        last_updated: nowStr,
+        nama: namaRecClean,
+        telepon: hpRecClean,
+        created_at: nowStr,
+        updated_at: nowStr,
+        status: "AKTIF"
+      });
+      created.customer = true;
+    }
+
+    if (!penerimaId) {
+      penerimaId = "RCV-" + (new Date().getTime() + 1).toString().slice(-6) + Math.floor(Math.random() * 100);
+      DatabaseService.appendRow("MASTER_PENERIMA", {
+        id: penerimaId,
+        customer_id: recCustId,
+        nama: namaRecClean,
+        telepon: hpRecClean,
+        provinsi: "",
+        kabupaten: "",
+        kecamatan: "",
+        kelurahan: "",
+        kode_pos: zipRecClean,
+        alamat: alamatRecClean,
+        jumlah_diterima: 1,
+        tanggal_pertama: nowStr,
+        tanggal_terakhir: nowStr,
+        status: "AKTIF",
+        created_at: nowStr,
+        updated_at: nowStr,
+        outlet_id_asal: outletId,
+        telepon_alternatif: altPhoneRec,
+        import_id: ""
+      });
+      created.penerima = true;
+    }
+
+    var validatedIds = requireCustomerAddressIds_({
+      customer: { customer_id: senderCustId },
+      recipient_customer: { customer_id: recCustId },
+      pengirim: { id: pengirimId },
+      penerima: { id: penerimaId }
+    });
+
     return {
       status: "success",
       customer: {
-        customer_id: senderCustId,
+        customer_id: validatedIds.sender_customer_id,
         nama: finalSenderName,
         telepon: finalSenderPhone
       },
       recipient_customer: {
-        customer_id: recCustId,
+        customer_id: validatedIds.recipient_customer_id,
         nama: finalRecName,
         telepon: finalRecPhone
       },
       pengirim: {
-        id: pengirimId,
-        customer_id: senderCustId
+        id: validatedIds.pengirim_id,
+        customer_id: validatedIds.sender_customer_id
       },
       penerima: {
-        id: penerimaId,
-        customer_id: recCustId
+        id: validatedIds.penerima_id,
+        customer_id: validatedIds.recipient_customer_id
       },
       riwayat_penerima: {
         id: riwayatId || ""
@@ -7500,9 +7600,6 @@ function upsertCustomerAndAddressBook(params) {
       updated: updated
     };
   } catch (err) {
-    return {
-      status: "error",
-      message: err.message || err.toString()
-    };
+    throw new Error(err.message || err.toString());
   }
 }
