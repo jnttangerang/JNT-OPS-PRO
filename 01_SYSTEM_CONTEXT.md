@@ -6,13 +6,15 @@ J&T OPS PRO is an integrated operational and financial control web application f
 ## 2. Technical Architecture
 - **Frontend**: React 18+ with Vite, Tailwind CSS, Lucide-React, Recharts. Routing is handled via `react-router-dom`.
 - **Backend**: Node.js + Express.js (`server.ts`), running on port 3000.
-- **Database/Storage**: The true Source of Truth (SSOT) is **Google Spreadsheet accessed via Google Apps Script (`Code.gs`)**. The Express server maintains an ephemeral local cache (`db.json` / `/tmp/db.json` on Vercel/Cloud Run), synchronized with Apps Script via `syncDbWithAppsScript()` and direct endpoint forwarders with defensive JSON/text parsing and local fallback.
+- **Database/Storage**: The true Source of Truth (SSOT) is **Google Spreadsheet accessed via Google Apps Script (`Code.gs`)**. The Express server maintains an ephemeral local cache (`db.json` / `/tmp/db.json` on Vercel/Cloud Run), synchronized with Apps Script via `syncDbWithAppsScript()` and direct endpoint forwarders with defensive JSON/text parsing and fail-closed durable writes.
+- **Customer Persistence**: Customer and address books (`Master_Customer`, `MASTER_PENGIRIM`, `MASTER_PENERIMA`, `Riwayat_Penerima`) use a **durable-first, fail-closed write path** (`upsertCustomerAndAddressBook`) ensuring customer records exist in Google Sheets before any transaction or pre-input is written.
 - **Domain Engines**: Complex business and operational rules are strictly isolated in `src/lib/*Engine.ts` (16 domain engines) and run **authoritatively on the backend**.
 
 ## 3. Operational Control Scope
 The system tracks shipments from Pre-Input (draft) to full transaction (Express/Cargo), capturing pricing, weights, and metadata. It includes:
 - AI-based Address Optimizations (via Gemini API server-side proxy).
 - Automated Google Maps review analysis & sentiment tracking.
+- Promo review validation SSOT (`PromoReviewValidations`) linking Google Maps reviews to YoYi VIP discount eligibility with immutable lifecycle enforcement (`PENDING -> APPROVED / REJECTED`).
 - Operational workflow validation and exception tracking (`operationalWorkflowEngine.ts`, `operationalControlEngine.ts`).
 - Cross-outlet management control tower and executive decision support (`controlTowerEngine.ts`, `decisionEngine.ts`, `managementIntelligenceEngine.ts`).
 
@@ -31,25 +33,27 @@ USER (UI / React 18)
    ↓
 REACT FRONTEND (Displays data, dispatches actions via hooks/useAppsScript)
    ↓
-EXPRESS API (`server.ts` endpoints with defensive proxy & local fallback)
+EXPRESS API (`server.ts` endpoints with durable-first validation, defensive proxy & local fallback)
    ↓
 DOMAIN ENGINES (`src/lib/*Engine.ts` - Business Logic, Verification, Calculation)
    ↓
-SYNC & PERSISTENCE LAYER (`syncDbWithAppsScript()` & direct API handlers)
+DURABLE WRITE GATEWAY (`upsertCustomerAndAddressBook`, `requireCustomerAddressIds_`, `callAppsScript`)
    ↓
 GOOGLE APPS SCRIPT / GOOGLE SPREADSHEET (SSOT: `Code.gs`)
+   ↓ (only upon confirmed durable success)
+LOCAL CACHE (`db.json` / `/tmp/db.json` updated with official GAS IDs)
 ```
 
 ## 6. Authentication & Roles
 - **Roles**: `ADMIN` (Staff/Cashier) and `OWNER` (Branch Owner).
-- **Security**: Hard role checks are enforced in the backend engines (e.g., only OWNER can approve settlements, certify financial close, or resolve critical exceptions).
+- **Security**: Hard role checks are enforced in the backend engines (e.g., only OWNER can approve settlements, certify financial close, approve/reject promo review validations, or resolve critical exceptions).
 - **Storage of Credentials**: Managed securely in the `Users` sheet with salted hash passwords and login audit logging.
 
 ## 7. Outlet Model
 Data is partitioned by `outlet_id`. Transactions, daily closings, petty cash records, and settlements are strictly isolated per outlet per date.
 
 ## 8. Transaction Lifecycle
-`Draft (Pre-Input) -> Active Transaction (Saved) -> Locked (Daily Closing) -> Certified (Financial Close)`
+`Pre-Input (Draft) [Durable Customer Upsert] -> Active Transaction (Saved) [Validated Customer IDs] -> Locked (Daily Closing) -> Certified (Financial Close)`
 
 ## 9. Financial Lifecycle
 `Expected Revenue (Financial Summary) -> Actual Deposit (Setoran) -> Petty Cash / Mutasi Kas (Keuangan Outlet) -> Reconciliation (Exceptions) -> Settlement Approval -> Financial Close Certification`
@@ -62,7 +66,7 @@ Data is partitioned by `outlet_id`. Transactions, daily closings, petty cash rec
 5. If Approved, day can proceed to Financial Close Certification.
 
 ## 11. Audit & Control Architecture
-All mutative actions are tracked via `auditEngine.ts` and `auditTrailEngine.ts`, which log events (e.g., `TRANSACTION_UPSERT`, `SETTLEMENT_APPROVED`, `FINANCIAL_CERTIFICATION_COMPLETED`, `KEUANGAN_OUTLET_SAVED`) to ensure complete accountability.
+All mutative actions are tracked via `auditEngine.ts` and `auditTrailEngine.ts`, which log events (e.g., `TRANSACTION_UPSERT`, `SETTLEMENT_APPROVED`, `FINANCIAL_CERTIFICATION_COMPLETED`, `KEUANGAN_OUTLET_SAVED`, `PROMO_REVIEW_SUBMITTED`, `PROMO_REVIEW_APPROVED`, `PROMO_REVIEW_REJECTED`) to ensure complete accountability.
 
 ## 12. Deployment & Runtime
 - **Frontend & Backend** run together on a Serverless Container environment (Cloud Run / Vercel).
@@ -70,11 +74,12 @@ All mutative actions are tracked via `auditEngine.ts` and `auditTrailEngine.ts`,
 - **Proxy Resilience**: Express proxy middleware intercepts `/api/:action`, bypassing known local routes and auto-falling back to Express route handlers if Apps Script returns non-JSON or unhandled action errors.
 
 ## 13. Current Architecture Status
-The system has matured from a monolithic Express file to a layered architecture. All domain logic is decoupled into 16 engine files in `src/lib/`. The Express backend securely mediates between the React frontend and the Google Apps Script persistence layer.
+The system has matured from a monolithic Express file to a layered architecture. All domain logic is decoupled into 16 engine files in `src/lib/`. The Express backend securely mediates between the React frontend and the Google Apps Script persistence layer. Customer persistence operates under a strict durable-first fail-closed contract.
 
 ## 14. Legacy & Transition Areas
 - `db.json` is maintained as a high-performance local read cache.
-- `server.ts` is ~9,800 lines because API routes are still declared in a single file rather than modular router files (`src/server/routes/`).
+- `server.ts` is ~10,480 lines because API routes are still declared in a single file rather than modular router files (`src/server/routes/`).
+- Customer and address book records now strictly require durable ID generation in Apps Script before local writes.
 
 ## 15. Known Technical Debt
 - **Route Extraction**: `server.ts` routing definitions need to be split into modular route files.

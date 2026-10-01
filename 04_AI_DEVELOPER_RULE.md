@@ -14,9 +14,19 @@ Dokumen ini adalah aturan wajib dan panduan etika coding bagi AI Developer (Agen
 
 ## C. DATABASE & PERSISTENCE RULE
 - Database utama (SSOT) adalah **Google Spreadsheet via Apps Script (`Code.gs`)**. File `db.json` hanyalah cache ephemeral (tersimpan di `/tmp` pada container serverless).
+- **DURABLE-FIRST CUSTOMER PERSISTENCE**:
+  - Customer dan address book mutations (`Master_Customer`, `MASTER_PENGIRIM`, `MASTER_PENERIMA`, `Riwayat_Penerima`) **WAJIB** dieksekusi secara durable-first via `upsertCustomerAndAddressBook()` di Google Apps Script dan divalidasi via `requireCustomerAddressIds_()` sebelum transaksi atau pre-input disimpan.
+  - **DILARANG** melakukan local-first atau local fallback saat GAS error. Jika GAS gagal atau respons tidak memuat 4 ID wajib (`sender_customer_id`, `recipient_customer_id`, `pengirim_id`, `penerima_id`), request **WAJIB** fail-closed dengan HTTP 503 (`retry: true`), tanpa memutasi cache lokal `db.json` atau menulis transaksi.
+  - `Riwayat_Penerima.customer_id` **WAJIB** selalu mereferensikan ID customer milik penerima (`recipient_customer.customer_id`), bukan ID customer pengirim.
+  - Primary customer identity wajib menggunakan `normalizePhone_()`.
+- **PROMO REVIEW VALIDATION (SSOT & LIFECYCLE)**:
+  - Sheet `PromoReviewValidations` (17 kolom) adalah SSOT validasi promo YoYi.
+  - Lifecycle: `PENDING -> APPROVED` atau `PENDING -> REJECTED`. Status terminal bersifat *immutable* (tidak dapat diubah, diapprove ulang, atau direject ulang).
+  - Actor ID wajib menggunakan ID actor otentik (bukan display name). Hanya `OWNER` yang berhak melakukan approve/reject; `ADMIN` hanya berhak melakukan submit.
+  - YoYi Audit completeness hanya boleh menerapkan diskon jika status validasi terbukti `APPROVED`.
 - **JANGAN** pernah melakukan `fs.writeFileSync` tanpa memikirkan siklus sinkronisasi Google Apps Script. Mutasi data penting harus dipastikan tersimpan di Google Spreadsheet terlebih dahulu.
 - **DEFENSIVE NETWORK PARSING**: Apps Script web apps dapat mengembalikan HTML error page, 302 redirects, atau non-JSON text saat timeout/crash. Handler komunikasi ke Apps Script WAJIB membaca response sebagai teks (`await res.text()`) lalu melakukan safe `JSON.parse` di dalam try-catch block untuk mencegah fatal crash process.
-- **JANGAN** membuat koleksi/tabel JSON baru tanpa alasan kuat. Manfaatkan domain data eksisting (`MASTER_TRANSAKSI`, `KEUANGAN_OUTLET`, `SetoranData`, `Settlements`, `DailyClosing`, `Exceptions`, dll.).
+- **JANGAN** membuat koleksi/tabel JSON baru tanpa alasan kuat. Manfaatkan domain data eksisting (`MASTER_TRANSAKSI`, `KEUANGAN_OUTLET`, `SetoranData`, `Settlements`, `DailyClosing`, `Exceptions`, `PromoReviewValidations`, dll.).
 
 ## D. NO DUPLICATE BUSINESS LOGIC
 Jangan menulis fungsi perhitungan baru jika `src/lib/*Engine.ts` sudah memilikinya. Lakukan `import` dan panggil fungsi terkait (misal: `calculateDailyFinancial()`, `validateDailyClosing()`, `reconcileDaily()`, `certifyFinancialClose()`).
@@ -32,8 +42,9 @@ Memperbaiki *symptom* (seperti melempar error di UI saja tanpa memblokir di back
 - Hindari membuat boilerplate, unrequested abstractions, atau dependensi baru jika built-in library / codebase sudah memadai.
 
 ## G. ROLE & SECURITY (RBAC)
-Saat mengedit alur *Approval* (Setoran, Settlement, Certification, Keuangan Outlet):
+Saat mengedit alur *Approval* (Setoran, Settlement, Certification, Keuangan Outlet, Promo Review):
 - Pastikan pengecekan *role* (`actor_role === 'OWNER'`) dilakukan secara ketat di backend, bukan sekadar menyembunyikan tombol di UI frontend.
+- Pastikan ID actor yang dicatat di data mutasi (`submitted_by`, `reviewed_by`, `user_id`, dll.) adalah ID aktor sebenarnya (authentic actor ID), bukan display name sembarang.
 - Jangan mengekspos token rahasia atau API Keys (Google Maps/Gemini) ke layer client React. Selalu proxy via Express (`server.ts`).
 
 ## H. NO ASSUMPTION
