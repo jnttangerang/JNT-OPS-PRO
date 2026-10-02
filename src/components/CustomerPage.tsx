@@ -11,6 +11,7 @@ import useAppsScript from "../hooks/useAppsScript";
 import { Outlet } from "../types";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
+import { Link } from "react-router-dom";
 
 interface CustomerPageProps {
   outlets: Outlet[];
@@ -205,6 +206,16 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
           <p className="text-gray-500 text-sm mt-1">
             Pusat data pelanggan, buku alamat pengirim & penerima otomatis terstruktur dari aktivitas transaksi.
           </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Link
+            to="/analisa-customer"
+            className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-[#E4002B] font-bold text-xs transition-colors border border-red-200"
+          >
+            <BarChart3 size={15} />
+            <span>Buka Analisa Customer</span>
+          </Link>
         </div>
       </div>
 
@@ -785,156 +796,179 @@ export default function CustomerPage({ outlets }: CustomerPageProps) {
                 <div className="text-center py-20 text-gray-400 text-xs">Data detail tidak ditemukan.</div>
               ) : (
                 <>
-                  {/* TAB 1: ANALYTICS & SUMMARY */}
+                  {/* TAB 1: IDENTITAS, RELASI & RINGKASAN */}
                   {drawerTab === "ANALYTICS" && (
-                    <div className="space-y-5">
+                    <div className="space-y-4">
                       
-                      {/* Summary Cards Grid */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        <div className="bg-white p-3 rounded-xl border border-gray-150 shadow-sm">
-                          <p className="text-[10px] text-gray-400 font-bold uppercase">Total Resi</p>
-                          <p className="text-lg font-black text-gray-800 mt-1">{detailData.summary?.total_resi || 0}</p>
-                        </div>
-                        <div className="bg-white p-3 rounded-xl border border-gray-150 shadow-sm">
-                          <p className="text-[10px] text-gray-400 font-bold uppercase">Total Paket</p>
-                          <p className="text-lg font-black text-gray-800 mt-1">{detailData.summary?.total_paket || 0}</p>
-                        </div>
-                        <div className="bg-white p-3 rounded-xl border border-gray-150 shadow-sm">
-                          <p className="text-[10px] text-gray-400 font-bold uppercase">Total Ongkir</p>
-                          <p className="text-base font-black text-[#E4002B] mt-1">
-                            Rp {(detailData.summary?.total_ongkir || 0).toLocaleString("id-ID")}
-                          </p>
-                        </div>
-                        <div className="bg-white p-3 rounded-xl border border-gray-150 shadow-sm">
-                          <p className="text-[10px] text-gray-400 font-bold uppercase">Total Omzet</p>
-                          <p className="text-base font-black text-[#E4002B] mt-1">
-                            Rp {(detailData.summary?.total_omzet || 0).toLocaleString("id-ID")}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Customer Info Card */}
+                      {/* 1. IDENTITAS */}
                       <div className="bg-white rounded-xl p-4 border border-gray-150 shadow-sm space-y-3">
-                        <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider border-b border-gray-100 pb-2">
-                          Informasi Profil
-                        </h4>
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                          <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                            <Users size={14} className="text-[#E4002B]" />
+                            Identitas Customer
+                          </h4>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                            detailData.customer?.status === "AKTIF" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600"
+                          }`}>
+                            {detailData.customer?.status || "AKTIF"}
+                          </span>
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600">
                           <div>
-                            <span className="text-gray-400 block">Customer Sejak:</span>
-                            <span className="font-bold text-gray-800">
+                            <span className="text-gray-400 block text-[10px]">Customer ID:</span>
+                            <span className="font-bold text-gray-800 font-mono text-sm">{detailData.customer?.customer_id}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 block text-[10px]">Nama Lengkap:</span>
+                            <span className="font-bold text-gray-800">{detailData.customer?.nama}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 block text-[10px]">Nomor HP / WhatsApp:</span>
+                            <span className="font-bold text-gray-800 font-mono">{detailData.customer?.telepon || "-"}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400 block text-[10px]">Customer Sejak:</span>
+                            <span className="font-medium text-gray-800">
                               {detailData.summary?.customer_sejak ? format(new Date(detailData.summary.customer_sejak), "dd MMMM yyyy", { locale: id }) : "-"}
                             </span>
                           </div>
-                          <div>
-                            <span className="text-gray-400 block">Terakhir Pengiriman:</span>
-                            <span className="font-bold text-gray-800">
-                              {detailData.summary?.last_shipment ? format(new Date(detailData.summary.last_shipment), "dd MMMM yyyy", { locale: id }) : "-"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-400 block">Maps Review Status:</span>
-                            <span className="font-bold text-yellow-700">
-                              {detailData.summary?.maps_review_status}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-gray-400 block">Status Akun:</span>
-                            <span className="font-bold text-green-700">
-                              {detailData.customer?.status || "AKTIF"}
-                            </span>
+                          <div className="sm:col-span-2">
+                            <span className="text-gray-400 block text-[10px]">Alamat:</span>
+                            <span className="text-gray-700">{detailData.customer?.alamat || "-"}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Customer Behavior Analytics */}
-                      <div className="bg-white rounded-xl p-4 border border-gray-150 shadow-sm space-y-4">
-                        <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider flex items-center gap-1.5 border-b border-gray-100 pb-2">
+                      {/* 2. RINGKASAN */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-150 shadow-sm space-y-3">
+                        <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider border-b border-gray-100 pb-2 flex items-center gap-1.5">
                           <BarChart3 size={14} className="text-[#E4002B]" />
-                          Customer Behavior Analytics
+                          Ringkasan Transaksi
                         </h4>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                          <div className="p-3 bg-gray-50 rounded-xl space-y-1">
-                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Layanan Favorit</span>
-                            <span className="font-bold text-gray-800 text-sm">{detailData.analytics?.layanan_favorit}</span>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          <div className="p-3 bg-gray-50 rounded-xl space-y-0.5">
+                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Total Transaksi</span>
+                            <span className="text-lg font-black text-gray-900">{detailData.summary?.total_transaksi ?? detailData.summary?.total_resi ?? 0}</span>
                           </div>
-
-                          <div className="p-3 bg-gray-50 rounded-xl space-y-1">
-                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Berat Rata-Rata</span>
-                            <span className="font-bold text-gray-800 text-sm">{detailData.analytics?.berat_rata_rata} kg</span>
+                          <div className="p-3 bg-gray-50 rounded-xl space-y-0.5">
+                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Total Nominal</span>
+                            <span className="text-base font-black text-[#E4002B]">
+                              Rp {(detailData.summary?.total_nominal ?? detailData.summary?.total_omzet ?? 0).toLocaleString("id-ID")}
+                            </span>
                           </div>
-
-                          <div className="p-3 bg-gray-50 rounded-xl space-y-1">
-                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Barang Paling Sering</span>
-                            <span className="font-bold text-gray-800 text-sm">{detailData.analytics?.barang_paling_sering}</span>
+                          <div className="p-3 bg-gray-50 rounded-xl space-y-0.5">
+                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Sebagai Pengirim</span>
+                            <span className="text-lg font-black text-blue-700">{detailData.summary?.total_pengirim || 0}</span>
                           </div>
-
-                          <div className="p-3 bg-gray-50 rounded-xl space-y-1">
-                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Kota Tujuan Terbanyak</span>
-                            <span className="font-bold text-gray-800 text-sm">{detailData.analytics?.kota_tujuan_terbanyak}</span>
+                          <div className="p-3 bg-gray-50 rounded-xl space-y-0.5">
+                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Sebagai Penerima</span>
+                            <span className="text-lg font-black text-emerald-700">{detailData.summary?.total_penerima || 0}</span>
                           </div>
-
-                          <div className="p-3 bg-gray-50 rounded-xl space-y-1">
-                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Hari Pengiriman Terbanyak</span>
-                            <span className="font-bold text-gray-800 text-sm">{detailData.analytics?.hari_pengiriman_terbanyak}</span>
+                          <div className="p-3 bg-gray-50 rounded-xl space-y-0.5">
+                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Transaksi Terakhir</span>
+                            <span className="text-xs font-bold text-gray-800">
+                              {detailData.summary?.transaksi_terakhir || detailData.summary?.last_shipment ? format(new Date(detailData.summary?.transaksi_terakhir || detailData.summary?.last_shipment), "dd MMM yyyy", { locale: id }) : "-"}
+                            </span>
                           </div>
-
-                          <div className="p-3 bg-gray-50 rounded-xl space-y-1">
-                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Jam Pengiriman Terbanyak</span>
-                            <span className="font-bold text-gray-800 text-sm">{detailData.analytics?.jam_pengiriman_terbanyak}</span>
+                          <div className="p-3 bg-gray-50 rounded-xl space-y-0.5">
+                            <span className="text-gray-400 text-[10px] font-bold uppercase block">Outlet Terakhir</span>
+                            <span className="text-xs font-bold text-gray-800">{detailData.summary?.outlet_terakhir || "-"}</span>
                           </div>
+                        </div>
+                      </div>
+
+                      {/* 3. RELASI BUKU ALAMAT */}
+                      <div className="bg-white rounded-xl p-4 border border-gray-150 shadow-sm space-y-3">
+                        <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider border-b border-gray-100 pb-2">
+                          Relasi Buku Alamat
+                        </h4>
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          <button
+                            onClick={() => setDrawerTab("PENGIRIM")}
+                            className="p-3 rounded-xl border border-gray-200 hover:border-red-300 text-left transition-colors flex justify-between items-center group bg-gray-50/50"
+                          >
+                            <div>
+                              <span className="text-gray-400 text-[10px] block">Relasi Pengirim</span>
+                              <span className="font-bold text-gray-800 text-sm">{detailData.pengirim_addresses?.length || 0} Alamat</span>
+                            </div>
+                            <ChevronRight size={16} className="text-gray-400 group-hover:text-red-500" />
+                          </button>
+                          <button
+                            onClick={() => setDrawerTab("PENERIMA")}
+                            className="p-3 rounded-xl border border-gray-200 hover:border-red-300 text-left transition-colors flex justify-between items-center group bg-gray-50/50"
+                          >
+                            <div>
+                              <span className="text-gray-400 text-[10px] block">Relasi Penerima</span>
+                              <span className="font-bold text-gray-800 text-sm">{detailData.penerima_addresses?.length || 0} Alamat</span>
+                            </div>
+                            <ChevronRight size={16} className="text-gray-400 group-hover:text-red-500" />
+                          </button>
                         </div>
                       </div>
 
                     </div>
                   )}
 
-                  {/* TAB 2: RIWAYAT PENGERIMAN */}
+                  {/* TAB 2: RIWAYAT TRANSAKSI */}
                   {drawerTab === "RIWAYAT" && (
                     <div className="space-y-3">
-                      <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider">
-                        Daftar Transaksi Real
-                      </h4>
-                      {detailData.riwayat_pengiriman?.length === 0 ? (
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider">
+                          Daftar Riwayat Transaksi
+                        </h4>
+                        <span className="text-[11px] text-gray-400">
+                          {detailData.riwayat_transaksi?.length || detailData.riwayat_pengiriman?.length || 0} Transaksi
+                        </span>
+                      </div>
+                      {(!detailData.riwayat_transaksi || detailData.riwayat_transaksi.length === 0) && (!detailData.riwayat_pengiriman || detailData.riwayat_pengiriman.length === 0) ? (
                         <div className="text-center py-10 text-gray-400 text-xs bg-white rounded-xl border border-dashed border-gray-200">
-                          Belum ada riwayat transaksi.
+                          Belum ada riwayat transaksi untuk customer ini.
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          {detailData.riwayat_pengiriman.map((item: any, idx: number) => (
+                          {(detailData.riwayat_transaksi || detailData.riwayat_pengiriman).map((item: any, idx: number) => (
                             <div key={idx} className="bg-white border border-gray-150 rounded-xl p-3.5 shadow-sm text-xs space-y-2">
                               <div className="flex justify-between items-start border-b border-gray-100 pb-2">
                                 <div>
                                   <span className="font-bold text-gray-800">
-                                    {format(new Date(item.tanggal), "dd MMM yyyy HH:mm", { locale: id })}
+                                    {item.tanggal ? format(new Date(item.tanggal), "dd MMM yyyy HH:mm", { locale: id }) : "-"}
                                   </span>
-                                  <span className="text-gray-400 block font-mono text-[10px]">
-                                    Admin: {item.admin}
+                                  <span className="text-gray-400 block text-[10px]">
+                                    Outlet: <strong className="text-gray-700">{item.outlet || "-"}</strong> · Admin: {item.admin || "SYSTEM"}
                                   </span>
                                 </div>
-                                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                                  item.status === "SELESAI" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
-                                }`}>
-                                  {item.status}
-                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                    item.peran === "PENGIRIM" ? "bg-blue-100 text-blue-700" : "bg-emerald-100 text-emerald-700"
+                                  }`}>
+                                    {item.peran || "PENGIRIM"}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                    item.status === "SELESAI" || item.status === "PAID" ? "bg-green-100 text-green-700" : "bg-orange-100 text-orange-700"
+                                  }`}>
+                                    {item.status}
+                                  </span>
+                                </div>
                               </div>
 
                               <div className="grid grid-cols-2 gap-2 text-gray-600">
                                 <div>
                                   <span className="text-gray-400 block text-[10px]">No Resi / Layanan:</span>
-                                  <span className="font-bold text-gray-800">{item.no_resi} ({item.layanan} - {item.jenis_produk})</span>
+                                  <span className="font-mono font-bold text-gray-800">{item.no_resi || item.resi} ({item.layanan} - {item.jenis_produk})</span>
                                 </div>
                                 <div>
                                   <span className="text-gray-400 block text-[10px]">Nama Barang:</span>
-                                  <span className="font-bold text-gray-800">{item.nama_barang}</span>
+                                  <span className="font-bold text-gray-800">{item.nama_barang || "-"}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-400 block text-[10px]">Timbangan / Penagihan (Dasar):</span>
-                                  <span>{item.berat_timbangan || 0} kg / {item.berat_penagihan || 0} kg ({item.dasar_berat || "TIMBANGAN"}) | Vol: {item.volume}</span>
+                                  <span className="text-gray-400 block text-[10px]">Peran Pelanggan:</span>
+                                  <span className="font-bold text-gray-700">{item.peran === "PENERIMA" ? "Penerima Paket" : "Pengirim Paket"}</span>
                                 </div>
                                 <div>
-                                  <span className="text-gray-400 block text-[10px]">Total Bayar:</span>
-                                  <span className="font-bold text-[#E4002B]">Rp {(item.total_bayar || 0).toLocaleString("id-ID")}</span>
+                                  <span className="text-gray-400 block text-[10px]">Nominal Transaksi:</span>
+                                  <span className="font-bold text-[#E4002B]">
+                                    Rp {(item.nominal || item.total_bayar || 0).toLocaleString("id-ID")}
+                                  </span>
                                 </div>
                               </div>
                             </div>

@@ -16,6 +16,7 @@ import UlasanMapsPage from "./components/UlasanMapsPage";
 import LengkapiYoYiPage from "./components/admin/LengkapiYoYiPage";
 import CustomerPage from "./components/CustomerPage";
 import ImportCustomerPage from "./components/customer/ImportCustomerPage";
+import CustomerAnalysisPage from "./components/customer/CustomerAnalysisPage";
 import DeveloperPage from "./components/DeveloperPage";
 import SettingsPage from "./components/owner/SettingsPage";
 import SetoranOwnerPage from "./components/owner/SetoranOwnerPage";
@@ -618,7 +619,7 @@ function AppContent() {
               } />
               
               <Route path="/analisa-customer" element={
-                <div className="p-8 text-center text-gray-500">Halaman Analisa Customer sedang dalam pengembangan.</div>
+                <CustomerAnalysisPage outlets={outlets} />
               } />
               
               <Route path="/developer" element={<DeveloperPage />} />

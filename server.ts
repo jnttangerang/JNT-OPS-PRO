@@ -570,10 +570,11 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
 
   let senderCustId = params.gas_ids?.sender_customer_id || "";
   let pengirim_id = params.gas_ids?.pengirim_id || "";
-  if (hpSenderClean || hpSenderNorm || senderCustId) {
+  if (hpSenderClean || hpSenderNorm || senderCustId || namaSenderClean) {
     let custObj = db.MASTER_CUSTOMER.find((c: any) => 
       (senderCustId && c.customer_id === senderCustId) ||
-      (hpSenderNorm && normalizePhone(c.telepon || c.no_hp) === hpSenderNorm)
+      (hpSenderNorm && normalizePhone(c.telepon || c.no_hp) === hpSenderNorm) ||
+      (!hpSenderNorm && namaSenderClean && String(c.nama || "").trim().toLowerCase() === namaSenderClean.toLowerCase())
     );
 
     if (custObj) {
@@ -694,10 +695,11 @@ export function autoUpsertCustomerAndAddressBook(db: any, params: {
 
   let recCustId = params.gas_ids?.recipient_customer_id || "";
   let penerima_id = params.gas_ids?.penerima_id || "";
-  if (hpRecClean || hpRecNorm || recCustId) {
+  if (hpRecClean || hpRecNorm || recCustId || namaRecClean) {
     let recCustObj = db.MASTER_CUSTOMER.find((c: any) => 
       (recCustId && c.customer_id === recCustId) ||
-      (hpRecNorm && normalizePhone(c.telepon || c.no_hp) === hpRecNorm)
+      (hpRecNorm && normalizePhone(c.telepon || c.no_hp) === hpRecNorm) ||
+      (!hpRecNorm && namaRecClean && String(c.nama || "").trim().toLowerCase() === namaRecClean.toLowerCase())
     );
 
     if (recCustObj) {
@@ -1321,6 +1323,54 @@ function syncExistingDataToThreeLayers(db: any) {
       }
     });
   }
+
+  if ((!db.MASTER_CUSTOMER || db.MASTER_CUSTOMER.length === 0) && db.MASTER_TRANSAKSI && Array.isArray(db.MASTER_TRANSAKSI)) {
+    db.MASTER_TRANSAKSI.forEach((tx: any) => {
+      const namaPengirim = tx.nama_pengirim || tx.pengirim || tx.snapshot_nama_pengirim || "";
+      const hpPengirim = tx.hp_pengirim || tx.snapshot_hp_pengirim || "";
+      const alamatPengirim = tx.alamat_pengirim || tx.snapshot_alamat_pengirim || "";
+      const namaPenerima = tx.nama_penerima || tx.penerima || tx.snapshot_nama_penerima || "";
+      const hpPenerima = tx.hp_penerima || tx.snapshot_hp_penerima || "";
+      const alamatPenerima = tx.alamat_penerima || tx.snapshot_alamat_penerima || "";
+
+      if (namaPengirim || hpPengirim || namaPenerima || hpPenerima) {
+        const { pengirim_id, penerima_id } = autoUpsertCustomerAndAddressBook(db, {
+          nama_pengirim: namaPengirim,
+          hp_pengirim: hpPengirim,
+          alamat_pengirim: alamatPengirim,
+          nama_penerima: namaPenerima,
+          hp_penerima: hpPenerima,
+          alamat_penerima: alamatPenerima,
+          timestamp: tx.created_at || (tx.tanggal_transaksi ? `${tx.tanggal_transaksi}T${tx.jam_transaksi || "12:00:00"}` : undefined),
+          outlet_id_tugas: tx.outlet_id
+        });
+
+        if (tx.transaksi_id || tx.id) {
+          autoUpsertMasterTransaksiAndPengiriman(db, {
+            transaksi_id: tx.transaksi_id || tx.id,
+            outlet_id: tx.outlet_id,
+            admin_id: tx.admin_id || tx.admin_pembuat || tx.user_id,
+            tanggal_transaksi: tx.tanggal_transaksi || getWIBDate(new Date()),
+            jam_transaksi: tx.jam_transaksi || getWIBTime(new Date()),
+            no_resi: tx.no_resi || "",
+            ekspedisi: tx.ekspedisi,
+            pengirim_id,
+            penerima_id,
+            snapshot_nama_pengirim: namaPengirim,
+            snapshot_hp_pengirim: hpPengirim,
+            snapshot_alamat_pengirim: alamatPengirim,
+            snapshot_nama_penerima: namaPenerima,
+            snapshot_hp_penerima: hpPenerima,
+            snapshot_alamat_penerima: alamatPenerima,
+            nama_barang: tx.nama_barang,
+            status_transaksi: tx.status_transaksi,
+            sumber_data: "Transaksi",
+            catatan: tx.catatan
+          });
+        }
+      }
+    });
+  }
 }
 
 function readDb() {
@@ -1344,6 +1394,10 @@ function readDb() {
     const data = fs.readFileSync(dbPath, "utf-8");
     const parsed = JSON.parse(data);
     let updated = false;
+    if (!parsed.MASTER_CUSTOMER || !Array.isArray(parsed.MASTER_CUSTOMER) || parsed.MASTER_CUSTOMER.length === 0) {
+      syncExistingDataToThreeLayers(parsed);
+      updated = true;
+    }
     if (!parsed.MapsReviews) {
       parsed.MapsReviews = defaultReviews;
       updated = true;
@@ -1537,6 +1591,7 @@ const UTILITY_ACTIONS = new Set([
   "updateCustomer",
   "getCustomersMaster",
   "getCustomerDetailFull",
+  "getCustomerAnalysis",
   "searchCustomer",
   "getRiwayatPenerima",
   "checkDuplicateResi",
@@ -2095,132 +2150,181 @@ app.post("/api/updateCustomer", async (req, res) => {
   }
 });
 
-// 3.9. GET CUSTOMERS MASTER
+// 3.9. GET CUSTOMERS MASTER (PHASE 7 STEP 1)
 app.post("/api/getCustomersMaster", (req, res) => {
   const db = readDb();
+  const masterCustomers = db.MASTER_CUSTOMER || [];
   const pengirimRows = db.MASTER_PENGIRIM || [];
   const penerimaRows = db.MASTER_PENERIMA || [];
-  
-  const customerMap = new Map();
-  const addCustomer = (row, source) => {
-    const id = row.id || row.customer_id || "";
-    const nama = row.nama || row.nama_pengirim || row.nama_penerima || "";
-    const telepon = row.telepon || row.no_hp || row.no_hp_penerima || "";
-    const alamat = row.alamat || row.alamat_pengirim || row.alamat_penerima || "";
-    const status = row.status || "AKTIF";
-    const created = row.created_at || row.last_updated || new Date().toISOString();
-    const updated = row.updated_at || created;
-    const outlet = row.outlet_id_asal || "";
-    
-    if (!telepon) return;
-    
-    if (customerMap.has(telepon)) {
-      const existing = customerMap.get(telepon);
-      if (status === "AKTIF" && existing.status !== "AKTIF") {
-        customerMap.set(telepon, { customer_id: id, id, nama, telepon, alamat, status, created_at: created, updated_at: updated, outlet_id_asal: outlet, sumber: source });
-      }
-      else if (status === "AKTIF" && existing.status === "AKTIF" && new Date(updated) > new Date(existing.updated_at)) {
-        customerMap.set(telepon, { customer_id: id, id, nama, telepon, alamat, status, created_at: created, updated_at: updated, outlet_id_asal: outlet, sumber: source });
-      }
-    } else {
-      customerMap.set(telepon, { customer_id: id, id, nama, telepon, alamat, status, created_at: created, updated_at: updated, outlet_id_asal: outlet, sumber: source });
-    }
-  };
-  
-  pengirimRows.forEach(r => addCustomer(r, "PENGIRIM"));
-  penerimaRows.forEach(r => addCustomer(r, "PENERIMA"));
-  
-  const customers = Array.from(customerMap.values());
-
-  const preInputs = db.PreInput_Backup || [];
   const masterTx = db.MASTER_TRANSAKSI || [];
   const mapsReviews = db.MapsReviews || [];
 
-  const statsMap = new Map<string, {
-    total_resi: number;
-    total_paket: number;
-    total_ongkir: number;
-    total_omzet: number;
-    first_date: string;
-    last_date: string;
-    outlet_ids: Set<string>;
-  }>();
+  const customerMap = new Map<string, any>();
+  const phoneToIdMap = new Map<string, string>();
 
-  preInputs.forEach((pi: any) => {
-    const hpNorm = normalizePhone(pi.hp_pengirim);
-    if (!hpNorm) return;
-    const resi = masterTx.find((tx: any) => tx.id === pi.transaksi_id || tx.transaksi_id === pi.transaksi_id);
-
-    const dateStr = pi.timestamp || new Date().toISOString();
-    if (!statsMap.has(hpNorm)) {
-      statsMap.set(hpNorm, {
-        total_resi: 0,
-        total_paket: 0,
-        total_ongkir: 0,
-        total_omzet: 0,
-        first_date: dateStr,
-        last_date: dateStr,
-        outlet_ids: new Set()
-      });
-    }
-
-    const st = statsMap.get(hpNorm)!;
-    st.total_paket += 1;
-    if (pi.outlet_id_tugas) st.outlet_ids.add(pi.outlet_id_tugas);
-    if (resi && isTransactionValidForFinance(resi)) {
-      const sum = calculateFinancialSummary(resi);
-      st.total_resi += 1;
-      st.total_ongkir += (Number(resi.ongkir) || 0);
-      st.total_omzet += sum.customer_payment;
-    }
-    if (new Date(dateStr) < new Date(st.first_date)) st.first_date = dateStr;
-    if (new Date(dateStr) > new Date(st.last_date)) st.last_date = dateStr;
+  // 1. From MASTER_CUSTOMER (Canonical SSOT)
+  masterCustomers.forEach((c: any) => {
+    const cid = String(c.customer_id || c.id || "").trim();
+    if (!cid) return;
+    const phone = String(c.telepon || c.no_hp || "").trim();
+    const phoneNorm = normalizePhone(phone);
+    const item = {
+      customer_id: cid,
+      nama: c.nama || c.nama_pengirim || "Customer",
+      telepon: phone,
+      alamat: c.alamat || c.alamat_pengirim || "",
+      status: c.status || "AKTIF",
+      created_at: c.created_at || new Date().toISOString(),
+      updated_at: c.updated_at || c.created_at || new Date().toISOString(),
+      outlet_id: c.outlet_id || "OUT-001"
+    };
+    customerMap.set(cid, item);
+    if (phoneNorm) phoneToIdMap.set(phoneNorm, cid);
   });
 
-  const data = customers.map((c: any) => {
-    const hp = String(c.telepon || c.no_hp || "").trim();
-    const hpNorm = normalizePhone(hp);
-    const st = statsMap.get(hpNorm) || {
-      total_resi: 0,
-      total_paket: 0,
-      total_ongkir: 0,
-      total_omzet: 0,
-      first_date: c.created_at || new Date().toISOString(),
-      last_date: c.updated_at || new Date().toISOString(),
-      outlet_ids: new Set()
+  // 2. Add from MASTER_PENGIRIM if not yet present
+  pengirimRows.forEach((p: any) => {
+    const phone = String(p.telepon || p.no_hp || "").trim();
+    const phoneNorm = normalizePhone(phone);
+    const existingId = (p.customer_id && customerMap.has(p.customer_id)) ? p.customer_id : (phoneNorm && phoneToIdMap.get(phoneNorm));
+    if (existingId) {
+      const existing = customerMap.get(existingId);
+      if (!existing.alamat && p.alamat) existing.alamat = p.alamat;
+    } else {
+      const cid = p.customer_id || ("CUS" + String(customerMap.size + 1).padStart(6, "0"));
+      const item = {
+        customer_id: cid,
+        nama: p.nama || "Customer",
+        telepon: phone,
+        alamat: p.alamat || "",
+        status: p.status || "AKTIF",
+        created_at: p.created_at || p.tanggal_pertama || new Date().toISOString(),
+        updated_at: p.updated_at || p.tanggal_terakhir || new Date().toISOString(),
+        outlet_id: p.outlet_id_asal || "OUT-001"
+      };
+      customerMap.set(cid, item);
+      if (phoneNorm) phoneToIdMap.set(phoneNorm, cid);
+    }
+  });
+
+  // 3. Add from MASTER_PENERIMA if not yet present
+  penerimaRows.forEach((r: any) => {
+    const phone = String(r.telepon || r.no_hp || "").trim();
+    const phoneNorm = normalizePhone(phone);
+    const existingId = (r.customer_id && customerMap.has(r.customer_id)) ? r.customer_id : (phoneNorm && phoneToIdMap.get(phoneNorm));
+    if (existingId) {
+      const existing = customerMap.get(existingId);
+      if (!existing.alamat && r.alamat) existing.alamat = r.alamat;
+    } else {
+      const cid = r.customer_id || ("CUS" + String(customerMap.size + 1).padStart(6, "0"));
+      const item = {
+        customer_id: cid,
+        nama: r.nama || "Customer",
+        telepon: phone,
+        alamat: r.alamat || "",
+        status: r.status || "AKTIF",
+        created_at: r.created_at || r.tanggal_pertama || new Date().toISOString(),
+        updated_at: r.updated_at || r.tanggal_terakhir || new Date().toISOString(),
+        outlet_id: r.outlet_id_asal || "OUT-001"
+      };
+      customerMap.set(cid, item);
+      if (phoneNorm) phoneToIdMap.set(phoneNorm, cid);
+    }
+  });
+
+  // 4. Precompute transaction statistics per customer_id
+  const statsMap = new Map<string, {
+    total_transaksi: number;
+    total_nominal: number;
+    total_pengirim: number;
+    total_penerima: number;
+    first_date: string;
+    last_date: string;
+    outlet_terakhir: string;
+  }>();
+
+  const recordTxForCustomer = (cid: string, tx: any, role: "PENGIRIM" | "PENERIMA") => {
+    if (!statsMap.has(cid)) {
+      statsMap.set(cid, {
+        total_transaksi: 0,
+        total_nominal: 0,
+        total_pengirim: 0,
+        total_penerima: 0,
+        first_date: "",
+        last_date: "",
+        outlet_terakhir: ""
+      });
+    }
+    const st = statsMap.get(cid)!;
+    st.total_transaksi += 1;
+    const nominal = Number(tx.total_customer ?? tx.grand_total ?? tx.ongkir_customer ?? 0);
+    st.total_nominal += nominal;
+    if (role === "PENGIRIM") st.total_pengirim += 1;
+    else st.total_penerima += 1;
+
+    const txDate = tx.tanggal_transaksi || tx.created_at || "";
+    if (txDate) {
+      if (!st.first_date || new Date(txDate) < new Date(st.first_date)) st.first_date = txDate;
+      if (!st.last_date || new Date(txDate) > new Date(st.last_date)) {
+        st.last_date = txDate;
+        st.outlet_terakhir = tx.outlet_id || st.outlet_terakhir;
+      }
+    }
+    if (!st.outlet_terakhir && tx.outlet_id) st.outlet_terakhir = tx.outlet_id;
+  };
+
+  masterTx.forEach((tx: any) => {
+    const hpSndNorm = normalizePhone(tx.hp_pengirim || tx.snapshot_hp_pengirim || "");
+    const sndCid = (tx.customer_id && customerMap.has(tx.customer_id)) ? tx.customer_id : (hpSndNorm && phoneToIdMap.get(hpSndNorm));
+    if (sndCid) recordTxForCustomer(sndCid, tx, "PENGIRIM");
+
+    const hpRcvNorm = normalizePhone(tx.hp_penerima || tx.snapshot_hp_penerima || "");
+    const rcvCid = (tx.recipient_customer_id && customerMap.has(tx.recipient_customer_id)) ? tx.recipient_customer_id : (hpRcvNorm && phoneToIdMap.get(hpRcvNorm));
+    if (rcvCid && rcvCid !== sndCid) recordTxForCustomer(rcvCid, tx, "PENERIMA");
+  });
+
+  const data = Array.from(customerMap.values()).map((c: any) => {
+    const st = statsMap.get(c.customer_id) || {
+      total_transaksi: 0,
+      total_nominal: 0,
+      total_pengirim: 0,
+      total_penerima: 0,
+      first_date: c.created_at,
+      last_date: c.updated_at,
+      outlet_terakhir: c.outlet_id || "OUT-001"
     };
 
     const hasReview = mapsReviews.some((mr: any) => 
-      (mr.author_name || "").toLowerCase().includes((c.nama || c.nama_pengirim || "").toLowerCase()) ||
-      (mr.text || "").toLowerCase().includes((c.nama || c.nama_pengirim || "").toLowerCase())
+      (mr.author_name || "").toLowerCase().includes(String(c.nama).toLowerCase()) ||
+      (mr.text || "").toLowerCase().includes(String(c.nama).toLowerCase())
     );
-
-    const snd = (db.MASTER_PENGIRIM || []).find((p: any) => 
-      p.customer_id === c.customer_id || (hpNorm && normalizePhone(p.telepon || p.no_hp || "") === hpNorm)
-    );
-    const alamat = snd ? (snd.alamat || snd.alamat_pengirim || "") : (c.alamat || c.alamat_pengirim || "");
-    const namaName = c.nama || c.nama_pengirim || "Customer";
 
     return {
       customer_id: c.customer_id,
-      nama: namaName,
-      nama_pengirim: namaName,
-      telepon: hp,
-      no_hp: hp,
-      hp_pengirim: hp,
-      alamat: alamat,
-      alamat_pengirim: alamat,
-      created_at: c.created_at || st.first_date,
-      updated_at: c.updated_at || st.last_date,
+      nama: c.nama,
+      nama_pengirim: c.nama,
+      telepon: c.telepon,
+      no_hp: c.telepon,
+      hp_pengirim: c.telepon,
+      alamat: c.alamat,
+      alamat_pengirim: c.alamat,
       status: c.status || "AKTIF",
-      total_resi: st.total_resi,
-      total_paket: st.total_paket,
-      total_ongkir: st.total_ongkir,
-      total_omzet: st.total_omzet,
-      customer_sejak: st.first_date,
-      last_shipment: st.last_date,
-      maps_review_status: hasReview ? "Contributor" : "Belum Review",
-      outlet_id: Array.from(st.outlet_ids)[0] || c.outlet_id || "OUT-001"
+      created_at: c.created_at,
+      updated_at: c.updated_at,
+      total_transaksi: st.total_transaksi,
+      total_nominal: st.total_nominal,
+      total_omzet: st.total_nominal,
+      total_resi: st.total_transaksi,
+      total_paket: st.total_transaksi,
+      total_pengirim: st.total_pengirim,
+      total_penerima: st.total_penerima,
+      transaksi_pertama: st.first_date || c.created_at,
+      transaksi_terakhir: st.last_date || c.updated_at,
+      customer_sejak: st.first_date || c.created_at,
+      last_shipment: st.last_date || c.updated_at,
+      outlet_id: st.outlet_terakhir || c.outlet_id || "OUT-001",
+      outlet_terakhir: st.outlet_terakhir || c.outlet_id || "OUT-001",
+      maps_review_status: hasReview ? "Contributor" : "Belum Review"
     };
   });
 
@@ -2229,174 +2333,305 @@ app.post("/api/getCustomersMaster", (req, res) => {
   return res.json({ status: "success", data });
 });
 
-// 3.10. GET CUSTOMER DETAIL FULL (ANALYTICS & ADDRESSES)
+// 3.10. GET CUSTOMER DETAIL FULL (IDENTITAS, RELASI, RINGKASAN, RIWAYAT, ANALYTICS)
 app.post("/api/getCustomerDetailFull", (req, res) => {
   const { customer_id, telepon } = req.body || {};
   const db = readDb();
   const customers = db.MASTER_CUSTOMER || [];
   const senders = db.MASTER_PENGIRIM || [];
   const receivers = db.MASTER_PENERIMA || [];
-  const preInputs = db.PreInput_Backup || [];
+  const masterTx = db.MASTER_TRANSAKSI || [];
   const mapsReviews = db.MapsReviews || [];
 
-  const searchPhoneNorm = normalizePhone(telepon);
+  const phoneNorm = normalizePhone(telepon);
   let customer = customers.find((c: any) => 
     (customer_id && c.customer_id === customer_id) || 
-    (searchPhoneNorm && normalizePhone(c.telepon || c.no_hp) === searchPhoneNorm)
+    (phoneNorm && normalizePhone(c.telepon || c.no_hp) === phoneNorm)
   );
 
-  if (!customer && telepon) {
-    customer = {
-      customer_id: customer_id || "CUS-UNKNOWN",
-      nama: "Customer",
-      telepon: telepon,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      status: "AKTIF"
-    };
-  } else if (!customer) {
+  if (!customer && (customer_id || telepon)) {
+    const snd = senders.find((s: any) => (customer_id && s.customer_id === customer_id) || (phoneNorm && normalizePhone(s.telepon) === phoneNorm));
+    const rcv = receivers.find((r: any) => (customer_id && r.customer_id === customer_id) || (phoneNorm && normalizePhone(r.telepon) === phoneNorm));
+    if (snd || rcv) {
+      const ref = snd || rcv;
+      customer = {
+        customer_id: customer_id || ref.customer_id || "CUS-UNKNOWN",
+        nama: ref.nama || "Customer",
+        telepon: ref.telepon || telepon || "",
+        alamat: ref.alamat || "",
+        created_at: ref.created_at || new Date().toISOString(),
+        updated_at: ref.updated_at || new Date().toISOString(),
+        status: ref.status || "AKTIF"
+      };
+    }
+  }
+
+  if (!customer) {
     return res.status(404).json({ status: "error", message: "Customer tidak ditemukan" });
   }
 
-  const phone = String(customer.telepon || customer.no_hp || "").trim();
-  const phoneNorm = normalizePhone(phone);
   const cId = customer.customer_id;
+  const cPhone = String(customer.telepon || customer.no_hp || "").trim();
+  const cPhoneNorm = normalizePhone(cPhone);
 
-  const pengirim_addresses = senders.filter((s: any) => s.customer_id === cId || normalizePhone(s.telepon) === phoneNorm);
-  const penerima_addresses = receivers.filter((r: any) => r.customer_id === cId || normalizePhone(r.telepon) === phoneNorm);
+  const pengirim_addresses = senders.filter((s: any) => s.customer_id === cId || (cPhoneNorm && normalizePhone(s.telepon) === cPhoneNorm));
+  const penerima_addresses = receivers.filter((r: any) => r.customer_id === cId || (cPhoneNorm && normalizePhone(r.telepon) === cPhoneNorm));
 
-  const custPreInputs = preInputs.filter((pi: any) => normalizePhone(pi.hp_pengirim) === phoneNorm);
+  const matchedTx: any[] = [];
+  masterTx.forEach((tx: any) => {
+    const sndNorm = normalizePhone(tx.hp_pengirim || tx.snapshot_hp_pengirim || "");
+    const isSender = (tx.customer_id && tx.customer_id === cId) || (cPhoneNorm && sndNorm === cPhoneNorm);
 
-  let totalResi = 0;
-  let totalPaket = custPreInputs.length;
-  let totalOngkir = 0;
-  let totalOmzet = 0;
-  let totalBerat = 0;
-  let firstDate = custPreInputs.length > 0 ? custPreInputs[0].timestamp : (customer.created_at || new Date().toISOString());
-  let lastDate = custPreInputs.length > 0 ? custPreInputs[0].timestamp : (customer.updated_at || new Date().toISOString());
+    const rcvNorm = normalizePhone(tx.hp_penerima || tx.snapshot_hp_penerima || "");
+    const isReceiver = (tx.recipient_customer_id && tx.recipient_customer_id === cId) || (cPhoneNorm && rcvNorm === cPhoneNorm);
 
-  const barangFreq: Record<string, number> = {};
-  const destFreq: Record<string, number> = {};
-  const dayFreq: Record<string, number> = {};
-  const hourFreq: Record<string, number> = {};
-  let expressCount = 0;
-  let cargoCount = 0;
-
-  const riwayat_pengiriman = custPreInputs.map((pi: any) => {
-    const resi = (db.MASTER_TRANSAKSI || []).find((tx: any) => tx.id === pi.transaksi_id || tx.transaksi_id === pi.transaksi_id);
-
-    const dateObj = new Date(pi.timestamp);
-    const dateStr = pi.timestamp;
-
-    if (new Date(dateStr) < new Date(firstDate)) firstDate = dateStr;
-    if (new Date(dateStr) > new Date(lastDate)) lastDate = dateStr;
-
-    totalBerat += (Number(pi.berat_timbangan) || Number(pi.berat_kg) || 0);
-
-    if (pi.nama_barang) {
-      const bg = String(pi.nama_barang).trim();
-      barangFreq[bg] = (barangFreq[bg] || 0) + 1;
+    if (isSender) {
+      matchedTx.push({
+        tanggal: tx.tanggal_transaksi || tx.created_at,
+        no_resi: tx.no_resi || tx.id || "-",
+        resi: tx.no_resi || tx.id || "-",
+        outlet: tx.outlet_id || "OUT-001",
+        peran: "PENGIRIM",
+        nominal: Number(tx.total_customer ?? tx.grand_total ?? tx.ongkir_customer ?? 0),
+        status: tx.status_transaksi || "PAID",
+        layanan: tx.ekspedisi || "Express",
+        jenis_produk: tx.tipe_produk || "Reguler",
+        nama_barang: tx.nama_barang || "-",
+        admin: tx.admin_id || tx.admin_pembuat || tx.user_id || "SYSTEM",
+        total_bayar: Number(tx.total_customer ?? tx.grand_total ?? tx.ongkir_customer ?? 0)
+      });
+    } else if (isReceiver) {
+      matchedTx.push({
+        tanggal: tx.tanggal_transaksi || tx.created_at,
+        no_resi: tx.no_resi || tx.id || "-",
+        resi: tx.no_resi || tx.id || "-",
+        outlet: tx.outlet_id || "OUT-001",
+        peran: "PENERIMA",
+        nominal: Number(tx.total_customer ?? tx.grand_total ?? tx.ongkir_customer ?? 0),
+        status: tx.status_transaksi || "PAID",
+        layanan: tx.ekspedisi || "Express",
+        jenis_produk: tx.tipe_produk || "Reguler",
+        nama_barang: tx.nama_barang || "-",
+        admin: tx.admin_id || tx.admin_pembuat || tx.user_id || "SYSTEM",
+        total_bayar: Number(tx.total_customer ?? tx.grand_total ?? tx.ongkir_customer ?? 0)
+      });
     }
-    if (pi.alamat_penerima) {
-      const dest = pi.alamat_penerima.split(",").pop()?.trim() || String(pi.alamat_penerima).trim();
-      destFreq[dest] = (destFreq[dest] || 0) + 1;
-    }
-    const dayNames = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
-    const dayName = dayNames[dateObj.getDay()];
-    dayFreq[dayName] = (dayFreq[dayName] || 0) + 1;
+  });
 
-    const hour = dateObj.getHours();
-    const hourLabel = `${String(hour).padStart(2, '0')}:00 - ${String((hour + 1) % 24).padStart(2, '0')}:00`;
-    hourFreq[hourLabel] = (hourFreq[hourLabel] || 0) + 1;
+  matchedTx.sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
 
-    let resiId = "-";
-    let layanan = "-";
-    let jenisProduk = "-";
-    let totalBayar = 0;
-    let admin = pi.admin_id || "SYSTEM";
-
-    if (resi && isTransactionValidForFinance(resi)) {
-      totalResi++;
-      const sum = calculateFinancialSummary(resi);
-      resiId = resi.no_resi || resi.resi_id || resi.id;
-      if ((resi.ekspedisi || "EXPRESS").toUpperCase() === "CARGO") {
-        cargoCount++;
-        layanan = "Cargo";
-      } else {
-        expressCount++;
-        layanan = "Express";
-      }
-      jenisProduk = resi.tipe_produk || "Reguler";
-      totalBayar = sum.customer_payment;
-      totalOngkir += (Number(resi.ongkir) || 0);
-      totalOmzet += totalBayar;
-      if (resi.admin_id) admin = resi.admin_id;
-    }
-
-    return {
-      tanggal: pi.timestamp,
-      no_resi: resiId,
-      layanan: layanan,
-      jenis_produk: jenisProduk,
-      nama_barang: pi.nama_barang,
-      berat_timbangan: pi.berat_timbangan,
-      berat_penagihan: pi.berat_kg,
-      dasar_berat: pi.dasar_berat || "TIMBANGAN",
-      volume: pi.volume,
-      total_bayar: totalBayar,
-      status: pi.status,
-      admin: admin
-    };
-  }).sort((a: any, b: any) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
-
-  const getMostFrequent = (obj: Record<string, number>) => {
-    let maxK = "-";
-    let maxV = 0;
-    Object.entries(obj).forEach(([k, v]) => {
-      if (v > maxV) {
-        maxV = v;
-        maxK = k;
-      }
-    });
-    return maxK;
-  };
+  const totalPengirim = matchedTx.filter(t => t.peran === "PENGIRIM").length;
+  const totalPenerima = matchedTx.filter(t => t.peran === "PENERIMA").length;
+  const totalNominal = matchedTx.reduce((sum, t) => sum + (t.nominal || 0), 0);
+  const totalTransaksi = matchedTx.length;
+  const firstTx = matchedTx.length > 0 ? matchedTx[matchedTx.length - 1].tanggal : (customer.created_at || new Date().toISOString());
+  const lastTx = matchedTx.length > 0 ? matchedTx[0].tanggal : (customer.updated_at || new Date().toISOString());
+  const lastOutlet = matchedTx.length > 0 ? matchedTx[0].outlet : (customer.outlet_id || "OUT-001");
 
   const hasReview = mapsReviews.some((mr: any) => 
-    (mr.author_name || "").toLowerCase().includes((customer.nama || customer.nama_pengirim || "").toLowerCase()) ||
-    (mr.text || "").toLowerCase().includes((customer.nama || customer.nama_pengirim || "").toLowerCase())
+    (mr.author_name || "").toLowerCase().includes(String(customer.nama).toLowerCase()) ||
+    (mr.text || "").toLowerCase().includes(String(customer.nama).toLowerCase())
   );
 
   return res.json({
     status: "success",
     data: {
       customer: {
-        ...customer,
-        nama: customer.nama || customer.nama_pengirim || "Customer",
-        telepon: phone
+        customer_id: customer.customer_id,
+        nama: customer.nama,
+        telepon: cPhone,
+        alamat: customer.alamat || (pengirim_addresses[0]?.alamat) || (penerima_addresses[0]?.alamat) || "",
+        status: customer.status || "AKTIF",
+        created_at: customer.created_at,
+        updated_at: customer.updated_at
+      },
+      relasi: {
+        pengirim: pengirim_addresses,
+        penerima: penerima_addresses
       },
       pengirim_addresses,
       penerima_addresses,
       summary: {
-        customer_sejak: firstDate,
-        total_resi: totalResi,
-        total_paket: totalPaket,
-        total_ongkir: totalOngkir,
-        total_omzet: totalOmzet,
-        last_shipment: lastDate,
+        customer_sejak: firstTx,
+        total_transaksi: totalTransaksi,
+        total_nominal: totalNominal,
+        total_omzet: totalNominal,
+        total_pengirim: totalPengirim,
+        total_penerima: totalPenerima,
+        total_resi: totalTransaksi,
+        total_paket: totalTransaksi,
+        transaksi_pertama: firstTx,
+        transaksi_terakhir: lastTx,
+        last_shipment: lastTx,
+        outlet_terakhir: lastOutlet,
         maps_review_status: hasReview ? "Contributor" : "Belum Review"
       },
       analytics: {
-        total_transaksi: totalResi || totalPaket,
-        total_paket: totalPaket,
-        total_ongkir: totalOngkir,
-        berat_rata_rata: totalPaket > 0 ? Number((totalBerat / totalPaket).toFixed(2)) : 0,
-        layanan_favorit: expressCount >= cargoCount ? (expressCount > 0 ? "Express" : "N/A") : "Cargo",
-        barang_paling_sering: getMostFrequent(barangFreq),
-        kota_tujuan_terbanyak: getMostFrequent(destFreq),
-        hari_pengiriman_terbanyak: getMostFrequent(dayFreq),
-        jam_pengiriman_terbanyak: getMostFrequent(hourFreq)
+        total_transaksi: totalTransaksi,
+        total_nominal: totalNominal,
+        frekuensi_transaksi: totalTransaksi > 0 ? `${totalTransaksi}x Transaksi` : "0x Transaksi",
+        first_transaction: firstTx,
+        last_transaction: lastTx,
+        sender_count: totalPengirim,
+        recipient_count: totalPenerima,
+        outlet_terakhir: lastOutlet,
+        daftar_transaksi_terakhir: matchedTx.slice(0, 10),
+        layanan_favorit: totalPengirim >= totalPenerima ? "Express" : "Cargo"
       },
-      riwayat_pengiriman
+      riwayat_transaksi: matchedTx,
+      riwayat_pengiriman: matchedTx
+    }
+  });
+});
+
+// 3.11. GET CUSTOMER ANALYSIS (AGGREGATED SUMMARY FOR PHASE 7 STEP 1)
+app.post("/api/getCustomerAnalysis", (req, res) => {
+  const db = readDb();
+  const masterCustomers = db.MASTER_CUSTOMER || [];
+  const pengirimRows = db.MASTER_PENGIRIM || [];
+  const penerimaRows = db.MASTER_PENERIMA || [];
+  const masterTx = db.MASTER_TRANSAKSI || [];
+
+  const customerMap = new Map<string, any>();
+  const phoneToIdMap = new Map<string, string>();
+
+  masterCustomers.forEach((c: any) => {
+    const cid = String(c.customer_id || c.id || "").trim();
+    if (!cid) return;
+    const phone = String(c.telepon || c.no_hp || "").trim();
+    const phoneNorm = normalizePhone(phone);
+    customerMap.set(cid, {
+      customer_id: cid,
+      nama: c.nama || c.nama_pengirim || "Customer",
+      telepon: phone,
+      alamat: c.alamat || c.alamat_pengirim || "",
+      created_at: c.created_at || new Date().toISOString(),
+      updated_at: c.updated_at || new Date().toISOString()
+    });
+    if (phoneNorm) phoneToIdMap.set(phoneNorm, cid);
+  });
+
+  pengirimRows.forEach((p: any) => {
+    const phone = String(p.telepon || p.no_hp || "").trim();
+    const phoneNorm = normalizePhone(phone);
+    const existingId = (p.customer_id && customerMap.has(p.customer_id)) ? p.customer_id : (phoneNorm && phoneToIdMap.get(phoneNorm));
+    if (existingId) {
+      const existing = customerMap.get(existingId);
+      if (!existing.alamat && p.alamat) existing.alamat = p.alamat;
+    } else {
+      const cid = p.customer_id || ("CUS" + String(customerMap.size + 1).padStart(6, "0"));
+      customerMap.set(cid, {
+        customer_id: cid,
+        nama: p.nama || "Customer",
+        telepon: phone,
+        alamat: p.alamat || "",
+        created_at: p.created_at || p.tanggal_pertama || new Date().toISOString(),
+        updated_at: p.updated_at || p.tanggal_terakhir || new Date().toISOString()
+      });
+      if (phoneNorm) phoneToIdMap.set(phoneNorm, cid);
+    }
+  });
+
+  penerimaRows.forEach((r: any) => {
+    const phone = String(r.telepon || r.no_hp || "").trim();
+    const phoneNorm = normalizePhone(phone);
+    const existingId = (r.customer_id && customerMap.has(r.customer_id)) ? r.customer_id : (phoneNorm && phoneToIdMap.get(phoneNorm));
+    if (existingId) {
+      const existing = customerMap.get(existingId);
+      if (!existing.alamat && r.alamat) existing.alamat = r.alamat;
+    } else {
+      const cid = r.customer_id || ("CUS" + String(customerMap.size + 1).padStart(6, "0"));
+      customerMap.set(cid, {
+        customer_id: cid,
+        nama: r.nama || "Customer",
+        telepon: phone,
+        alamat: r.alamat || "",
+        created_at: r.created_at || r.tanggal_pertama || new Date().toISOString(),
+        updated_at: r.updated_at || r.tanggal_terakhir || new Date().toISOString()
+      });
+      if (phoneNorm) phoneToIdMap.set(phoneNorm, cid);
+    }
+  });
+
+  const txByCustomer = new Map<string, any[]>();
+  masterTx.forEach((tx: any) => {
+    const sndNorm = normalizePhone(tx.hp_pengirim || tx.snapshot_hp_pengirim || "");
+    const sndCid = (tx.customer_id && customerMap.has(tx.customer_id)) ? tx.customer_id : (sndNorm && phoneToIdMap.get(sndNorm));
+    if (sndCid) {
+      if (!txByCustomer.has(sndCid)) txByCustomer.set(sndCid, []);
+      txByCustomer.get(sndCid)!.push({
+        tanggal: tx.tanggal_transaksi || tx.created_at,
+        resi: tx.no_resi || tx.id || "-",
+        outlet: tx.outlet_id || "OUT-001",
+        peran: "PENGIRIM",
+        nominal: Number(tx.total_customer ?? tx.grand_total ?? tx.ongkir_customer ?? 0),
+        status: tx.status_transaksi || "PAID"
+      });
+    }
+
+    const rcvNorm = normalizePhone(tx.hp_penerima || tx.snapshot_hp_penerima || "");
+    const rcvCid = (tx.recipient_customer_id && customerMap.has(tx.recipient_customer_id)) ? tx.recipient_customer_id : (rcvNorm && phoneToIdMap.get(rcvNorm));
+    if (rcvCid && rcvCid !== sndCid) {
+      if (!txByCustomer.has(rcvCid)) txByCustomer.set(rcvCid, []);
+      txByCustomer.get(rcvCid)!.push({
+        tanggal: tx.tanggal_transaksi || tx.created_at,
+        resi: tx.no_resi || tx.id || "-",
+        outlet: tx.outlet_id || "OUT-001",
+        peran: "PENERIMA",
+        nominal: Number(tx.total_customer ?? tx.grand_total ?? tx.ongkir_customer ?? 0),
+        status: tx.status_transaksi || "PAID"
+      });
+    }
+  });
+
+  let totalTransactions = 0;
+  let totalNominalAll = 0;
+
+  const analysisList = Array.from(customerMap.values()).map((c: any) => {
+    const txs = txByCustomer.get(c.customer_id) || [];
+    txs.sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+
+    const senderCount = txs.filter(t => t.peran === "PENGIRIM").length;
+    const recipientCount = txs.filter(t => t.peran === "PENERIMA").length;
+    const totalTransaksi = txs.length;
+    const totalNominal = txs.reduce((sum, t) => sum + (t.nominal || 0), 0);
+
+    totalTransactions += totalTransaksi;
+    totalNominalAll += totalNominal;
+
+    const firstTx = txs.length > 0 ? txs[txs.length - 1].tanggal : (c.created_at || "");
+    const lastTx = txs.length > 0 ? txs[0].tanggal : (c.updated_at || "");
+    const outletTerakhir = txs.length > 0 ? txs[0].outlet : "OUT-001";
+
+    return {
+      customer_id: c.customer_id,
+      nama: c.nama,
+      telepon: c.telepon,
+      alamat: c.alamat,
+      total_transaksi: totalTransaksi,
+      total_nominal: totalNominal,
+      frekuensi_transaksi: totalTransaksi > 0 ? `${totalTransaksi}x` : "0x",
+      first_transaction: firstTx,
+      last_transaction: lastTx,
+      sender_count: senderCount,
+      recipient_count: recipientCount,
+      outlet_terakhir: outletTerakhir,
+      daftar_transaksi_terakhir: txs.slice(0, 5)
+    };
+  });
+
+  analysisList.sort((a, b) => b.total_nominal - a.total_nominal || b.total_transaksi - a.total_transaksi);
+
+  return res.json({
+    status: "success",
+    data: {
+      summary: {
+        total_customers: customerMap.size,
+        total_transaksi: totalTransactions,
+        total_nominal: totalNominalAll,
+        avg_transaksi_per_customer: customerMap.size > 0 ? Number((totalTransactions / customerMap.size).toFixed(1)) : 0
+      },
+      customers: analysisList
     }
   });
 });
@@ -2417,7 +2652,8 @@ app.post("/api/searchCustomer", (req, res) => {
   const matching = list.filter((c: any) => {
     const name = (c.nama || c.nama_pengirim || "").toLowerCase();
     const phone = (c.telepon || c.no_hp || "").toLowerCase();
-    return name.includes(searchQ) || phone.includes(searchQ);
+    const cid = (c.customer_id || "").toLowerCase();
+    return name.includes(searchQ) || phone.includes(searchQ) || cid.includes(searchQ);
   }).map((c: any) => {
     const hp = c.telepon || c.no_hp || "";
     const hpNorm = normalizePhone(hp);
