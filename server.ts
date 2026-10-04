@@ -48,6 +48,7 @@ import {
   generateFinancialCloseReport,
   accessEvidence
 } from "./src/lib/financialCloseEvidenceEngine";
+import { resolveSetoranActualCash, getSetoranRealizations } from "./src/lib/setoranFinancialResolver";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { getWIBDate, getWIBTime, getTodayWIB, shiftWIBDays, formatWIBDisplay, extractBusinessDate, normalizeYoYiTimestampToWIB } from "./src/utils/dateUtils";
@@ -5986,24 +5987,15 @@ app.post("/api/getSetoranList", async (req, res) => {
     userMap[u.user_id] = u.nama_lengkap || u.username || u.user_id;
   });
 
-  const realizations = db.Setoran_Realization || [];
-
   list = list.map((s: any) => {
     const expected = Number(s.expected_cash ?? s.wajib_setor_owner ?? s.total_setoran_owner ?? 0);
     
-    // Calculate actual cash from realizations if they exist
-    const setoranReals = realizations.filter((r: any) => r.setoran_id === s.setoran_id);
-    let actual = 0;
-    let pending = 0;
-    
-    if (setoranReals.length > 0) {
-      setoranReals.forEach((r: any) => {
-        if (r.status === "DISETUJUI") {
-          actual += Number(r.nominal || 0);
-        } else if (r.status === "MENUNGGU_APPROVAL") {
-          pending += Number(r.nominal || 0);
-        }
-      });
+    // Canonical Phase 8: Calculate actual cash strictly from approved realizations via resolver
+    const setoranRes = resolveSetoranActualCash(db, s.setoran_id);
+    let actual = setoranRes.actual_cash;
+    let pending = setoranRes.pending_cash;
+
+    if (setoranRes.has_realization) {
       // Update header status dynamically if all are processed
       if (s.status !== "DISETUJUI" && s.status !== "DITOLAK") {
          if (actual > 0 && pending === 0 && actual >= expected) {
@@ -6011,13 +6003,6 @@ app.post("/api/getSetoranList", async (req, res) => {
          } else if (pending > 0) {
             s.status = "MENUNGGU_APPROVAL";
          }
-      }
-    } else {
-      // Legacy behavior
-      actual = Number(s.actual_cash ?? s.nominal_setor ?? s.nominal ?? s.total_setoran_owner ?? 0);
-      if (s.status === "MENUNGGU_APPROVAL") {
-         pending = actual;
-         actual = 0;
       }
     }
 
@@ -6098,28 +6083,11 @@ app.post("/api/getSetoranDetail", async (req, res) => {
     }
   });
 
-  const setoranReals = (db.Setoran_Realization || []).filter((r: any) => r.setoran_id === header.setoran_id);
-  
   let expected_cash = Number(header.expected_cash ?? header.wajib_setor_owner ?? totalExpectedCash);
-  let actual_cash = 0;
-  let pending_cash = 0;
-
-  if (setoranReals.length > 0) {
-    setoranReals.forEach((r: any) => {
-      if (r.status === "DISETUJUI") {
-        actual_cash += Number(r.nominal || 0);
-      } else if (r.status === "MENUNGGU_APPROVAL") {
-        pending_cash += Number(r.nominal || 0);
-      }
-    });
-  } else {
-    // Legacy behavior
-    actual_cash = Number(header.actual_cash ?? header.nominal_setor ?? header.nominal ?? header.total_setoran_owner ?? expected_cash);
-    if (header.status === "MENUNGGU_APPROVAL") {
-      pending_cash = actual_cash;
-      actual_cash = 0;
-    }
-  }
+  const setoranRes = resolveSetoranActualCash(db, header.setoran_id);
+  const realizations = getSetoranRealizations(db, header.setoran_id);
+  let actual_cash = setoranRes.actual_cash;
+  let pending_cash = setoranRes.pending_cash;
 
   const variance = actual_cash - expected_cash;
   const variance_status = Math.abs(variance) < 0.01 ? "MATCH" : variance < 0 ? "SHORT" : "OVER";
@@ -6159,7 +6127,7 @@ app.post("/api/getSetoranDetail", async (req, res) => {
     total_kas_outlet: totalKasOutlet
   };
   
-  return res.json({ status: "success", data: { header: enrichedHeader, summary, transactions: txList, realizations: setoranReals } });
+  return res.json({ status: "success", data: { header: enrichedHeader, summary, transactions: txList, realizations } });
 });
 
 app.post("/api/createSetoran", async (req, res) => {

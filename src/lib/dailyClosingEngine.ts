@@ -15,6 +15,7 @@ import {
 import { logAuditEvent } from "./auditTrailEngine";
 import { getSettlementRecord } from "./settlementEngine";
 import { getWIBDate, getTodayWIB, extractBusinessDate, calculateSettlementAging, SettlementAgingResult } from "../utils/dateUtils";
+import { resolveSetoranActualCash } from "./setoranFinancialResolver";
 
 export type ClosingState = "OPEN" | "VALIDATING" | "READY" | "CLOSED" | "BLOCKED" | "REOPENED";
 
@@ -258,7 +259,8 @@ export function validateDailyClosing(
 
   for (const s of activeSetoran) {
     const sAdmin = s.admin_pembuat || s.admin_id || s.user_id || s.created_by || fallbackAdmin;
-    const nominal = Number(s.actual_cash ?? s.nominal ?? s.jumlah_setor ?? s.total_setor ?? s.total_setoran_owner ?? 0);
+    const res = resolveSetoranActualCash(db, s.setoran_id);
+    const nominal = res.actual_cash;
     if (!adminMap[sAdmin]) {
       adminMap[sAdmin] = {
         admin_id: sAdmin,
@@ -294,10 +296,14 @@ export function validateDailyClosing(
     } else if (adminSetorans.length === 0) {
       status = "MISSING";
     } else {
-      const hasUnapproved = adminSetorans.some((s: any) =>
-        s.status === "PENDING" ||
-        (s.status !== "DISETUJUI" && s.status !== "APPROVED" && s.approval_status !== "APPROVED")
-      );
+      const hasUnapproved = adminSetorans.some((s: any) => {
+        const res = resolveSetoranActualCash(db, s.setoran_id);
+        if (res.has_realization) {
+          return res.pending_count > 0;
+        }
+        return s.status === "PENDING" || s.status === "MENUNGGU_APPROVAL" ||
+          (s.status !== "DISETUJUI" && s.status !== "APPROVED" && s.approval_status !== "APPROVED");
+      });
       if (hasUnapproved) {
         status = "UNAPPROVED";
       } else if (Math.abs(variance) > 0.01) {
@@ -323,7 +329,8 @@ export function validateDailyClosing(
   const setoran_required = dailyFin.total_cash_payment;
   let setoran_actual = 0;
   for (const s of activeSetoran) {
-    setoran_actual += Number(s.actual_cash ?? s.nominal ?? s.jumlah_setor ?? s.total_setor ?? s.total_setoran_owner ?? 0);
+    const res = resolveSetoranActualCash(db, s.setoran_id);
+    setoran_actual += res.actual_cash;
   }
 
   // Contract: variance = actual_cash - expected_cash
@@ -335,10 +342,14 @@ export function validateDailyClosing(
   } else if (activeSetoran.length === 0) {
     setoran_status = "MISSING";
   } else {
-    const hasUnapproved = activeSetoran.some((s: any) => 
-      s.status === "PENDING" || 
-      (s.status !== "DISETUJUI" && s.status !== "APPROVED" && s.approval_status !== "APPROVED")
-    );
+    const hasUnapproved = activeSetoran.some((s: any) => {
+      const res = resolveSetoranActualCash(db, s.setoran_id);
+      if (res.has_realization) {
+        return res.pending_count > 0;
+      }
+      return s.status === "PENDING" || s.status === "MENUNGGU_APPROVAL" ||
+        (s.status !== "DISETUJUI" && s.status !== "APPROVED" && s.approval_status !== "APPROVED");
+    });
     if (hasUnapproved) {
       setoran_status = "UNAPPROVED";
     } else if (Math.abs(setoran_variance) > 0.01) {
@@ -877,8 +888,21 @@ export function getOwnerClosingSummary(db: any, filters: OwnerSummaryFilter = {}
     let sCreatedAt: string | null = null;
     if (setoran) {
       row.setoran_id = setoran.setoran_id;
-      row.actual_cash = Number(setoran.actual_cash ?? setoran.nominal_setor ?? setoran.nominal ?? setoran.total_setoran_owner ?? 0);
-      row.setoran_status = setoran.status as any;
+      const res = resolveSetoranActualCash(db, setoran.setoran_id);
+      row.actual_cash = res.actual_cash;
+      if (res.has_realization) {
+        if (res.pending_count > 0 && res.approved_count === 0) {
+          row.setoran_status = "MENUNGGU_APPROVAL";
+        } else if (res.approved_count > 0 && res.pending_count === 0 && res.actual_cash >= row.expected_cash) {
+          row.setoran_status = "DISETUJUI";
+        } else if (res.pending_count > 0) {
+          row.setoran_status = "MENUNGGU_APPROVAL";
+        } else {
+          row.setoran_status = setoran.status as any;
+        }
+      } else {
+        row.setoran_status = setoran.status as any;
+      }
       sCreatedAt = setoran.created_at || null;
       if (setoran.closing_status) {
         row.closing_status = setoran.closing_status;
