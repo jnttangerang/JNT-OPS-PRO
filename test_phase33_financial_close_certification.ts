@@ -43,6 +43,14 @@ async function runTests() {
     status: "APPROVED"
   } as any);
 
+  // Setoran & Realization Approved (Canonical Cash Realization for 20000 cash)
+  db.Master_Setoran = [
+    { setoran_id: "SET-OUT-A-2026-08-01", outlet_id: "OUT-A", tanggal: "2026-08-01", status: "DISETUJUI" }
+  ];
+  db.Setoran_Realization = [
+    { realization_id: "REAL-OUT-A-2026-08-01", setoran_id: "SET-OUT-A-2026-08-01", nominal: 20000, status: "DISETUJUI" }
+  ];
+
   // Daily Closing Closed
   db.DailyClosing.push({
     closing_id: "CLS-OUT-A-2026-08-01",
@@ -148,15 +156,15 @@ async function runTests() {
   let valPass1 = validateFinancialClose(db, { outlet_id: "OUT-A", tanggal: "2026-08-01", actor: admin });
   runTest("TEST 17: Resolved exception permits certification", valPass1.data?.status === "READY_FOR_CERTIFICATION");
   
-  // TEST 18: Unsettled blocks
+  // TEST 18: Unsettled status is non-blocking (legacy settlement is informational)
   ensureSettlementTable(db)[0].status = "UNSETTLED";
   let valFail6 = validateFinancialClose(db, { outlet_id: "OUT-A", tanggal: "2026-08-01", actor: admin });
-  runTest("TEST 18: Unsettled status blocks", valFail6.data?.status === "BLOCKED" && valFail6.data?.controls.find(c => c.control_name === "SETTLEMENT")?.status === "FAIL");
+  runTest("TEST 18: Unsettled status is non-blocking", valFail6.data?.status === "READY_FOR_CERTIFICATION" && valFail6.data?.controls.find(c => c.control_name === "SETTLEMENT")?.status === "WARNING");
   
-  // TEST 19: Settlement mismatch blocks
+  // TEST 19: Settlement mismatch is non-blocking
   ensureSettlementTable(db)[0].status = "MISMATCH";
   let valFail7 = validateFinancialClose(db, { outlet_id: "OUT-A", tanggal: "2026-08-01", actor: admin });
-  runTest("TEST 19: Settlement MISMATCH blocks", valFail7.data?.status === "BLOCKED");
+  runTest("TEST 19: Settlement MISMATCH is non-blocking", valFail7.data?.status === "READY_FOR_CERTIFICATION");
 
   // TEST 20: Approved settlement passes
   ensureSettlementTable(db)[0].status = "APPROVED";
@@ -212,6 +220,124 @@ async function runTests() {
   // TEST 30: All transition states logged to Audit Trail
   let certEvents = db.AuditLogs.filter((e: any) => e.entity_type === "FINANCIAL_CERTIFICATION");
   runTest("TEST 30: Audit trail records certification events", certEvents.length > 0);
+
+  // CANONICAL CASH CONTROL CRITICAL REGRESSION TESTS (Section 7)
+  console.log("\n--- CRITICAL REGRESSION SELF-CHECK (SECTION 7) ---");
+
+  // CASE A — BALANCE: expected 69,000, approved 69,000, pending 0 -> PASS, variance 0
+  const dbCaseA: any = {
+    MASTER_TRANSAKSI: [
+      { transaksi_id: "TX-CA", outlet_id: "OUT-CASE-A", tanggal_transaksi: "2026-08-02", no_resi: "RESI-CA", status_transaksi: "SUCCESS", grand_total: 69000, ongkir_dasar: 69000, metode_bayar: "CASH" }
+    ],
+    Master_Setoran: [
+      { setoran_id: "SET-CA", outlet_id: "OUT-CASE-A", tanggal: "2026-08-02", status: "DISETUJUI" }
+    ],
+    Setoran_Realization: [
+      { realization_id: "REAL-CA", setoran_id: "SET-CA", nominal: 69000, status: "DISETUJUI" }
+    ],
+    DailyClosing: [
+      { closing_id: "CLS-OUT-CASE-A-2026-08-02", outlet_id: "OUT-CASE-A", tanggal: "2026-08-02", status: "CLOSED" }
+    ],
+    AuditLogs: [
+      { entity_type: "DAILY_CLOSING", outlet_id: "OUT-CASE-A", entity_id: "CLS-OUT-CASE-A-2026-08-02", event_type: "CLOSING_COMPLETED" }
+    ],
+    FinancialCloseCertification: []
+  };
+  const resCaseA = validateFinancialClose(dbCaseA, { outlet_id: "OUT-CASE-A", tanggal: "2026-08-02", actor: admin });
+  const cashCtrlA = resCaseA.data?.controls.find(c => c.control_name === "CASH_CONTROL");
+  runTest("Case A — BALANCE: expected 69k, approved 69k, pending 0 -> PASS, variance 0", 
+    resCaseA.data?.status === "READY_FOR_CERTIFICATION" && 
+    cashCtrlA?.status === "PASS" && 
+    resCaseA.data?.financial_summary?.variance === 0 &&
+    resCaseA.data?.financial_summary?.expected_cash === 69000 &&
+    resCaseA.data?.financial_summary?.actual_cash === 69000
+  );
+
+  // CASE B — KURANG SETOR: expected 69,000, approved 60,000, pending 0 -> FAIL, variance -9,000
+  const dbCaseB: any = {
+    MASTER_TRANSAKSI: [
+      { transaksi_id: "TX-CB", outlet_id: "OUT-CASE-B", tanggal_transaksi: "2026-08-02", no_resi: "RESI-CB", status_transaksi: "SUCCESS", grand_total: 69000, ongkir_dasar: 69000, metode_bayar: "CASH" }
+    ],
+    Master_Setoran: [
+      { setoran_id: "SET-CB", outlet_id: "OUT-CASE-B", tanggal: "2026-08-02", status: "DISETUJUI" }
+    ],
+    Setoran_Realization: [
+      { realization_id: "REAL-CB", setoran_id: "SET-CB", nominal: 60000, status: "DISETUJUI" }
+    ],
+    DailyClosing: [
+      { closing_id: "CLS-OUT-CASE-B-2026-08-02", outlet_id: "OUT-CASE-B", tanggal: "2026-08-02", status: "CLOSED" }
+    ],
+    AuditLogs: [
+      { entity_type: "DAILY_CLOSING", outlet_id: "OUT-CASE-B", entity_id: "CLS-OUT-CASE-B-2026-08-02", event_type: "CLOSING_COMPLETED" }
+    ],
+    FinancialCloseCertification: []
+  };
+  const resCaseB = validateFinancialClose(dbCaseB, { outlet_id: "OUT-CASE-B", tanggal: "2026-08-02", actor: admin });
+  const cashCtrlB = resCaseB.data?.controls.find(c => c.control_name === "CASH_CONTROL");
+  runTest("Case B — KURANG SETOR: expected 69k, approved 60k, pending 0 -> FAIL, variance -9,000", 
+    resCaseB.data?.status === "BLOCKED" && 
+    cashCtrlB?.status === "FAIL" && 
+    resCaseB.data?.financial_summary?.variance === -9000 &&
+    resCaseB.data?.financial_summary?.cash_status === "KURANG_SETOR"
+  );
+
+  // CASE C — Pending approval: expected 69,000, approved 69,000, pending 5,000 -> FAIL / BLOCKED
+  const dbCaseC: any = {
+    MASTER_TRANSAKSI: [
+      { transaksi_id: "TX-CC", outlet_id: "OUT-CASE-C", tanggal_transaksi: "2026-08-02", no_resi: "RESI-CC", status_transaksi: "SUCCESS", grand_total: 69000, ongkir_dasar: 69000, metode_bayar: "CASH" }
+    ],
+    Master_Setoran: [
+      { setoran_id: "SET-CC", outlet_id: "OUT-CASE-C", tanggal: "2026-08-02", status: "MENUNGGU_APPROVAL" }
+    ],
+    Setoran_Realization: [
+      { realization_id: "REAL-CC-1", setoran_id: "SET-CC", nominal: 69000, status: "DISETUJUI" },
+      { realization_id: "REAL-CC-2", setoran_id: "SET-CC", nominal: 5000, status: "MENUNGGU_APPROVAL" }
+    ],
+    DailyClosing: [
+      { closing_id: "CLS-OUT-CASE-C-2026-08-02", outlet_id: "OUT-CASE-C", tanggal: "2026-08-02", status: "CLOSED" }
+    ],
+    AuditLogs: [
+      { entity_type: "DAILY_CLOSING", outlet_id: "OUT-CASE-C", entity_id: "CLS-OUT-CASE-C-2026-08-02", event_type: "CLOSING_COMPLETED" }
+    ],
+    FinancialCloseCertification: []
+  };
+  const resCaseC = validateFinancialClose(dbCaseC, { outlet_id: "OUT-CASE-C", tanggal: "2026-08-02", actor: admin });
+  const certCaseC = certifyFinancialClose(dbCaseC, { outlet_id: "OUT-CASE-C", tanggal: "2026-08-02", actor: owner });
+  runTest("Case C — Pending approval: pending 5k -> FAIL / BLOCKED (cannot certify)", 
+    resCaseC.data?.status === "BLOCKED" && 
+    resCaseC.data?.financial_summary?.pending_cash === 5000 &&
+    certCaseC.status === "error"
+  );
+
+  // CASE D — Critical semantic regression: cash 69k, QRIS 5.4k (owner_deposit 74.4k), approved 69k -> PASS
+  const dbCaseD: any = {
+    MASTER_TRANSAKSI: [
+      { transaksi_id: "TX-CD-1", outlet_id: "OUT-CASE-D", tanggal_transaksi: "2026-08-02", no_resi: "RESI-CD-1", status_transaksi: "SUCCESS", grand_total: 69000, ongkir_dasar: 69000, metode_bayar: "CASH" },
+      { transaksi_id: "TX-CD-2", outlet_id: "OUT-CASE-D", tanggal_transaksi: "2026-08-02", no_resi: "RESI-CD-2", status_transaksi: "SUCCESS", grand_total: 5400, ongkir_dasar: 5400, metode_bayar: "QRIS" }
+    ],
+    Master_Setoran: [
+      { setoran_id: "SET-CD", outlet_id: "OUT-CASE-D", tanggal: "2026-08-02", status: "DISETUJUI" }
+    ],
+    Setoran_Realization: [
+      { realization_id: "REAL-CD", setoran_id: "SET-CD", nominal: 69000, status: "DISETUJUI" }
+    ],
+    DailyClosing: [
+      { closing_id: "CLS-OUT-CASE-D-2026-08-02", outlet_id: "OUT-CASE-D", tanggal: "2026-08-02", status: "CLOSED" }
+    ],
+    AuditLogs: [
+      { entity_type: "DAILY_CLOSING", outlet_id: "OUT-CASE-D", entity_id: "CLS-OUT-CASE-D-2026-08-02", event_type: "CLOSING_COMPLETED" }
+    ],
+    FinancialCloseCertification: []
+  };
+  const resCaseD = validateFinancialClose(dbCaseD, { outlet_id: "OUT-CASE-D", tanggal: "2026-08-02", actor: admin });
+  const cashCtrlD = resCaseD.data?.controls.find(c => c.control_name === "CASH_CONTROL");
+  runTest("Case D — Critical semantic regression: cash 69k + QRIS 5.4k -> expected 69k, actual 69k -> PASS (QRIS does not fail cash gate)", 
+    resCaseD.data?.status === "READY_FOR_CERTIFICATION" && 
+    cashCtrlD?.status === "PASS" && 
+    resCaseD.data?.financial_summary?.expected_cash === 69000 &&
+    resCaseD.data?.financial_summary?.actual_cash === 69000 &&
+    resCaseD.data?.financial_summary?.variance === 0
+  );
 
   console.log("=========================================");
   console.log(`PHASE 33 E2E SUITE RESULT: ${passCount}/${passCount + failCount} TESTS PASSED`);

@@ -3,7 +3,8 @@ import { getExceptions, ExceptionRecord } from "./reconciliationReviewEngine";
 import { getSettlementRecord } from "./settlementEngine";
 import { getDailyClosingRecord } from "./dailyClosingEngine";
 import { getAuditTrail, logAuditEvent } from "./auditTrailEngine";
-import { getTodayWIB } from "../utils/dateUtils";
+import { getTodayWIB, extractBusinessDate } from "../utils/dateUtils";
+import { resolveSetoranActualCash, parseSafeNominal } from "./setoranFinancialResolver";
 
 export type CertificationState = "OPEN" | "VALIDATING" | "READY_FOR_CERTIFICATION" | "CERTIFIED" | "BLOCKED" | "REOPEN_REQUESTED" | "REOPENED";
 
@@ -139,6 +140,50 @@ export function validateFinancialClose(db: any, params: {
   }
   controls.push({ control_name: "FINANCIAL_INTEGRITY", status: financialIntegrityStatus, message: "Valid" });
 
+  // CANONICAL CASH CONTROL CALCULATIONS
+  // Expected Cash strictly from canonical Financial Engine
+  const expected_cash = financialSummary?.total_cash_payment ?? 0;
+
+  // Actual & Pending Cash from canonical Setoran_Realization via resolveSetoranActualCash
+  const allSetoran = db.Master_Setoran || db.SetoranData || db.Setoran || [];
+  const activeSetoran = allSetoran.filter((s: any) => {
+    const sDate = extractBusinessDate(s);
+    return s.outlet_id === outlet_id && sDate === tanggal && s.status !== "DITOLAK";
+  });
+
+  let actual_cash = 0;
+  let pending_cash = 0;
+  const processedSetoranIds = new Set<string>();
+
+  for (const s of activeSetoran) {
+    const sId = String(s.setoran_id || "").trim();
+    if (sId) processedSetoranIds.add(sId);
+    const res = resolveSetoranActualCash(db, s.setoran_id);
+    actual_cash += res.actual_cash;
+    pending_cash += res.pending_cash;
+  }
+
+  // Also check direct realizations in db.Setoran_Realization (if not linked via Master_Setoran header)
+  const allRealizations = db.Setoran_Realization || [];
+  for (const r of allRealizations) {
+    const rSetoranId = String(r.setoran_id || "").trim();
+    if (rSetoranId && processedSetoranIds.has(rSetoranId)) continue;
+    
+    const rOutlet = r.outlet_id || (activeSetoran.length === 0 ? outlet_id : "");
+    const rDate = extractBusinessDate(r) || (activeSetoran.length === 0 ? tanggal : "");
+    if (rOutlet === outlet_id && rDate === tanggal) {
+      const nominal = parseSafeNominal(r.nominal);
+      const status = String(r.status || "").trim().toUpperCase();
+      if (status === "DISETUJUI") {
+        actual_cash += nominal;
+      } else if (status === "MENUNGGU_APPROVAL") {
+        pending_cash += nominal;
+      }
+    }
+  }
+
+  const variance = actual_cash - expected_cash;
+
   // CONTROL 03 — RECONCILIATION
   let reconciliationStatus: "PASS" | "FAIL" | "WARNING" = "PASS";
   const openExceptions = getExceptions(db, { outlet_id }).filter(e => e.status === "OPEN" || e.status === "IN_REVIEW");
@@ -150,14 +195,13 @@ export function validateFinancialClose(db: any, params: {
   }
   controls.push({ control_name: "RECONCILIATION", status: reconciliationStatus, message: "Valid" });
 
-  // CONTROL 04 — SETTLEMENT
-  let settlementControlStatus: "PASS" | "FAIL" | "WARNING" = "PASS";
+  // CONTROL 04 — SETTLEMENT (Legacy non-blocking information)
   const stlStatus = settlement ? settlement.status : "UNSETTLED";
-  if (stlStatus !== "APPROVED" && stlStatus !== "SETTLED") {
-    settlementControlStatus = "FAIL";
-    blocking_reasons.push(`Status settlement belum selesai (current: ${stlStatus}).`);
+  const settlementControlStatus: "PASS" | "WARNING" = (stlStatus === "APPROVED" || stlStatus === "SETTLED") ? "PASS" : "WARNING";
+  if (settlementControlStatus === "WARNING") {
+    warnings.push(`Status settlement: ${stlStatus} (legacy non-blocking).`);
   }
-  controls.push({ control_name: "SETTLEMENT", status: settlementControlStatus, message: "Valid" });
+  controls.push({ control_name: "SETTLEMENT", status: settlementControlStatus, message: `Status: ${stlStatus} (legacy non-blocking)` });
 
   // CONTROL 05 — DAILY CLOSING
   let dailyClosingControlStatus: "PASS" | "FAIL" | "WARNING" = "PASS";
@@ -168,13 +212,46 @@ export function validateFinancialClose(db: any, params: {
   }
   controls.push({ control_name: "DAILY_CLOSING", status: dailyClosingControlStatus, message: "Valid" });
 
-  // CONTROL 06 — OWNER APPROVAL
+  // CONTROL 06 — OWNER APPROVAL (Canonical Realization Approval)
   let ownerApprovalStatus: "PASS" | "FAIL" | "WARNING" = "PASS";
-  if (stlStatus !== "APPROVED" && stlStatus !== "SETTLED") {
+  if (pending_cash > 0) {
     ownerApprovalStatus = "FAIL";
-    blocking_reasons.push("Settlement belum mendapatkan final owner approval.");
+    blocking_reasons.push(`Terdapat realisasi setoran yang masih menunggu approval owner (pending: Rp ${pending_cash.toLocaleString('id-ID')}).`);
   }
-  controls.push({ control_name: "OWNER_APPROVAL", status: ownerApprovalStatus, message: "Valid" });
+  controls.push({
+    control_name: "OWNER_APPROVAL",
+    status: ownerApprovalStatus,
+    message: ownerApprovalStatus === "PASS" ? "Valid" : `Pending approval (Rp ${pending_cash.toLocaleString('id-ID')})`
+  });
+
+  // CONTROL 06B — CANONICAL CASH CONTROL
+  let cashControlStatus: "PASS" | "FAIL" | "WARNING" = "PASS";
+  let cashControlMessage = "Valid";
+
+  if (pending_cash > 0) {
+    cashControlStatus = "FAIL";
+    cashControlMessage = `Pending approval Rp ${pending_cash.toLocaleString('id-ID')}`;
+  } else if (expected_cash === 0) {
+    cashControlStatus = "PASS";
+    cashControlMessage = "Expected cash Rp 0 (PASS)";
+  } else if (variance < 0) {
+    cashControlStatus = "FAIL";
+    cashControlMessage = `KURANG SETOR (selisih -Rp ${Math.abs(variance).toLocaleString('id-ID')})`;
+    blocking_reasons.push(`Kurang setor fisik tunai: expected Rp ${expected_cash.toLocaleString('id-ID')} vs actual Rp ${actual_cash.toLocaleString('id-ID')} (selisih -Rp ${Math.abs(variance).toLocaleString('id-ID')}).`);
+  } else if (variance > 0) {
+    cashControlStatus = "FAIL";
+    cashControlMessage = `LEBIH SETOR (selisih +Rp ${variance.toLocaleString('id-ID')})`;
+    blocking_reasons.push(`Lebih setor fisik tunai: expected Rp ${expected_cash.toLocaleString('id-ID')} vs actual Rp ${actual_cash.toLocaleString('id-ID')} (selisih +Rp ${variance.toLocaleString('id-ID')}).`);
+  } else {
+    cashControlStatus = "PASS";
+    cashControlMessage = `Balance (Rp ${actual_cash.toLocaleString('id-ID')})`;
+  }
+
+  controls.push({
+    control_name: "CASH_CONTROL",
+    status: cashControlStatus,
+    message: cashControlMessage
+  });
 
   // CONTROL 07 — AUDIT TRAIL COMPLETENESS
   let auditTrailStatus: "PASS" | "FAIL" | "WARNING" = "PASS";
@@ -217,12 +294,21 @@ export function validateFinancialClose(db: any, params: {
   const isBlocked = blocking_reasons.length > 0;
   const newStatus: CertificationState = isBlocked ? "BLOCKED" : "READY_FOR_CERTIFICATION";
 
+  const enhancedFinancialSummary = {
+    ...financialSummary,
+    expected_cash,
+    actual_cash,
+    pending_cash,
+    variance,
+    cash_status: expected_cash === 0 && actual_cash === 0 ? "BALANCE" : variance === 0 ? "BALANCE" : variance < 0 ? "KURANG_SETOR" : "LEBIH_SETOR"
+  };
+
   if (record) {
     record.status = newStatus;
     record.controls = controls;
     record.blocking_reasons = blocking_reasons;
     record.warnings = warnings;
-    record.financial_summary = financialSummary;
+    record.financial_summary = enhancedFinancialSummary;
     record.settlement_status = stlStatus;
     record.reconciliation_status = reconciliationStatus;
     record.daily_closing_status = dcStatus;
@@ -237,7 +323,7 @@ export function validateFinancialClose(db: any, params: {
       controls,
       blocking_reasons,
       warnings,
-      financial_summary: financialSummary,
+      financial_summary: enhancedFinancialSummary,
       settlement_status: stlStatus,
       reconciliation_status: reconciliationStatus,
       daily_closing_status: dcStatus,
