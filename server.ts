@@ -4389,6 +4389,49 @@ function calculateTargetHarian(combined: any[], filterOutlet: string, outlets: a
   };
 }
 
+function calculateTransaksiHariIni(combined: any[], filterOutlet: string, outlets: any[], todayStr?: string) {
+  const localToday = todayStr || getTodayWIB();
+  
+  let targetOutlets = outlets && outlets.length > 0 ? outlets : [];
+  if (filterOutlet && filterOutlet !== "ALL") {
+    targetOutlets = targetOutlets.filter((o: any) => o.outlet_id === filterOutlet);
+  }
+
+  // If no outlets found in db.Outlets, find unique outlet IDs from combined
+  if (targetOutlets.length === 0) {
+    const uniqueIds = Array.from(new Set(combined.map((tx: any) => tx.outlet_id || tx.outlet_id_input || tx.outlet).filter(Boolean)));
+    targetOutlets = uniqueIds.map(id => ({ outlet_id: id, nama_outlet: id }));
+  }
+
+  targetOutlets = [...targetOutlets].sort((a: any, b: any) => (a.outlet_id || "").localeCompare(b.outlet_id || ""));
+
+  return targetOutlets.map((o: any) => {
+    const oId = o.outlet_id;
+    const outletTxs = combined.filter((tx: any) => {
+      if (!isTransactionValidForFinance(tx)) return false;
+      const txDate = extractBusinessDate(tx);
+      const txOutlet = tx.outlet_id || tx.outlet_id_input || tx.outlet;
+      return txDate === localToday && txOutlet === oId;
+    });
+
+    const fin = calculateDailyFinancial(outletTxs);
+    const cleanName = String(o.nama_outlet || o.nama || o.name || oId)
+      .replace("J&T Express - ", "")
+      .replace("J&T Cargo - ", "");
+
+    return {
+      outlet_id: oId,
+      nama_outlet: cleanName,
+      jumlah_transaksi: fin.jumlah_transaksi,
+      wajib_setor_owner: fin.total_cash_payment,
+      total_kas: fin.total_outlet,
+      kas_fisik: fin.total_outlet_admin,
+      kas_digital: fin.total_outlet_owner,
+      total_omset: fin.total_customer
+    };
+  });
+}
+
 function resolveAdminDisplayName(db: any, adminIdOrName: string, outletId?: string): string {
   if (!adminIdOrName || adminIdOrName === "SYSTEM" || adminIdOrName === "admin" || adminIdOrName === "Admin") {
     const targetOutlet = outletId || "OUT-001";
@@ -4634,7 +4677,8 @@ app.all("/api/getDashboardData", async (req, res) => {
     const filtered = filterTransactions(combined, filterOutlet, dateStart, dateEnd, filterTipeLayanan);
     
     const summary = calculateDashboardSummary(filtered);
-    const target_harian = calculateTargetHarian(combined, filterOutlet, db.Outlets, dateEnd);
+    const target_harian = calculateTargetHarian(combined, filterOutlet, db.Outlets, getTodayWIB());
+    const transaksi_hari_ini = calculateTransaksiHariIni(combined, "ALL", db.Outlets, getTodayWIB());
 
     // Per-outlet stats (for charts)
     const outletOmsetMap: { [key: string]: { nama: string; omset: number; setoran: number; kas: number; count: number } } = {};
@@ -4763,7 +4807,8 @@ app.all("/api/getDashboardData", async (req, res) => {
         pembatalan_logs,
         pembatalanLogs: pembatalan_logs,
         monthly_reports,
-        target_harian
+        target_harian,
+        transaksi_hari_ini
       }
     });
   } catch (error: any) {
@@ -4782,7 +4827,8 @@ app.all("/api/getDashboardData", async (req, res) => {
           pembatalan_logs: [],
           pembatalanLogs: [],
           monthly_reports: [],
-          target_harian: { target: 70, current: 0 }
+          target_harian: calculateTargetHarian(combined, filterOutlet, db.Outlets, getTodayWIB()),
+          transaksi_hari_ini: calculateTransaksiHariIni(combined, "ALL", db.Outlets, getTodayWIB())
         }
       });
     } catch (fallbackErr: any) {

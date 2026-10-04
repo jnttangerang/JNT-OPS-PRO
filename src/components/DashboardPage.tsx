@@ -10,7 +10,7 @@ import {
 import { format, subDays } from "date-fns";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, DashboardData, AuditLog } from "../types";
-import { getTodayWIB, shiftWIBDays } from "../utils/dateUtils";
+import { getTodayWIB, shiftWIBDays, formatWIBDisplay } from "../utils/dateUtils";
 
 interface DashboardPageProps {
   session: SessionData;
@@ -26,7 +26,7 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
 
   // Filter States
   const [selectedOutletFilter, setSelectedOutletFilter] = useState("ALL");
-  const [startDate, setStartDate] = useState(() => shiftWIBDays(getTodayWIB(), -15));
+  const [startDate, setStartDate] = useState(() => `${getTodayWIB().slice(0, 7)}-01`);
   const [endDate, setEndDate] = useState(() => getTodayWIB());
 
   // Dashboard Data State
@@ -228,9 +228,22 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
 
         {/* Start Date */}
         <div>
-          <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-            Tanggal Awal
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+              Tanggal Awal
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setStartDate(`${getTodayWIB().slice(0, 7)}-01`);
+                setEndDate(getTodayWIB());
+              }}
+              className="text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer"
+              title="Reset tanggal awal ke tanggal 1 bulan berjalan"
+            >
+              Bulan Berjalan
+            </button>
+          </div>
           <div className="relative">
             <div className="absolute left-3 inset-y-0 flex items-center pointer-events-none text-gray-400">
               <Calendar className="h-4 w-4" />
@@ -349,41 +362,152 @@ export default function DashboardPage({ session, outlets, onNavigate }: Dashboar
       </div>
 
       {/* DAILY TARGET PROGRESS */}
-      {dashboardData?.target_harian && (
-        <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
-                <Target className="h-4 w-4" />
-              </div>
-              <h3 className="text-sm font-bold text-gray-800">Target Harian (Hari Ini)</h3>
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
+              <Target className="h-4 w-4" />
             </div>
-            <span className="text-xs font-semibold text-gray-500">
-              {(dashboardData?.target_harian?.current || 0)} / {(dashboardData?.target_harian?.target || 100)} Transaksi
-            </span>
+            <h3 className="text-sm font-bold text-gray-800">Target Harian (Hari Ini)</h3>
           </div>
-          
-          <div className="w-full bg-gray-100 rounded-full h-3.5 mb-1.5 overflow-hidden border border-gray-200">
-            <div 
-              className={`h-3.5 rounded-full transition-all duration-700 ease-out ${
-                ((dashboardData?.target_harian?.current || 0) / (dashboardData?.target_harian?.target || 100)) >= 1 
-                  ? "bg-emerald-500" 
-                  : "bg-indigo-500"
-              }`}
-              style={{ 
-                width: `${Math.min(100, Math.max(0, ((dashboardData?.target_harian?.current || 0) / (dashboardData?.target_harian?.target || 100)) * 100))}%` 
-              }}
-            ></div>
+          <span className="text-xs font-semibold text-gray-500">
+            {(dashboardData?.target_harian?.current || 0)} / {(dashboardData?.target_harian?.target || 100)} Transaksi
+          </span>
+        </div>
+        
+        <div className="w-full bg-gray-100 rounded-full h-3.5 mb-1.5 overflow-hidden border border-gray-200">
+          <div 
+            className={`h-3.5 rounded-full transition-all duration-700 ease-out ${
+              ((dashboardData?.target_harian?.current || 0) / (dashboardData?.target_harian?.target || 100)) >= 1 
+                ? "bg-emerald-500" 
+                : "bg-indigo-500"
+            }`}
+            style={{ 
+              width: `${Math.min(100, Math.max(0, ((dashboardData?.target_harian?.current || 0) / (dashboardData?.target_harian?.target || 100)) * 100))}%` 
+            }}
+          ></div>
+        </div>
+        <div className="flex justify-between text-[10px] font-mono text-gray-400">
+          <span>0%</span>
+          <span>
+            {Math.round(((dashboardData?.target_harian?.current || 0) / (dashboardData?.target_harian?.target || 100)) * 100)}% Tercapai
+          </span>
+          <span>100%</span>
+        </div>
+      </div>
+
+      {/* TRANSAKSI HARI INI PER OUTLET */}
+      <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 mb-4 border-b border-gray-100 gap-2">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
+              <Calendar className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-gray-800">Transaksi Hari Ini</h3>
+              <p className="text-[11px] text-gray-400">
+                Update otomatis setiap hari dari transaksi setiap outlet • {formatWIBDisplay(getTodayWIB(), false)}
+              </p>
+            </div>
           </div>
-          <div className="flex justify-between text-[10px] font-mono text-gray-400">
-            <span>0%</span>
-            <span>
-              {Math.round(((dashboardData?.target_harian?.current || 0) / (dashboardData?.target_harian?.target || 100)) * 100)}% Tercapai
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Live Update
             </span>
-            <span>100%</span>
           </div>
         </div>
-      )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="bg-gray-50/90 text-gray-600 font-semibold uppercase text-[10px] tracking-wider border-b border-gray-200">
+                <th className="py-3 px-3">Outlet</th>
+                <th className="py-3 px-3 text-center">Jumlah Transaksi</th>
+                <th className="py-3 px-3 text-right">Setoran Wajib (Owner)</th>
+                <th className="py-3 px-3 text-right">Nominal Kas Outlet</th>
+                <th className="py-3 px-3 text-right text-emerald-700 bg-emerald-50/40">Kas Fisik (Admin)</th>
+                <th className="py-3 px-3 text-right text-purple-700 bg-purple-50/40">Kas Digital (Owner)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {(!dashboardData?.transaksi_hari_ini || dashboardData.transaksi_hari_ini.length === 0) ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-gray-400">
+                    Belum ada data transaksi untuk hari ini ({formatWIBDisplay(getTodayWIB(), false)}).
+                  </td>
+                </tr>
+              ) : (
+                dashboardData.transaksi_hari_ini.map((row) => {
+                  const hasTx = row.jumlah_transaksi > 0;
+                  const isFiltered = selectedOutletFilter !== "ALL" && selectedOutletFilter === row.outlet_id;
+                  return (
+                    <tr 
+                      key={row.outlet_id} 
+                      className={`hover:bg-gray-50/70 transition-colors ${isFiltered ? "bg-amber-50/40" : ""} ${!hasTx ? "opacity-60" : ""}`}
+                    >
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-gray-800 flex items-center gap-1.5">
+                          {row.nama_outlet}
+                          {isFiltered && (
+                            <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded font-semibold">
+                              Filter Aktif
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[10px] font-mono text-gray-400">{row.outlet_id}</div>
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span className={`inline-block px-2.5 py-0.5 rounded-md font-bold font-mono text-xs ${
+                          hasTx ? "bg-indigo-50 text-indigo-700 border border-indigo-100" : "bg-gray-100 text-gray-400"
+                        }`}>
+                          {row.jumlah_transaksi} Transaksi
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-blue-700">
+                        Rp {row.wajib_setor_owner.toLocaleString("id-ID")}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-green-700">
+                        Rp {row.total_kas.toLocaleString("id-ID")}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-semibold text-emerald-600 bg-emerald-50/20">
+                        Rp {row.kas_fisik.toLocaleString("id-ID")}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-semibold text-purple-600 bg-purple-50/20">
+                        Rp {row.kas_digital.toLocaleString("id-ID")}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+            {dashboardData?.transaksi_hari_ini && dashboardData.transaksi_hari_ini.length > 0 && (
+              <tfoot>
+                <tr className="bg-gray-50 font-bold border-t-2 border-gray-200 text-gray-800">
+                  <td className="py-3 px-3 text-xs uppercase tracking-wider font-extrabold text-gray-700">
+                    TOTAL HARI INI
+                  </td>
+                  <td className="py-3 px-3 text-center font-mono font-bold text-indigo-800">
+                    {dashboardData.transaksi_hari_ini.reduce((sum, r) => sum + r.jumlah_transaksi, 0)} Transaksi
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono font-black text-blue-800">
+                    Rp {dashboardData.transaksi_hari_ini.reduce((sum, r) => sum + r.wajib_setor_owner, 0).toLocaleString("id-ID")}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono font-black text-green-800">
+                    Rp {dashboardData.transaksi_hari_ini.reduce((sum, r) => sum + r.total_kas, 0).toLocaleString("id-ID")}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono font-bold text-emerald-800 bg-emerald-50/30">
+                    Rp {dashboardData.transaksi_hari_ini.reduce((sum, r) => sum + r.kas_fisik, 0).toLocaleString("id-ID")}
+                  </td>
+                  <td className="py-3 px-3 text-right font-mono font-bold text-purple-800 bg-purple-50/30">
+                    Rp {dashboardData.transaksi_hari_ini.reduce((sum, r) => sum + r.kas_digital, 0).toLocaleString("id-ID")}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
 
       {/* 4. ANALYTICAL CHARTS SECTION (GRID) */}
       {dashboardData && dashboardData.chart_data && (

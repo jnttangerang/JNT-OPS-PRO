@@ -272,6 +272,16 @@ export interface DashboardData {
     target: number;
     current: number;
   };
+  transaksi_hari_ini?: Array<{
+    outlet_id: string;
+    nama_outlet: string;
+    jumlah_transaksi: number;
+    wajib_setor_owner: number;
+    total_kas: number;
+    kas_fisik: number;
+    kas_digital: number;
+    total_omset?: number;
+  }>;
 }
 
 export interface SessionData {
