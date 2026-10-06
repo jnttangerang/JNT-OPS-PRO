@@ -25,7 +25,9 @@ import {
   Trash2,
   AlertTriangle,
   FileText,
-  Plus
+  Plus,
+  QrCode,
+  CreditCard
 } from "lucide-react";
 
 interface OwnerAuditPageProps {
@@ -38,7 +40,12 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<"audit_setoran" | "audit_yoyi" | "audit_yoyi_results">("audit_setoran");
+  const [activeTab, setActiveTab] = useState<"audit_setoran" | "audit_yoyi" | "audit_yoyi_results" | "qris">("audit_setoran");
+
+  // Tab 4: QRIS Reconciliation States
+  const [qrisOutlet, setQrisOutlet] = useState<string>("ALL");
+  const [qrisDate, setQrisDate] = useState<string>(() => getTodayWIB());
+  const [showQrisModal, setShowQrisModal] = useState<boolean>(false);
 
   // Tab 1: Audit Setoran States
   const [filterOutlet, setFilterOutlet] = useState<string>("ALL");
@@ -501,6 +508,17 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
           }`}
         >
           Hasil Perbandingan YoYi
+        </button>
+        <button
+          onClick={() => setActiveTab("qris")}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeTab === "qris"
+              ? "bg-white text-purple-700 shadow-sm"
+              : "text-gray-500 hover:text-purple-700"
+          }`}
+        >
+          <QrCode className="w-3.5 h-3.5" />
+          QRIS
         </button>
       </div>
 
@@ -1366,6 +1384,154 @@ export default function OwnerAuditPage({ session, outlets }: OwnerAuditPageProps
                       })}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4 CONTENT: AUDIT & REKONSILIASI QRIS */}
+      {activeTab === "qris" && (
+        <div className="space-y-6">
+          {/* Settings & Import Bar */}
+          <div className="bg-white rounded-2xl p-5 border border-gray-150 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="text-base font-black text-gray-900 tracking-tight flex items-center gap-2">
+                  <QrCode className="w-5 h-5 text-purple-600" /> Audit & Rekonsiliasi QRIS (BCA Merchant)
+                </h3>
+                <p className="text-xs text-gray-500 font-medium mt-0.5">
+                  Evidence & Matching Center: Pencocokan bukti transfer/QRIS admin dengan mutasi settlement qr.klikbca.com
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowQrisModal(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" /> Import Report QRIS
+              </button>
+            </div>
+
+            {/* Scope Filter */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-gray-100">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Target Outlet</label>
+                <select
+                  value={qrisOutlet}
+                  onChange={(e) => setQrisOutlet(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                >
+                  <option value="ALL">Semua Outlet</option>
+                  {outlets.map((o) => (
+                    <option key={o.outlet_id} value={o.outlet_id}>
+                      {o.nama_outlet}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider ml-1">Tanggal</label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                  <input
+                    type="date"
+                    value={qrisDate}
+                    onChange={(e) => setQrisDate(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Workflow Explanatory Steps */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 text-xs">
+              <div className="p-3 bg-purple-50/60 rounded-xl border border-purple-100 flex items-start gap-2.5">
+                <div className="p-1.5 bg-purple-100 text-purple-700 rounded-lg shrink-0 text-xs font-bold font-mono">1</div>
+                <div>
+                  <p className="font-bold text-purple-900">Bukti QRIS Admin</p>
+                  <p className="text-[11px] text-purple-700/80 leading-relaxed">Admin mengunggah bukti bayar QRIS / referensi saat transaksi di outlet.</p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-100 flex items-start gap-2.5">
+                <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg shrink-0 text-xs font-bold font-mono">2</div>
+                <div>
+                  <p className="font-bold text-blue-900">Report BCA Merchant</p>
+                  <p className="text-[11px] text-blue-700/80 leading-relaxed">Owner export laporan mutasi QRIS dari portal resmi qr.klikbca.com (XLSX).</p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100 flex items-start gap-2.5">
+                <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-lg shrink-0 text-xs font-bold font-mono">3</div>
+                <div>
+                  <p className="font-bold text-emerald-900">Pencocokan Otomatis</p>
+                  <p className="text-[11px] text-emerald-700/80 leading-relaxed">Sistem mencocokkan nominal, RRN, dan timestamp menjadi MATCH / MISMATCH.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* UI Boundary / Placeholder State */}
+          <div className="bg-white rounded-2xl p-8 border border-gray-200 shadow-sm text-center space-y-4">
+            <div className="w-14 h-14 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mx-auto border border-purple-100">
+              <QrCode className="w-7 h-7" />
+            </div>
+            
+            <div className="max-w-md mx-auto space-y-1">
+              <h4 className="text-base font-black text-gray-900">Belum ada report untuk periode ini.</h4>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Silakan import file settlement QRIS dari portal <strong>qr.klikbca.com</strong> untuk tanggal {qrisDate}. Hasil matching akan langsung tercermin pada Persetujuan Setoran dan Daily Closing.
+              </p>
+            </div>
+
+            <div>
+              <button
+                onClick={() => setShowQrisModal(true)}
+                className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-xs font-bold transition-all shadow-sm inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5 text-purple-400" /> Import Report QRIS
+              </button>
+            </div>
+          </div>
+
+          {/* Modal Placeholder Boundary */}
+          {showQrisModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/40 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-gray-150">
+                <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/60">
+                  <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                    <QrCode className="w-4 h-4 text-purple-600" /> Import Report QRIS (BCA Merchant)
+                  </h3>
+                  <button onClick={() => setShowQrisModal(false)} className="text-gray-400 hover:text-gray-700 transition-colors p-1">
+                    <XCircle className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="p-5 space-y-4 text-xs text-gray-600">
+                  <div className="p-3 bg-purple-50 rounded-xl border border-purple-100 text-purple-900 text-xs">
+                    <p className="font-bold mb-1">Spesifikasi Format Report BCA:</p>
+                    <ul className="list-disc list-inside space-y-0.5 text-[11px] text-purple-800">
+                      <li>Sumber: <strong>qr.klikbca.com</strong> (Merchant Portal)</li>
+                      <li>Kolom wajib: RRN, Original Amount, Transaction Date/Time, Payer Name</li>
+                      <li>Format file: XLSX / CSV</li>
+                    </ul>
+                  </div>
+
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-[11px] leading-relaxed">
+                    <strong>Catatan Phase 1:</strong> UI boundary ini telah disiapkan untuk alur Owner. Importer parser dan persistence mutasi bank BCA saat ini belum memiliki kontrak DB persistence terdaftar, dan akan diaktifkan pada phase integrasi settlement perbankan selanjutnya.
+                  </div>
+                </div>
+
+                <div className="p-4 border-t border-gray-100 flex justify-end gap-2 bg-gray-50/60">
+                  <button
+                    onClick={() => setShowQrisModal(false)}
+                    className="px-4 py-2 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Tutup
+                  </button>
                 </div>
               </div>
             </div>
