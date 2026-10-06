@@ -6318,6 +6318,20 @@ app.post("/api/approveSetoran", async (req, res) => {
   const s = (db.Master_Setoran || []).find((s: any) => s.setoran_id === setoran_id);
   if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
 
+  if (realization_id) {
+    const targetRealization = (db.Setoran_Realization || []).find((r: any) => r.realization_id === realization_id);
+    if (!targetRealization) {
+      return res.json({ status: "error", message: "Data realisasi tidak ditemukan" });
+    }
+    if (targetRealization.status !== "MENUNGGU_APPROVAL") {
+      return res.json({ status: "error", message: `Realisasi setoran berstatus ${targetRealization.status}. Hanya realisasi dengan status MENUNGGU_APPROVAL yang dapat disetujui.` });
+    }
+  } else {
+    if (s.status === "DISETUJUI") {
+      return res.json({ status: "error", message: "Setoran ini sudah disetujui sebelumnya." });
+    }
+  }
+
   const adminKey = String(s.admin_pembuat || s.admin_id || "").trim().toUpperCase();
   const dateKey = getWIBDate(s.tanggal);
 
@@ -6483,6 +6497,20 @@ app.post("/api/rejectSetoran", async (req, res) => {
   
   const s = (db.Master_Setoran || []).find(s => s.setoran_id === setoran_id);
   if (!s) return res.json({ status: "error", message: "Data setoran tidak ditemukan" });
+
+  if (realization_id) {
+    const targetRealization = (db.Setoran_Realization || []).find((r: any) => r.realization_id === realization_id);
+    if (!targetRealization) {
+      return res.json({ status: "error", message: "Data realisasi tidak ditemukan" });
+    }
+    if (targetRealization.status !== "MENUNGGU_APPROVAL") {
+      return res.json({ status: "error", message: `Realisasi setoran berstatus ${targetRealization.status}. Hanya realisasi dengan status MENUNGGU_APPROVAL yang dapat ditolak.` });
+    }
+  } else {
+    if (s.status === "DISETUJUI") {
+      return res.json({ status: "error", message: "Setoran yang sudah disetujui tidak dapat ditolak." });
+    }
+  }
 
   try {
     const appsScriptResponse = await callAppsScript("rejectSetoran", { setoran_id, realization_id, admin_id, catatan });

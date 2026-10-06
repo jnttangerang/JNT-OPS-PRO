@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { SessionData, Outlet } from "../../types";
 import useAppsScript from "../../hooks/useAppsScript";
 import { toast } from "../../utils/toast";
@@ -39,10 +40,6 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
   const [rejectReason, setRejectReason] = useState("");
   const [showRejectModal, setShowRejectModal] = useState(false);
 
-  // YoYi Audit Status Gate
-  const [yoyiAuditResult, setYoyiAuditResult] = useState<any>(null);
-  const [loadingYoyiAudit, setLoadingYoyiAudit] = useState<boolean>(false);
-
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
@@ -73,33 +70,11 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
     }
   };
 
-  const fetchYoyiAudit = async (outletId: string, tanggal: string, adminId: string) => {
-    setLoadingYoyiAudit(true);
-    setYoyiAuditResult(null);
-    try {
-      const res = await callBackend("auditYoyiCompleteness", {
-        user_role: "OWNER",
-        outlet_id: outletId,
-        tanggal: tanggal,
-        admin_id: adminId
-      });
-      setYoyiAuditResult(res);
-    } catch (e: any) {
-      console.error("Gagal memuat audit YoYi:", e);
-    } finally {
-      setLoadingYoyiAudit(false);
-    }
-  };
-
   const fetchDetail = async (setoranId: string) => {
     try {
       const res = await callBackend("getSetoranDetail", { setoran_id: setoranId });
       if (res.status === "success") {
         setDetail(res.data);
-        const header = res.data.header;
-        if (header) {
-          fetchYoyiAudit(header.outlet_id, header.tanggal, header.admin_pembuat);
-        }
       } else {
         toast.error(res.message || "Gagal memuat detail");
       }
@@ -205,18 +180,16 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
 
   if (detail) {
     const { header = {}, summary = {}, transactions = [] } = detail;
-    const expected = Number(summary.expected_cash ?? summary.total_wajib_setor_owner ?? header.expected_cash ?? header.wajib_setor_owner ?? 0);
-    const actual = Number(summary.actual_cash ?? summary.total_setoran_owner ?? header.actual_cash ?? header.total_setoran_owner ?? expected);
+    const expected = Number(summary.expected_cash ?? header.expected_cash ?? header.wajib_setor_owner ?? 0);
+    const actual = Number(summary.actual_cash ?? header.actual_cash ?? 0);
     const variance = actual - expected;
     const outstanding = Math.max(0, expected - actual);
-
-    const isBlockApproval = yoyiAuditResult && yoyiAuditResult.results && yoyiAuditResult.results.some((r: any) => r.audit_status === "CRITICAL");
 
     return (
       <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
         <button 
           onClick={() => setDetail(null)}
-          className="flex items-center gap-2 text-gray-500 hover:text-gray-800 text-sm font-bold transition-colors"
+          className="flex items-center gap-2 text-gray-500 hover:text-gray-800 text-sm font-bold transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" /> Kembali ke Daftar
         </button>
@@ -228,9 +201,9 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
               <p className="text-sm text-gray-500 font-mono mt-1">{header.setoran_id} • {summary.outlet_name || header.outlet_name}</p>
               <p className="text-xs text-slate-600 font-semibold mt-1">Dibuat Oleh: <span className="font-bold text-slate-900">{header.admin_pembuat_name || header.admin_pembuat}</span></p>
               
-              <div className="mt-3 flex items-center gap-3">
+              <div className="mt-3 flex flex-wrap items-center gap-3">
                 <span className="px-2.5 py-1 bg-gray-100 text-gray-700 text-xs font-bold rounded-lg border border-gray-200">
-                  Metode: {header.metode_setor || "TUNAI"}
+                  Metode Utama: {header.metode_setor || "TUNAI"}
                 </span>
                 {header.bukti_url && (
                   <a 
@@ -242,6 +215,11 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                     <Eye className="w-3.5 h-3.5" /> Lihat Bukti
                   </a>
                 )}
+                {header.catatan && (
+                  <span className="text-xs text-gray-500 italic">
+                    Catatan: &ldquo;{header.catatan}&rdquo;
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -251,18 +229,13 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                 <div className="flex gap-2">
                   <button 
                     onClick={() => setShowRejectModal(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-lg transition-colors border border-red-200"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-lg transition-colors border border-red-200 cursor-pointer"
                   >
                     <XCircle className="w-3.5 h-3.5" /> Tolak
                   </button>
                   <button 
                     onClick={() => handleApprove()}
-                    disabled={isBlockApproval}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs rounded-lg transition-colors border ${
-                      isBlockApproval
-                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60"
-                        : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
-                    }`}
+                    className="flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs rounded-lg transition-colors border bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200 cursor-pointer"
                   >
                     <CheckCircle className="w-3.5 h-3.5" /> Setujui
                   </button>
@@ -271,6 +244,7 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
             </div>
           </div>
 
+          {/* Ringkasan Finansial Utama */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
               <p className="text-[10px] text-gray-500 font-bold uppercase tracking-wider mb-1">Total Resi</p>
@@ -302,184 +276,116 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
           
           {header.catatan_owner && (
             <div className="mb-6 p-4 bg-red-50 text-red-800 text-sm rounded-xl border border-red-100 flex items-start gap-2">
-              <MessageSquare className="w-4 h-4 shrink-0 mt-0.5" />
+              <MessageSquare className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
               <div>
-                <p className="font-bold mb-0.5">Catatan Penolakan (Header):</p>
+                <p className="font-bold mb-0.5">Catatan Penolakan (Owner):</p>
                 <p>{header.catatan_owner}</p>
               </div>
             </div>
           )}
 
-          {/* YoYi Audit Status Gate (Step 7) */}
-          <div className="mb-6 p-5 rounded-2xl border border-dashed border-gray-200 bg-slate-50/50">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <span className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
-                  <Activity className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800">Control Gate: Audit YoYi</h3>
-                  <p className="text-[10px] text-slate-500 font-mono">Status Audit Serah Terima J&T vs YoYi</p>
-                </div>
+          {/* Konteks Audit YoYi */}
+          <div className="mb-6 p-4 rounded-xl border border-indigo-100 bg-indigo-50/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-100 text-indigo-700 rounded-lg">
+                <Activity className="w-4 h-4" />
               </div>
-              {loadingYoyiAudit && (
-                <span className="text-xs text-indigo-600 animate-pulse font-semibold">Mengecek data...</span>
-              )}
+              <div>
+                <h4 className="text-xs font-bold text-gray-800">Audit Serah Terima YoYi</h4>
+                <p className="text-[11px] text-gray-500">
+                  Pemeriksaan kelengkapan resi dan investigasi fisik vs YoYi dikelola secara terpusat di Audit Engine.
+                </p>
+              </div>
             </div>
-
-            {loadingYoyiAudit ? (
-              <div className="h-10 bg-slate-100 rounded-lg animate-pulse" />
-            ) : yoyiAuditResult ? (
-              yoyiAuditResult.status === "empty" ? (
-                <div className="p-4 bg-amber-50 text-amber-800 text-xs rounded-xl border border-amber-200 flex items-start gap-2.5">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 mt-0.5" />
-                  <div>
-                    <p className="font-bold mb-1">Audit YoYi belum dilakukan untuk tanggal ini.</p>
-                    <p className="text-amber-700/90 leading-relaxed font-medium">
-                      Belum ada data unggahan screenshot serah terima YoYi yang disubmit oleh Owner untuk tanggal{" "}
-                      <span className="font-mono font-bold">{header.tanggal}</span> dan admin{" "}
-                      <span className="font-bold">{header.admin_pembuat}</span>.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                (() => {
-                  const criticalResis = (yoyiAuditResult.results || []).filter((r: any) => r.audit_status === "CRITICAL");
-                  const warningResis = (yoyiAuditResult.results || []).filter((r: any) => r.audit_status === "WARNING" || r.audit_status === "SCOPE_MISMATCH");
-                  const totalResi = (yoyiAuditResult.results || []).length;
-
-                  if (criticalResis.length > 0) {
-                    return (
-                      <div className="p-4 bg-red-50 text-red-900 text-xs rounded-xl border border-red-200 flex items-start gap-2.5 shadow-sm">
-                        <AlertCircle className="w-5 h-5 shrink-0 text-red-600 mt-0.5" />
-                        <div className="space-y-2">
-                          <div>
-                            <p className="font-black text-sm text-red-800 mb-0.5">APPROVAL DIBLOKIR — Resi Belum Diinput!</p>
-                            <p className="text-red-700 font-medium leading-relaxed">
-                              Terdapat <span className="font-black font-mono text-red-800 text-sm">{criticalResis.length}</span> resi dari total {totalResi} resi di YoYi yang belum diinput ke sistem JNT OPS PRO. Admin wajib melengkapi input semua resi ini sebelum setoran dapat disetujui.
-                            </p>
-                          </div>
-                          <div className="p-2.5 bg-white/70 rounded-lg border border-red-100">
-                            <p className="font-bold mb-1 text-red-900 font-mono text-[10px]">DAFTAR RESI YANG HILANG:</p>
-                            <div className="flex flex-wrap gap-1.5 mt-1 max-h-24 overflow-y-auto">
-                              {criticalResis.map((cr: any) => (
-                                <span key={cr.resi_id} className="px-2 py-0.5 bg-red-100 text-red-800 rounded font-bold font-mono text-[10px]">
-                                  {cr.resi_id}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  if (warningResis.length > 0) {
-                    return (
-                      <div className="p-4 bg-amber-50 text-amber-900 text-xs rounded-xl border border-amber-200 flex items-start gap-2.5">
-                        <AlertTriangle className="w-5 h-5 shrink-0 text-amber-600 mt-0.5" />
-                        <div className="space-y-2 w-full">
-                          <div>
-                            <p className="font-bold text-amber-800 mb-0.5">PERINGATAN AUDIT YOYI — Ada Selisih/Mismatch</p>
-                            <p className="text-amber-700/90 leading-relaxed font-medium">
-                              Semua resi sudah diinput ke sistem, namun terdapat <span className="font-bold font-mono text-amber-800">{warningResis.length}</span> resi yang memiliki selisih nominal pembayaran atau ketidaksesuaian metode perhitungan. Anda tetap dapat melanjutkan persetujuan setoran ini jika dianggap aman.
-                            </p>
-                          </div>
-                          <div className="overflow-x-auto rounded-lg border border-amber-100 bg-white/50 max-h-48 overflow-y-auto">
-                            <table className="w-full text-[10px] text-left text-amber-900 divide-y divide-amber-100">
-                              <thead className="bg-amber-100/50 font-bold">
-                                <tr>
-                                  <th className="p-2">Resi</th>
-                                  <th className="p-2">YoYi</th>
-                                  <th className="p-2">Internal</th>
-                                  <th className="p-2">Selisih</th>
-                                  <th className="p-2">Catatan / Mismatch</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-amber-100 font-mono">
-                                {warningResis.map((wr: any) => (
-                                  <tr key={wr.resi_id} className="hover:bg-amber-100/10">
-                                    <td className="p-2 font-bold">{wr.resi_id}</td>
-                                    <td className="p-2">Rp {Number(wr.total_yoyi || 0).toLocaleString("id-ID")}</td>
-                                    <td className="p-2">Rp {Number(wr.expected_internal || 0).toLocaleString("id-ID")}</td>
-                                    <td className="p-2 font-bold text-red-700">
-                                      {wr.difference !== null && wr.difference !== undefined ? (wr.difference > 0 ? `+${wr.difference}` : wr.difference) : "-"}
-                                    </td>
-                                    <td className="p-2 text-[9px] text-amber-800">{wr.reason || "Kondisi tidak sesuai"}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl border border-emerald-200 flex items-start gap-2.5">
-                      <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600 mt-0.5" />
-                      <div>
-                        <p className="font-bold mb-1">Audit YoYi Selesai & Sesuai (CLEAR)</p>
-                        <p className="text-emerald-700/90 leading-relaxed font-medium">
-                          Seluruh {totalResi} resi serah terima YoYi telah diinput dengan benar dan nominal setoran sepenuhnya cocok (MATCH) dengan sistem internal. Setoran sangat aman untuk disetujui.
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })()
-              )
-            ) : (
-              <div className="text-xs text-gray-500 font-semibold italic">Gagal atau belum dilakukan pengecekan status audit.</div>
-            )}
+            <Link 
+              to="/owner-audit"
+              className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 shrink-0"
+            >
+              Lihat hasil di Audit Engine &rarr;
+            </Link>
           </div>
 
-          {detail.realizations && detail.realizations.length > 0 && (
-            <div className="mb-6">
-              <h3 className="text-sm font-bold text-gray-800 mb-3 border-b border-gray-100 pb-2">Realisasi Setoran</h3>
+          {/* Daftar Realisasi Setoran */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3 border-b border-gray-100 pb-2">
+              <h3 className="text-sm font-bold text-gray-800">
+                Daftar Realisasi Setoran (Cash / Transfer / Kas)
+              </h3>
+              <span className="text-[11px] text-gray-400 font-medium">
+                {detail.realizations?.length || 0} entri realisasi
+              </span>
+            </div>
+            {detail.realizations && detail.realizations.length > 0 ? (
               <div className="overflow-x-auto rounded-xl border border-gray-100">
                 <table className="w-full text-xs text-left text-gray-700 divide-y divide-gray-100">
                   <thead className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">
                     <tr>
                       <th className="p-3">Metode</th>
                       <th className="p-3 text-right">Nominal</th>
-                      <th className="p-3">Status</th>
+                      <th className="p-3">Status Realization</th>
                       <th className="p-3 text-center">Bukti</th>
                       <th className="p-3">Catatan</th>
-                      <th className="p-3 text-center">Aksi</th>
+                      <th className="p-3 text-center">Aksi (Owner)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
                     {detail.realizations.map((r: any) => (
                       <tr key={r.realization_id} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-3 font-semibold text-gray-800">{r.metode}</td>
-                        <td className="p-3 text-right font-mono font-bold text-blue-700">Rp {Number(r.nominal).toLocaleString("id-ID")}</td>
+                        <td className="p-3 font-semibold text-gray-800">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-800 font-mono">
+                            {r.metode || "TUNAI"}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-blue-700">
+                          Rp {Number(r.nominal || 0).toLocaleString("id-ID")}
+                        </td>
                         <td className="p-3">{getStatusBadge(r.status)}</td>
                         <td className="p-3 text-center">
                           {r.bukti_url ? (
-                            <a href={r.bukti_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded border border-blue-200" title="Lihat Bukti">
-                              <Eye className="w-3.5 h-3.5" />
+                            <a 
+                              href={r.bukti_url} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="inline-flex items-center justify-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded border border-blue-200 text-[10px] font-bold"
+                              title="Lihat Bukti"
+                            >
+                              <Eye className="w-3.5 h-3.5" /> Bukti
                             </a>
-                          ) : "-"}
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
-                        <td className="p-3 text-[10px] max-w-[150px] truncate text-gray-500" title={r.catatan}>{r.catatan || "-"}</td>
+                        <td className="p-3 text-[11px] max-w-[200px] text-gray-600" title={r.catatan}>
+                          {r.catatan || "-"}
+                        </td>
                         <td className="p-3 text-center">
-                          {r.status === "MENUNGGU_APPROVAL" && (
-                            <div className="flex items-center justify-center gap-1.5">
+                          {r.status === "MENUNGGU_APPROVAL" ? (
+                            <div className="flex items-center justify-center gap-2">
                               <button 
                                 onClick={() => handleApprove(r.realization_id)}
-                                disabled={isBlockApproval}
-                                className={`p-1.5 rounded border transition-colors ${
-                                  isBlockApproval
-                                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-60"
-                                    : "bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border-emerald-200"
-                                }`}
-                                title={isBlockApproval ? "Approval diblokir oleh Audit YoYi" : "Setujui Realisasi"}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-lg transition-colors border border-emerald-200 cursor-pointer"
+                                title="Setujui Realisasi"
                               >
-                                <CheckCircle className="w-3.5 h-3.5" />
+                                <CheckCircle className="w-3.5 h-3.5" /> Approve
                               </button>
-                              <button onClick={() => handleOpenRejectModal(r.realization_id)} className="p-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded border border-red-200" title="Tolak Realisasi"><XCircle className="w-3.5 h-3.5" /></button>
+                              <button 
+                                onClick={() => handleOpenRejectModal(r.realization_id)} 
+                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-lg transition-colors border border-red-200 cursor-pointer" 
+                                title="Tolak Realisasi"
+                              >
+                                <XCircle className="w-3.5 h-3.5" /> Reject
+                              </button>
                             </div>
+                          ) : r.status === "DISETUJUI" ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-bold">
+                              <CheckCircle className="w-3 h-3 text-emerald-600" /> Disetujui
+                            </span>
+                          ) : r.status === "DITOLAK" ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-red-600 font-bold">
+                              <XCircle className="w-3 h-3 text-red-500" /> Ditolak
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs">-</span>
                           )}
                         </td>
                       </tr>
@@ -487,47 +393,56 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="p-4 bg-gray-50 border border-gray-100 rounded-xl text-center text-gray-500 text-xs">
+                Tidak ada data rincian realisasi setoran fisik.
+              </div>
+            )}
+          </div>
 
-          <h3 className="text-sm font-bold text-gray-800 mb-3 border-b border-gray-100 pb-2">Daftar Resi</h3>
-          <div className="overflow-x-auto rounded-xl border border-gray-100">
-            <table className="w-full text-xs text-left text-gray-700 divide-y divide-gray-100">
-              <thead className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">
-                <tr>
-                  <th className="p-3">Resi</th>
-                  <th className="p-3">Tanggal</th>
-                  <th className="p-3">Admin</th>
-                  <th className="p-3">Layanan</th>
-                  <th className="p-3">Metode Bayar</th>
-                  <th className="p-3 text-right">Dibayar Customer</th>
-                  <th className="p-3 text-right">Setoran Fisik</th>
-                  <th className="p-3 text-right">Kas Outlet</th>
-                  <th className="p-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50 font-sans">
-                {transactions && transactions.length > 0 ? (
-                  transactions.map((tx: any) => (
-                    <tr key={tx.resi_id} className="hover:bg-gray-50/50">
-                      <td className="p-3 font-mono font-bold">{tx.resi_id}</td>
-                      <td className="p-3">{tx.tanggal || tx.waktu_transaksi || tx.waktu_dibuat}</td>
-                      <td className="p-3">{tx.admin_id || "SYSTEM"}</td>
-                      <td className="p-3">{tx.tipe_layanan || (tx.ekspedisi === "CARGO" ? "Cargo" : "Express")}</td>
-                      <td className="p-3 font-semibold">{tx.metode_bayar || tx.metode_pembayaran_ongkir || "CASH"}</td>
-                      <td className="p-3 text-right font-mono text-gray-800">Rp {Number(tx.total_dibayar_customer).toLocaleString("id-ID")}</td>
-                      <td className="p-3 text-right font-mono font-semibold text-blue-700">Rp {Number(tx.cash_payment || tx.setoran_ke_owner).toLocaleString("id-ID")}</td>
-                      <td className="p-3 text-right font-mono font-semibold text-emerald-700">Rp {Number(tx.kas_operasional).toLocaleString("id-ID")}</td>
-                      <td className="p-3"><span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold">{tx.status_resi}</span></td>
-                    </tr>
-                  ))
-                ) : (
+          {/* Konteks Transaksi Resi (Referensi) */}
+          <div className="border-t border-gray-100 pt-4">
+            <h3 className="text-sm font-bold text-gray-800 mb-3">
+              Konteks Transaksi ({transactions.length} Resi)
+            </h3>
+            <div className="overflow-x-auto rounded-xl border border-gray-100">
+              <table className="w-full text-xs text-left text-gray-700 divide-y divide-gray-100">
+                <thead className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-wider font-mono">
                   <tr>
-                    <td colSpan={9} className="p-8 text-center text-gray-400 italic">Tidak ada transaksi</td>
+                    <th className="p-3">Resi</th>
+                    <th className="p-3">Tanggal</th>
+                    <th className="p-3">Admin</th>
+                    <th className="p-3">Layanan</th>
+                    <th className="p-3">Metode Bayar</th>
+                    <th className="p-3 text-right">Dibayar Customer</th>
+                    <th className="p-3 text-right">Setoran Fisik</th>
+                    <th className="p-3 text-right">Kas Outlet</th>
+                    <th className="p-3">Status</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-gray-50 font-sans">
+                  {transactions && transactions.length > 0 ? (
+                    transactions.map((tx: any) => (
+                      <tr key={tx.resi_id} className="hover:bg-gray-50/50">
+                        <td className="p-3 font-mono font-bold">{tx.resi_id}</td>
+                        <td className="p-3">{tx.tanggal || tx.waktu_transaksi || tx.waktu_dibuat}</td>
+                        <td className="p-3">{tx.admin_id || "SYSTEM"}</td>
+                        <td className="p-3">{tx.tipe_layanan || (tx.ekspedisi === "CARGO" ? "Cargo" : "Express")}</td>
+                        <td className="p-3 font-semibold">{tx.metode_bayar || tx.metode_pembayaran_ongkir || "CASH"}</td>
+                        <td className="p-3 text-right font-mono text-gray-800">Rp {Number(tx.total_dibayar_customer).toLocaleString("id-ID")}</td>
+                        <td className="p-3 text-right font-mono font-semibold text-blue-700">Rp {Number(tx.cash_payment || tx.setoran_ke_owner).toLocaleString("id-ID")}</td>
+                        <td className="p-3 text-right font-mono font-semibold text-emerald-700">Rp {Number(tx.kas_operasional).toLocaleString("id-ID")}</td>
+                        <td className="p-3"><span className="bg-gray-100 text-gray-600 px-2 py-0.5 rounded text-[10px] font-bold">{tx.status_resi}</span></td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={9} className="p-8 text-center text-gray-400 italic">Tidak ada transaksi</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -688,9 +603,9 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                     <td className="p-4 font-mono font-bold text-gray-800">{item.tanggal}</td>
                     <td className="p-4 font-semibold">{item.outlet_name}</td>
                     <td className="p-4 text-center font-mono font-bold">{item.jumlah_resi}</td>
-                    <td className="p-4 text-right font-mono font-semibold text-slate-700">Rp {Number(item.expected_cash ?? item.wajib_setor_owner ?? item.total_setoran_owner ?? 0).toLocaleString("id-ID")}</td>
-                    <td className="p-4 text-right font-mono font-semibold text-blue-700">Rp {Number(item.actual_cash ?? item.total_setoran_owner ?? 0).toLocaleString("id-ID")}</td>
-                    <td className="p-4 text-center">{getVarianceBadge(Number(item.variance ?? 0))}</td>
+                    <td className="p-4 text-right font-mono font-semibold text-slate-700">Rp {Number(item.expected_cash ?? item.wajib_setor_owner ?? 0).toLocaleString("id-ID")}</td>
+                    <td className="p-4 text-right font-mono font-semibold text-blue-700">Rp {Number(item.actual_cash ?? 0).toLocaleString("id-ID")}</td>
+                    <td className="p-4 text-center">{getVarianceBadge(Number(item.variance ?? (Number(item.actual_cash ?? 0) - Number(item.expected_cash ?? item.wajib_setor_owner ?? 0))))}</td>
                     <td className="p-4 text-right font-mono font-semibold text-emerald-700">Rp {Number(item.total_kas_outlet ?? 0).toLocaleString("id-ID")}</td>
                     <td className="p-4 text-xs font-semibold text-gray-700">{item.admin_pembuat_name || item.admin_pembuat}</td>
                     <td className="p-4 text-center">{getAgingBadge(item.tanggal, item.created_at, item.status !== "BELUM_SUBMIT")}</td>
