@@ -6022,8 +6022,9 @@ app.post("/api/getSetoranList", async (req, res) => {
   let list = setoranData.filter(s => {
     if (outlet_id && outlet_id !== "ALL" && s.outlet_id !== outlet_id) return false;
     if (status && status !== "ALL" && s.status !== status) return false;
-    if (date_start && s.tanggal < date_start) return false;
-    if (date_end && s.tanggal > date_end) return false;
+    const businessDate = extractBusinessDate(s) || (s.tanggal ? String(s.tanggal).slice(0, 10) : "");
+    if (date_start && businessDate < date_start) return false;
+    if (date_end && businessDate > date_end) return false;
     return true;
   });
 
@@ -6194,7 +6195,7 @@ app.post("/api/createSetoran", async (req, res) => {
   (db.MASTER_TRANSAKSI || []).forEach((tx: any) => {
     if (!isTransactionValidForFinance(tx)) return;
     let txDate = extractBusinessDate(tx);
-    const txAdmin = tx.admin_id || "SYSTEM";
+    const txAdmin = tx.admin_id || tx.admin_id_pencatat || tx.user_id || "SYSTEM";
     if (txDate === tanggal && tx.outlet_id === outlet_id && txAdmin === adminPembuat) {
       txList.push(tx);
       const sum = calculateFinancialSummary(tx);

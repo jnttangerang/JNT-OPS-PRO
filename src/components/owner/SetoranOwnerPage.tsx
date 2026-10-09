@@ -768,6 +768,13 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
           </button>
           <button 
             type="button"
+            onClick={() => { setDateStart(shiftWIBDays(getTodayWIB(), -30)); setDateEnd(getTodayWIB()); }}
+            className="px-2 py-0.5 rounded bg-orange-50 text-orange-700 hover:bg-orange-100 font-semibold cursor-pointer"
+          >
+            30 Hari Terakhir
+          </button>
+          <button 
+            type="button"
             onClick={() => { setDateStart(`${getTodayWIB().slice(0, 7)}-01`); setDateEnd(getTodayWIB()); }}
             className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold cursor-pointer"
           >
@@ -848,9 +855,23 @@ export default function SetoranOwnerPage({ session, outlets }: SetoranOwnerPageP
                 })
               ) : (
                 <tr>
-                  <td colSpan={8} className="p-12 text-center text-gray-400">
-                    <CheckCircle className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                    <p className="font-semibold text-xs text-gray-600">Tidak ada setoran yang cocok dengan filter ini.</p>
+                  <td colSpan={8} className="py-12 px-4 text-center">
+                    <p className="text-gray-600 font-medium mb-1 text-sm">
+                      Tidak ada setoran untuk rentang tanggal {dateStart} s/d {dateEnd}
+                    </p>
+                    <p className="text-xs text-gray-400 mb-4">
+                      Admin belum mengajukan setoran pada periode ini
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDateStart(shiftWIBDays(getTodayWIB(), -30));
+                        setDateEnd(getTodayWIB());
+                      }}
+                      className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm inline-flex items-center gap-1.5"
+                    >
+                      Lihat 30 Hari Terakhir
+                    </button>
                   </td>
                 </tr>
               )}
