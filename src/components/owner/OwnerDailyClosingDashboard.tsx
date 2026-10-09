@@ -283,6 +283,38 @@ export default function OwnerDailyClosingDashboard({
           </span>
         </div>
 
+        {/* RINGKASAN STATUS SELURUH OUTLET */}
+        {(() => {
+          const totalOutletsCount = outlets.length;
+          const closedCount = outlets.filter((o) => outletClosingRecords[o.outlet_id]?.status === "CLOSED").length;
+          const readyCount = outlets.filter((o) => outletClosingRecords[o.outlet_id]?.status === "READY").length;
+          const blockedCount = outlets.filter((o) => {
+            const s = outletClosingRecords[o.outlet_id]?.status;
+            return s === "BLOCKED" || (s !== "CLOSED" && s !== "READY");
+          }).length;
+
+          return (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">Total Outlet</span>
+                <p className="text-xl font-black text-gray-900 mt-1 font-mono">{totalOutletsCount}</p>
+              </div>
+              <div className="p-3.5 bg-emerald-50/70 rounded-xl border border-emerald-200/80">
+                <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Sudah Ditutup</span>
+                <p className="text-xl font-black text-emerald-700 mt-1 font-mono">{closedCount}</p>
+              </div>
+              <div className="p-3.5 bg-blue-50/70 rounded-xl border border-blue-200/80">
+                <span className="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">Siap Ditutup</span>
+                <p className="text-xl font-black text-blue-700 mt-1 font-mono">{readyCount}</p>
+              </div>
+              <div className="p-3.5 bg-rose-50/70 rounded-xl border border-rose-200/80">
+                <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">Terkendala</span>
+                <p className="text-xl font-black text-rose-700 mt-1 font-mono">{blockedCount}</p>
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {outlets.map((o) => {
             const closingRec = outletClosingRecords[o.outlet_id];
