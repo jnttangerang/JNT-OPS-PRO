@@ -21,7 +21,17 @@ import {
   Building2,
   Calendar,
   Filter,
-  Truck
+  Truck,
+  Check,
+  CheckSquare,
+  Square,
+  Image as ImageIcon,
+  Camera,
+  ExternalLink,
+  SlidersHorizontal,
+  Upload,
+  Layers,
+  ArrowRight
 } from "lucide-react";
 import useAppsScript from "../hooks/useAppsScript";
 import { SessionData, Outlet, User as UserType } from "../types";
@@ -50,8 +60,13 @@ interface TransaksiItem {
   tipe_produk?: string;
   jenis_barang?: string;
   metode_bayar?: string;
+  metode_bayar_ongkir?: string;
   metode_bayar_tambahan?: string;
+  bukti_bayar_url?: string;
+  bukti_bayar_ongkir?: string;
   bukti_tambahan_url?: string;
+  foto_paket_url?: string;
+  foto_resi_url?: string;
   ongkir_dasar?: number;
   biaya_asuransi?: number;
   biaya_lain?: number;
@@ -725,7 +740,7 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
         </div>
       </div>
 
-      {/* DATA LIST */}
+      {/* DATA TABLE (HISTORY VIEW) */}
       {loading ? (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-4 animate-pulse">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -733,145 +748,151 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           ))}
         </div>
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           {paginatedData.length > 0 ? (
             <div>
-              <div className="divide-y divide-gray-100">
-                {paginatedData.map((item, index) => (
-                  <div key={item.resi_id || item.transaksi_id || index} className="p-4 sm:p-5 hover:bg-gray-50/50 flex flex-col sm:flex-row justify-between gap-4 transition-colors">
-                    
-                    {/* KIRI: No.urut, Resi, Waktu, Admin, Outlet */}
-                    <div className="flex items-start gap-4">
-                      <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center text-xs font-bold text-gray-500">
-                        {(currentPage - 1) * pageSize + index + 1}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                          <span className={`font-bold font-mono text-base ${item.status_resi === "BATAL" ? "text-gray-400 line-through" : "text-gray-800"}`}>
-                            {highlightText(item.resi_id || item.transaksi_id, searchTerm)}
-                          </span>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
-                            item.tipe === "Express" ? "bg-red-50 text-[#E4002B] border border-red-100" : "bg-blue-50 text-blue-700 border border-blue-100"
-                          }`}>
-                            {item.tipe}
-                          </span>
-                          {item.tipe_produk && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider bg-violet-50 text-violet-700 border border-violet-100">
-                              {item.tipe_produk}
-                            </span>
-                          )}
-                          {item.jenis_barang && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
-                              item.jenis_barang === "DOKUMEN" ? "bg-amber-50 text-amber-700 border border-amber-200 font-extrabold" : "bg-slate-50 text-slate-700 border border-slate-200"
-                            }`}>
-                              {item.jenis_barang}
-                            </span>
-                          )}
-                          {item.metode_bayar && (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
-                              item.metode_bayar === "DFOD"
-                                ? "bg-amber-100 text-amber-900 border border-amber-300 font-black shadow-xs"
-                                : item.metode_bayar === "Transfer"
-                                ? "bg-indigo-50 text-indigo-700 border border-indigo-100"
-                                : item.metode_bayar === "QRIS"
-                                ? "bg-teal-50 text-teal-700 border border-teal-100"
-                                : "bg-gray-100 text-gray-700 border border-gray-200"
-                            }`}>
-                              {item.metode_bayar}
-                            </span>
-                          )}
-                          {item.metode_bayar_tambahan && item.metode_bayar_tambahan !== item.metode_bayar && (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-100 uppercase tracking-wider">
-                              + {item.metode_bayar_tambahan}
-                            </span>
-                          )}
-                          {item.status_resi === "BATAL" ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-100">
-                              BATAL
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100">
-                              {item.status_resi || "AKTIF"}
-                            </span>
-                          )}
-                        </div>
-                        
-                        <div className="text-xs text-gray-500 space-y-0.5">
-                          <p>
-                            <span className="font-medium text-gray-400 w-16 inline-block">Waktu</span>: <span className="font-medium text-gray-700">{formatDisplayTime(item.transaction_time || resolveItemTime(item))}</span>
-                            {item.imported_at && (
-                              <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 ml-2 font-mono inline-flex items-center gap-1" title={`Waktu Import JNT OPS PRO: ${formatDisplayTime(item.imported_at)}`}>
-                                <Clock className="h-3 w-3 text-indigo-500" />
-                                Waktu Import: {formatDisplayTime(item.imported_at)}
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left text-gray-700 divide-y divide-gray-200">
+                  <thead className="bg-gray-50 text-[11px] font-bold text-gray-500 uppercase tracking-wider font-mono">
+                    <tr>
+                      <th className="p-3">No / Resi</th>
+                      <th className="p-3">Pengirim ➔ Penerima</th>
+                      <th className="p-3">Admin / Outlet</th>
+                      <th className="p-3 text-center">Metode Bayar</th>
+                      <th className="p-3 text-right">Ongkir</th>
+                      <th className="p-3 text-right">Biaya Tambahan</th>
+                      <th className="p-3 text-right">Total</th>
+                      <th className="p-3 text-center">Status</th>
+                      <th className="p-3 text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 font-sans">
+                    {paginatedData.map((item, index) => {
+                      const totalTambahan = (Number(item.biaya_amplop) || 0) + (Number(item.biaya_packing) || 0);
+
+                      return (
+                        <tr 
+                          key={item.resi_id || item.transaksi_id || index}
+                          className="hover:bg-gray-50/80 transition-colors"
+                        >
+                          {/* 1. No / Resi */}
+                          <td className="p-3 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-gray-400 text-[11px] w-6">
+                                {(currentPage - 1) * pageSize + index + 1}.
                               </span>
-                            )}
-                          </p>
-                          <p><span className="font-medium text-gray-400 w-16 inline-block">Admin</span>: <span className="font-semibold text-gray-700">{highlightText(getAdminName(item.admin), searchTerm)}</span></p>
-                          <p><span className="font-medium text-gray-400 w-16 inline-block">Outlet</span>: {item.outlet}</p>
-                          <p className="mt-1 text-gray-600 font-medium flex items-center gap-1.5 flex-wrap">
-                            <span>
+                              <div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className={`font-mono font-bold text-xs ${item.status_resi === "BATAL" ? "text-gray-400 line-through" : "text-gray-900"}`}>
+                                    {highlightText(item.resi_id || item.transaksi_id, searchTerm)}
+                                  </span>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                                    item.tipe === "Express" ? "bg-red-50 text-[#E4002B] border border-red-100" : "bg-blue-50 text-blue-700 border border-blue-100"
+                                  }`}>
+                                    {item.tipe}
+                                  </span>
+                                </div>
+                                <p className="text-[10px] text-gray-400 font-medium">
+                                  {formatDisplayTime(item.transaction_time || resolveItemTime(item))}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 2. Pengirim ➔ Penerima */}
+                          <td className="p-3 max-w-[180px]">
+                            <p className="font-semibold text-gray-800 truncate" title={item.pengirim || "Umum"}>
                               {highlightText(item.pengirim || "Umum", searchTerm)}
-                              {item.hp_pengirim ? <span className="text-gray-400 font-mono text-[11px] ml-1">({item.hp_pengirim})</span> : null}
+                            </p>
+                            <p className="text-[11px] text-gray-500 truncate" title={item.penerima || "Umum"}>
+                              ➔ {highlightText(item.penerima || "Umum", searchTerm)}
+                            </p>
+                          </td>
+
+                          {/* 3. Admin / Outlet */}
+                          <td className="p-3 whitespace-nowrap">
+                            <p className="font-semibold text-gray-800">
+                              {highlightText(getAdminName(item.admin), searchTerm)}
+                            </p>
+                            <p className="text-[10px] text-gray-400">
+                              {item.outlet}
+                            </p>
+                          </td>
+
+                          {/* 4. Metode Bayar */}
+                          <td className="p-3 text-center whitespace-nowrap">
+                            <span className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${
+                              String(item.metode_bayar).toUpperCase() === "QRIS"
+                                ? "bg-teal-50 text-teal-700 border-teal-200"
+                                : String(item.metode_bayar).toUpperCase() === "TRANSFER"
+                                ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                                : String(item.metode_bayar).toUpperCase() === "DFOD"
+                                ? "bg-amber-50 text-amber-800 border-amber-300"
+                                : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            }`}>
+                              {item.metode_bayar || "-"}
                             </span>
-                            <span className="text-gray-400">➔</span>
-                            <span>
-                              {highlightText(item.penerima || "Umum", searchTerm)}
-                              {item.hp_penerima ? <span className="text-gray-400 font-mono text-[11px] ml-1">({item.hp_penerima})</span> : null}
+                          </td>
+
+                          {/* 5. Ongkir Dasar */}
+                          <td className="p-3 text-right font-mono font-semibold text-gray-800 whitespace-nowrap">
+                            Rp {(Number(item.ongkir_dasar || item.grand_total) || 0).toLocaleString("id-ID")}
+                          </td>
+
+                          {/* 6. Biaya Tambahan */}
+                          <td className="p-3 text-right font-mono text-gray-700 whitespace-nowrap">
+                            Rp {totalTambahan.toLocaleString("id-ID")}
+                          </td>
+
+                          {/* 7. Total Customer */}
+                          <td className="p-3 text-right font-mono font-bold text-gray-900 whitespace-nowrap">
+                            Rp {(Number(item.grand_total) || 0).toLocaleString("id-ID")}
+                          </td>
+
+                          {/* 8. Status */}
+                          <td className="p-3 text-center whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              item.status_resi === "BATAL"
+                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                : "bg-green-50 text-green-700 border-green-200"
+                            }`}>
+                              {item.status_resi === "BATAL" ? "BATAL" : "AKTIF"}
                             </span>
-                            {item.nama_barang && item.nama_barang !== "-" && (
-                              <span className="text-gray-400 ml-1 italic font-normal">
-                                ({highlightText(item.nama_barang, searchTerm)})
-                              </span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                          </td>
 
-                    {/* KANAN: Grand Total, Tombol Aksi */}
-                    <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-3 pl-12 sm:pl-0 border-t border-gray-50 sm:border-0 pt-3 sm:pt-0">
-                      <div className="text-right">
-                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-0.5">Grand Total</p>
-                        <p className={`font-bold font-mono text-lg ${item.status_resi === "BATAL" ? "text-gray-400 line-through" : "text-gray-800"}`}>
-                          Rp {item.grand_total.toLocaleString("id-ID")}
-                        </p>
-                      </div>
-                      
-                      {/* ACTION BUTTONS */}
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* 1. Lihat Detail (Eye Icon) */}
-                        <button
-                          onClick={() => handleOpenDetail(item)}
-                          className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 hover:text-blue-700 rounded-lg transition-colors cursor-pointer"
-                          title="Lihat Detail Transaksi"
-                        >
-                          <Eye className="h-4 w-4" />
-                        </button>
-
-                        {/* 2. Edit Transaksi (Pencil Icon) */}
-                        <button
-                          onClick={() => handleOpenEdit(item)}
-                          className="p-2 bg-amber-50 text-amber-600 hover:bg-amber-100 hover:text-amber-700 rounded-lg transition-colors cursor-pointer"
-                          title="Edit Transaksi"
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </button>
-
-                        {/* 3. Batalkan Transaksi (Ban Icon) */}
-                        {item.status_resi !== "BATAL" && (
-                          <button
-                            onClick={() => setCancelTarget(item)}
-                            className="p-2 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 rounded-lg transition-colors cursor-pointer"
-                            title="Batalkan Transaksi"
-                          >
-                            <Ban className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                  </div>
-                ))}
+                          {/* 9. Aksi */}
+                          <td className="p-3 text-center whitespace-nowrap">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                onClick={() => handleOpenDetail(item)}
+                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                                title="Lihat Detail Transaksi"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => handleOpenEdit(item)}
+                                className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                                title="Edit Form Lengkap"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              {item.status_resi !== "BATAL" && (
+                                <button
+                                  onClick={() => setCancelTarget(item)}
+                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  title="Batalkan Transaksi"
+                                >
+                                  <Ban className="h-4 w-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               {/* PAGINATION BAR */}
@@ -1592,6 +1613,8 @@ export default function RiwayatTransaksiPage({ session, outlets, activeOutletId 
           </div>
         </div>
       )}
+
+
 
       <BulkImportYoYiModal
         isOpen={isBulkImportModalOpen}
